@@ -1,9 +1,8 @@
 import type { GhExecutor } from '../executor.js';
 import type { GitHubOverviewData, PrItem, IssueItem, WorkflowRunItem } from '../types.js';
 
-let cachedOverview: GitHubOverviewData | null = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 15_000; // 15秒轻量缓存，防止前端高频轮询耗尽 GitHub API 配额
+const cacheMap = new Map<string, { data: GitHubOverviewData; time: number }>();
+const CACHE_TTL_MS = 15_000;
 
 export function registerApiRoutes(webServerService: any, executor: GhExecutor, workspaceRegistry?: any) {
   if (!webServerService || typeof webServerService.register !== 'function') return;
@@ -25,25 +24,65 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
         return;
       }
 
-      const now = Date.now();
-      if (cachedOverview && now - lastFetchTime < CACHE_TTL_MS) {
-        sendJson(res, 200, { ok: true, data: cachedOverview, fromCache: true });
-        return;
-      }
-
       try {
         const url = new URL(req.url || '', 'http://127.0.0.1');
         let cwd = url.searchParams.get('cwd');
+        const sessionId = url.searchParams.get('sessionId');
 
-        // 优先从 query 获取；若未传，则自动由 workspaceRegistry 探测当前活跃工作区物理路径
-        if (!cwd && workspaceRegistry && typeof workspaceRegistry.list === 'function') {
-          const wsList = workspaceRegistry.list();
-          if (wsList && wsList.length > 0 && wsList[0].path) {
-            cwd = wsList[0].path;
-          }
+        // 1. 优先通过 sessionId 从 workspace.json 逆向解析物理路径
+        if (!cwd && sessionId) {
+          try {
+            const fs = await import('node:fs');
+            const path = await import('node:path');
+            const os = await import('node:os');
+            const wsJsonPath = path.join(os.homedir(), '.dsh', 'storages', 'workspace.json');
+            if (fs.existsSync(wsJsonPath)) {
+              const wsData = JSON.parse(fs.readFileSync(wsJsonPath, 'utf8'));
+              const workspaces = wsData.tables?.workspaces || {};
+              for (const wsId of Object.keys(workspaces)) {
+                const item = workspaces[wsId];
+                if (item.sessionIds && item.sessionIds.includes(sessionId)) {
+                  cwd = item.path;
+                  break;
+                }
+              }
+            }
+          } catch (e) {}
         }
+
+        // 2. 若仍未获取，从 workspace.json 自动匹配最近活跃的工作区
+        if (!cwd) {
+          try {
+            const fs = await import('node:fs');
+            const path = await import('node:path');
+            const os = await import('node:os');
+            const wsJsonPath = path.join(os.homedir(), '.dsh', 'storages', 'workspace.json');
+            if (fs.existsSync(wsJsonPath)) {
+              const wsData = JSON.parse(fs.readFileSync(wsJsonPath, 'utf8'));
+              const workspaces = wsData.tables?.workspaces || {};
+              let latestItem: any = null;
+              for (const wsId of Object.keys(workspaces)) {
+                const item = workspaces[wsId];
+                if (!latestItem || new Date(item.updatedAt || 0) > new Date(latestItem.updatedAt || 0)) {
+                  latestItem = item;
+                }
+              }
+              if (latestItem && latestItem.path) {
+                cwd = latestItem.path;
+              }
+            }
+          } catch (e) {}
+        }
+
         if (!cwd) {
           cwd = process.cwd();
+        }
+
+        const now = Date.now();
+        const cached = cacheMap.get(cwd);
+        if (cached && now - cached.time < CACHE_TTL_MS) {
+          sendJson(res, 200, { ok: true, data: cached.data, fromCache: true, cwd });
+          return;
         }
 
         const auth = await executor.checkAuth(cwd);
@@ -75,7 +114,7 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
           if (runsRes.ok && Array.isArray(runsRes.data)) runs = runsRes.data;
         }
 
-        cachedOverview = {
+        const freshData: GitHubOverviewData = {
           auth,
           repo: repo || undefined,
           pullRequests,
@@ -83,9 +122,10 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
           runs,
           lastUpdated: new Date().toISOString(),
         };
-        lastFetchTime = now;
 
-        sendJson(res, 200, { ok: true, data: cachedOverview, fromCache: false, cwd });
+        cacheMap.set(cwd, { data: freshData, time: now });
+
+        sendJson(res, 200, { ok: true, data: freshData, fromCache: false, cwd });
       } catch (err: any) {
         sendJson(res, 500, { ok: false, error: err.message || '获取 GitHub 概览失败' });
       }
@@ -97,8 +137,7 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
     kind: 'exact',
     path: '/api/github/refresh',
     handler: async (req: any, res: any) => {
-      cachedOverview = null;
-      lastFetchTime = 0;
+      cacheMap.clear();
       sendJson(res, 200, { ok: true, message: '缓存已清空，下次读取将拉取最新数据' });
     },
   });
