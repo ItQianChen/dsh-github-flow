@@ -361,31 +361,34 @@ window.__ModuleLoader__.load({
 
       var guideEl = null;
 
-      if (auth && !auth.installed) {
-        guideEl = h(
-          "div",
-          { className: "dsh-github-guide-card" },
-          h("div", { className: "dsh-github-guide-title" }, "⚠️ 未检测到 GitHub CLI (gh)"),
-          h("div", { className: "dsh-github-guide-desc" }, "本插件基于官方 GitHub CLI 运行，实现免 PAT 安全登录与工作区环境自动感知。请先在系统终端中安装 gh："),
-          h("div", { style: { fontWeight: "600", fontSize: "13px", marginTop: "8px" } }, "各系统推荐安装命令:"),
-          h("div", { className: "dsh-github-cmd-box" }, "winget install --id GitHub.cli  # Windows (PowerShell/CMD)"),
-          h("div", { className: "dsh-github-cmd-box" }, "brew install gh                # macOS (Homebrew)"),
-          h("div", { className: "dsh-github-cmd-box" }, "sudo apt install gh            # Linux (Debian/Ubuntu)"),
-          h("div", { style: { fontWeight: "600", fontSize: "13px", marginTop: "16px", marginBottom: "8px" } }, "安装后的登录步骤:"),
-          h("div", { className: "dsh-github-step-item" }, "1. 打开系统终端，运行登录命令:"),
-          h("div", { className: "dsh-github-cmd-box" }, "gh auth login"),
-          h("div", { className: "dsh-github-step-item" }, "2. 选项指引：选择 GitHub.com → 协议选择 HTTPS → 确认使用 Web 浏览器验证；"),
-          h("div", { className: "dsh-github-step-item" }, "3. 浏览器授权成功后，回到本工作台点击右上角【🔄 刷新状态】即可立即激活！")
-        );
-      } else if (auth && auth.installed && !auth.loggedIn) {
-        guideEl = h(
-          "div",
-          { className: "dsh-github-guide-card" },
-          h("div", { className: "dsh-github-guide-title" }, "🔑 GitHub CLI 尚未登录认证"),
-          h("div", { className: "dsh-github-guide-desc" }, "已检测到系统的 GitHub CLI，但当前尚未登录账号。请在终端执行以下命令进行快速登录："),
-          h("div", { className: "dsh-github-cmd-box" }, "gh auth login"),
-          h("div", { className: "dsh-github-step-item" }, "按提示在浏览器中完成授权后，回到本界面点击右上角的【🔄 刷新状态】按钮即可开启全部能力。")
-        );
+      // 仅当明确未登录且无用户信息时，才渲染引导向导
+      if (auth && !auth.loggedIn && !auth.user) {
+        if (auth.installed === false) {
+          guideEl = h(
+            "div",
+            { className: "dsh-github-guide-card" },
+            h("div", { className: "dsh-github-guide-title" }, "⚠️ 未检测到 GitHub CLI (gh)"),
+            h("div", { className: "dsh-github-guide-desc" }, "本插件基于官方 GitHub CLI 运行，实现免 PAT 安全登录与工作区环境自动感知。请先在系统终端中安装 gh："),
+            h("div", { style: { fontWeight: "600", fontSize: "13px", marginTop: "8px" } }, "各系统推荐安装命令:"),
+            h("div", { className: "dsh-github-cmd-box" }, "winget install --id GitHub.cli  # Windows (PowerShell/CMD)"),
+            h("div", { className: "dsh-github-cmd-box" }, "brew install gh                # macOS (Homebrew)"),
+            h("div", { className: "dsh-github-cmd-box" }, "sudo apt install gh            # Linux (Debian/Ubuntu)"),
+            h("div", { style: { fontWeight: "600", fontSize: "13px", marginTop: "16px", marginBottom: "8px" } }, "安装后的登录步骤:"),
+            h("div", { className: "dsh-github-step-item" }, "1. 打开系统终端，运行登录命令:"),
+            h("div", { className: "dsh-github-cmd-box" }, "gh auth login"),
+            h("div", { className: "dsh-github-step-item" }, "2. 选项指引：选择 GitHub.com → 协议选择 HTTPS → 确认使用 Web 浏览器验证；"),
+            h("div", { className: "dsh-github-step-item" }, "3. 浏览器授权成功后，回到本工作台点击右上角【🔄 刷新状态】即可立即激活！")
+          );
+        } else {
+          guideEl = h(
+            "div",
+            { className: "dsh-github-guide-card" },
+            h("div", { className: "dsh-github-guide-title" }, "🔑 GitHub CLI 尚未登录认证"),
+            h("div", { className: "dsh-github-guide-desc" }, "已检测到系统的 GitHub CLI，但当前尚未登录账号。请在终端执行以下命令进行快速登录："),
+            h("div", { className: "dsh-github-cmd-box" }, "gh auth login"),
+            h("div", { className: "dsh-github-step-item" }, "按提示在浏览器中完成授权后，回到本界面点击右上角的【🔄 刷新状态】按钮即可开启全部能力。")
+          );
+        }
       }
 
       var cardsEl = h(
