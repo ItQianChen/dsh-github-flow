@@ -38,8 +38,8 @@ async function testPlugin() {
   if (registeredCommands.length !== 1) {
     throw new Error(`预期注册 1 个 Command，实际注册 ${registeredCommands.length} 个`);
   }
-  if (registeredRoutes.length !== 2) {
-    throw new Error(`预期注册 2 个 API Route，实际注册 ${registeredRoutes.length} 个`);
+  if (registeredRoutes.length !== 3) {
+    throw new Error(`预期注册 3 个 API Route，实际注册 ${registeredRoutes.length} 个`);
   }
 
   console.log('\n--- 测试 Tool 实际执行：github_repo(action: "view") ---');
