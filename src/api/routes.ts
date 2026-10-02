@@ -5,7 +5,7 @@ let cachedOverview: GitHubOverviewData | null = null;
 let lastFetchTime = 0;
 const CACHE_TTL_MS = 15_000; // 15秒轻量缓存，防止前端高频轮询耗尽 GitHub API 配额
 
-export function registerApiRoutes(webServerService: any, executor: GhExecutor) {
+export function registerApiRoutes(webServerService: any, executor: GhExecutor, workspaceRegistry?: any) {
   if (!webServerService || typeof webServerService.register !== 'function') return;
 
   function sendJson(res: any, status: number, data: any) {
@@ -33,7 +33,18 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor) {
 
       try {
         const url = new URL(req.url || '', 'http://127.0.0.1');
-        const cwd = url.searchParams.get('cwd') || process.cwd();
+        let cwd = url.searchParams.get('cwd');
+
+        // 优先从 query 获取；若未传，则自动由 workspaceRegistry 探测当前活跃工作区物理路径
+        if (!cwd && workspaceRegistry && typeof workspaceRegistry.list === 'function') {
+          const wsList = workspaceRegistry.list();
+          if (wsList && wsList.length > 0 && wsList[0].path) {
+            cwd = wsList[0].path;
+          }
+        }
+        if (!cwd) {
+          cwd = process.cwd();
+        }
 
         const auth = await executor.checkAuth(cwd);
         const repo = await executor.getRepoMetadata(cwd);

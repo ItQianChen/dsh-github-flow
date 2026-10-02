@@ -1,4 +1,4 @@
-import type { GhExecutionOptions, GhResult, AuthStatus } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata } from './types.js';
 export declare class GhExecutor {
     private defaultTimeoutMs;
     constructor(defaultTimeoutMs?: number);
@@ -13,14 +13,7 @@ export declare class GhExecutor {
     checkAuth(cwd?: string): Promise<AuthStatus>;
     /**
      * 获取当前目录（工作区）关联的远程仓库元数据
+     * 采用 gh repo view + 本地 git remote 双保险机制，彻底杜绝已配置远程却误判未关联的问题
      */
-    getRepoMetadata(cwd?: string): Promise<{
-        nameWithOwner: any;
-        name: any;
-        owner: any;
-        defaultBranch: any;
-        description: any;
-        isPrivate: boolean;
-        url: any;
-    } | null>;
+    getRepoMetadata(cwd?: string): Promise<RepoMetadata | null>;
 }

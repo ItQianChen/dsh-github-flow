@@ -8,7 +8,7 @@ import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
 
 export const name = 'dsh-github-flow';
-export const inject = ['tools', 'commands', 'webServer'] as const;
+export const inject = ['tools', 'commands', 'webServer', 'workspaceRegistry'] as const;
 
 export function apply(ctx: any) {
   const executor = new GhExecutor();
@@ -29,6 +29,6 @@ export function apply(ctx: any) {
 
   // 3. 注册面向 Client 端的 WebServer HTTP 路由
   if (ctx.webServer) {
-    registerApiRoutes(ctx.webServer, executor);
+    registerApiRoutes(ctx.webServer, executor, ctx.workspaceRegistry);
   }
 }
