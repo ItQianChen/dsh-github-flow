@@ -23,7 +23,9 @@ export interface GhResult<T = unknown> {
 }
 
 export interface AuthStatus {
+  installed: boolean;
   loggedIn: boolean;
+  platform?: string;
   user?: string;
   host?: string;
   activeAccount?: boolean;

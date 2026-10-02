@@ -20,7 +20,9 @@ export interface GhResult<T = unknown> {
     truncated?: boolean;
 }
 export interface AuthStatus {
+    installed: boolean;
     loggedIn: boolean;
+    platform?: string;
     user?: string;
     host?: string;
     activeAccount?: boolean;

@@ -93,9 +93,21 @@ export class GhExecutor {
   async checkAuth(cwd?: string): Promise<AuthStatus> {
     const res = await this.run(['auth', 'status'], { cwd, timeoutMs: 10_000, rawText: true });
 
+    const isInstalled = !(res.error && res.error.includes('系统未检测到 GitHub CLI'));
+    if (!isInstalled) {
+      return {
+        installed: false,
+        loggedIn: false,
+        platform: process.platform,
+        raw: res.error,
+      };
+    }
+
     if (!res.ok && res.error && !res.rawOutput) {
       return {
+        installed: true,
         loggedIn: false,
+        platform: process.platform,
         raw: res.error,
       };
     }
@@ -105,7 +117,9 @@ export class GhExecutor {
 
     if (!loggedIn) {
       return {
+        installed: true,
         loggedIn: false,
+        platform: process.platform,
         raw,
       };
     }
@@ -128,7 +142,9 @@ export class GhExecutor {
     }
 
     return {
+      installed: true,
       loggedIn: true,
+      platform: process.platform,
       user,
       host: 'github.com',
       activeAccount: raw.includes('Active account: true'),
