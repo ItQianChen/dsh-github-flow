@@ -35,6 +35,20 @@ window.__ModuleLoader__.load({
   fill: currentColor;
 }
 
+/* 右侧栏专属容器 (Right Sidebar Container) */
+.dsh-github-rightbar-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px 18px;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-primary, #1e1e20);
+  color: var(--dsw-alias-label-primary, #ececec);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
 /* 顶部与通用面板 */
 .dsh-github-panel {
   display: flex;
@@ -52,26 +66,26 @@ window.__ModuleLoader__.load({
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l1, #333336);
 }
 .dsh-github-title {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 .dsh-github-title h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
 }
 .dsh-github-refresh-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
-  font-size: 13px;
+  padding: 5px 12px;
+  font-size: 12px;
   border-radius: 6px;
   border: 1px solid var(--dsw-alias-border-l1, #444);
   background: var(--dsw-alias-bg-secondary, #2a2a2e);
@@ -84,17 +98,12 @@ window.__ModuleLoader__.load({
 }
 
 /* 概览卡片区 */
-.dsh-github-overview-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 14px;
-  margin-bottom: 20px;
-}
 .dsh-github-card {
-  padding: 14px 18px;
+  padding: 14px 16px;
   border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l1, #333336);
+  border: 1px solid var(--dsw-alias-border-l1, #38383c);
   background: var(--dsw-alias-bg-secondary, #252528);
+  margin-bottom: 14px;
 }
 .dsh-github-card-title {
   font-size: 11px;
@@ -108,6 +117,7 @@ window.__ModuleLoader__.load({
   font-weight: 600;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .dsh-github-badge {
@@ -120,97 +130,6 @@ window.__ModuleLoader__.load({
 .dsh-badge-green { background: rgba(46, 160, 67, 0.2); color: #3fb950; }
 .dsh-badge-red { background: rgba(248, 81, 73, 0.2); color: #f85149; }
 .dsh-badge-yellow { background: rgba(210, 153, 34, 0.2); color: #d29922; }
-
-/* 右侧栏专属样式 (Right Sidebar) */
-.dsh-github-right-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 16px 20px;
-  margin-top: 14px;
-  border-radius: 12px;
-  border: 1px solid var(--dsw-alias-border-l1, #38383c);
-  background: var(--dsw-alias-bg-secondary, #242427);
-  color: var(--dsw-alias-label-primary, #fff);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
-}
-.dsh-github-right-card:hover {
-  background: var(--dsw-alias-interactive-bg-hover, #2f2f34);
-  border-color: #58a6ff;
-  transform: translateY(-1px);
-}
-.dsh-github-right-card-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: rgba(88, 166, 255, 0.12);
-  color: #58a6ff;
-  flex-shrink: 0;
-}
-.dsh-github-right-card-text {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
-}
-.dsh-github-right-card-title {
-  font-size: 15px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.dsh-github-right-card-desc {
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary, #999);
-}
-
-/* 右侧栏抽屉/弹窗视图 */
-.dsh-github-drawer-shell {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 100;
-  background: var(--dsw-alias-bg-primary, #1e1e20);
-  display: flex;
-  flex-direction: column;
-  padding: 16px 18px;
-  box-sizing: border-box;
-  overflow-y: auto;
-}
-.dsh-github-drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1, #333);
-}
-.dsh-github-back-btn {
-  background: transparent;
-  border: 0;
-  color: var(--dsw-alias-label-secondary, #aaa);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  padding: 4px 8px;
-  border-radius: 4px;
-}
-.dsh-github-back-btn:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-}
 
 /* 快捷操作网格按钮 */
 .dsh-github-quick-actions {
@@ -240,29 +159,30 @@ window.__ModuleLoader__.load({
 
 /* 列表条目 */
 .dsh-github-section {
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 .dsh-github-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .dsh-github-section-header h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
+  color: var(--dsw-alias-label-secondary, #ccc);
 }
 .dsh-github-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .dsh-github-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 14px;
+  gap: 4px;
+  padding: 10px 12px;
   border-radius: 6px;
   border: 1px solid var(--dsw-alias-border-l1, #333336);
   background: var(--dsw-alias-bg-secondary, #252528);
@@ -287,7 +207,7 @@ window.__ModuleLoader__.load({
   gap: 8px;
 }
 .dsh-github-empty {
-  padding: 20px;
+  padding: 18px;
   text-align: center;
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary, #666);
@@ -306,30 +226,22 @@ window.__ModuleLoader__.load({
       return () => style.remove();
     }
 
-    // 侧边栏/右侧栏通用的 GitHub 仓库详情与操作视图
-    function renderGithubRepoView(h: any, data: any, loading: boolean, error: string | null, onRefresh: () => void, onCloseDrawer?: () => void) {
+    // 渲染 GitHub 仓库信息与操作视图的核心函数
+    function renderGithubRepoView(h: any, data: any, loading: boolean, error: string | null, onRefresh: () => void, isRightbar: boolean = false) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
       var prs = (data && data.pullRequests) || [];
-      var issues = (data && data.issues) || [];
       var runs = (data && data.runs) || [];
 
-      // 顶部 Header
       var headerEl = h(
         "div",
-        { className: onCloseDrawer ? "dsh-github-drawer-header" : "dsh-github-header" },
-        onCloseDrawer
-          ? h(
-              "button",
-              { className: "dsh-github-back-btn", onClick: onCloseDrawer },
-              "← 返回"
-            )
-          : h(
-              "div",
-              { className: "dsh-github-title" },
-              h("span", { style: { fontSize: "20px" } }, "🐙"),
-              h("h2", null, "GitHub 仓库工作台")
-            ),
+        { className: "dsh-github-header" },
+        h(
+          "div",
+          { className: "dsh-github-title" },
+          h("span", { style: { fontSize: isRightbar ? "18px" : "22px" } }, "🐙"),
+          h("h2", null, isRightbar ? "GitHub 仓库" : "GitHub 工作台")
+        ),
         h(
           "button",
           {
@@ -350,7 +262,7 @@ window.__ModuleLoader__.load({
             body: JSON.stringify({ action, ...extra }),
           });
           const json = await res.json();
-          alert(json.ok ? `✅ ${json.message || "操作已成功发起"}` : `❌ ${json.error || "操作失败"}`);
+          alert(json.ok ? `✅ ${json.message || "操作已完成"}` : `❌ ${json.error || "操作失败"}`);
           if (json.ok) onRefresh();
         } catch (err: any) {
           alert(`网络异常: ${err.message}`);
@@ -360,18 +272,24 @@ window.__ModuleLoader__.load({
       // 仓库基础卡片
       var repoCardEl = h(
         "div",
-        { className: "dsh-github-card", style: { marginBottom: "14px" } },
-        h("div", { className: "dsh-github-card-title" }, "当前文件夹 GitHub 仓库"),
+        { className: "dsh-github-card" },
+        h("div", { className: "dsh-github-card-title" }, "当前工作区 GitHub 仓库"),
         h(
           "div",
           { className: "dsh-github-card-value" },
           repo
             ? h("a", { href: repo.url, target: "_blank", style: { color: "#58a6ff", textDecoration: "none" } }, repo.nameWithOwner)
-            : "未关联 GitHub 远程仓库",
+            : h("span", { style: { color: "#f85149" } }, "未检测到关联的 GitHub 仓库"),
           repo ? h("span", { className: "dsh-github-badge dsh-badge-green" }, repo.defaultBranch) : null
         ),
+        repo && repo.description
+          ? h("div", { style: { fontSize: "12px", color: "#bbb", marginTop: "4px" } }, repo.description)
+          : null,
         auth && auth.loggedIn
-          ? h("div", { style: { fontSize: "12px", color: "#aaa", marginTop: "6px" } }, `当前 CLI 账号: ${auth.user}`)
+          ? h("div", { style: { fontSize: "11px", color: "#888", marginTop: "6px" } }, `CLI 认证账号: ${auth.user} (${auth.scopes?.join(", ") || "已登录"})`)
+          : null,
+        !repo
+          ? h("div", { style: { fontSize: "11px", color: "#888", marginTop: "6px" } }, "若本地已有 git 仓库，请运行 `git remote add github <url>` 或 `git remote add origin <url>` 关联远程仓库。")
           : null
       );
 
@@ -385,10 +303,10 @@ window.__ModuleLoader__.load({
             className: "dsh-github-action-btn",
             onClick: () => {
               if (repo?.url) runAction("open_browser", { url: repo.url });
-              else alert("当前文件夹尚未关联 GitHub 仓库");
+              else alert("当前工作区尚未关联 GitHub 仓库");
             },
           },
-          "🌐 打开 GitHub 仓库"
+          "🌐 浏览器打开"
         ),
         h(
           "button",
@@ -396,6 +314,7 @@ window.__ModuleLoader__.load({
             className: "dsh-github-action-btn",
             onClick: () => {
               if (repo?.url) runAction("open_browser", { url: `${repo.url}/pulls` });
+              else alert("当前工作区尚未关联 GitHub 仓库");
             },
           },
           "🔀 查看所有 PRs"
@@ -444,7 +363,7 @@ window.__ModuleLoader__.load({
                     { className: "dsh-github-item-meta" },
                     h("span", null, `${pr.headRefName} → ${pr.baseRefName}`),
                     pr.mergeable === "CONFLICTING"
-                      ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "冲突")
+                      ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "代码冲突")
                       : h("span", { className: "dsh-github-badge dsh-badge-green" }, "可合并")
                   )
                 )
@@ -456,7 +375,7 @@ window.__ModuleLoader__.load({
       var runSectionEl = h(
         "div",
         { className: "dsh-github-section" },
-        h("div", { className: "dsh-github-section-header" }, h("h3", null, `⚡ Actions 流水线 (${runs.length})`)),
+        h("div", { className: "dsh-github-section-header" }, h("h3", null, `⚡ 最近 Actions 流水线 (${runs.length})`)),
         runs.length === 0
           ? h("div", { className: "dsh-github-empty" }, "暂无工作流记录")
           : h(
@@ -472,9 +391,9 @@ window.__ModuleLoader__.load({
                     { className: "dsh-github-item-meta" },
                     h("span", null, `分支: ${r.headBranch}`),
                     r.conclusion === "success"
-                      ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "通过")
+                      ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "✓ 成功")
                       : r.conclusion === "failure"
-                      ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "失败")
+                      ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "✕ 失败")
                       : h("span", { className: "dsh-github-badge dsh-badge-yellow" }, r.status)
                   )
                 )
@@ -485,7 +404,86 @@ window.__ModuleLoader__.load({
       return [headerEl, repoCardEl, actionsBarEl, prSectionEl, runSectionEl];
     }
 
-    // 1. 左侧栏图标组件
+    // 1. 右侧栏专属视图 (Right Sidebar Tab Body)
+    function GithubRightbarBody(props: any) {
+      var [loading, setLoading] = React.useState(true);
+      var [data, setData] = React.useState(null as any);
+      var [error, setError] = React.useState(null as string | null);
+
+      // 核心：直接从会话 Props 拿到真实物理工作区路径！
+      var cwd: string | null = null;
+      if (props && props.useSessions && props.sessionId) {
+        try {
+          cwd = props.useSessions((sessions: any) => sessions?.byId?.[props.sessionId]?.cwd);
+        } catch (e) {}
+      }
+
+      var loadData = React.useCallback(async (forceRefresh = false) => {
+        setLoading(true);
+        setError(null);
+        try {
+          if (forceRefresh) {
+            await fetch("/api/github/refresh", { method: "POST" }).catch(() => {});
+          }
+          var url = "/api/github/overview";
+          if (cwd) {
+            url += "?cwd=" + encodeURIComponent(cwd);
+          }
+          var res = await fetch(url);
+          var json = await res.json();
+          if (json.ok && json.data) {
+            setData(json.data);
+          } else {
+            setError(json.error || "获取状态失败");
+          }
+        } catch (err: any) {
+          setError(err.message || "网络异常");
+        } finally {
+          setLoading(false);
+        }
+      }, [cwd]);
+
+      React.useEffect(() => {
+        loadData(false);
+      }, [loadData]);
+
+      var h = React.createElement;
+      return h(
+        "div",
+        { className: "dsh-github-rightbar-container" },
+        ...renderGithubRepoView(h, data, loading, error, () => loadData(true), true)
+      );
+    }
+
+    // 2. 右侧栏 Tab 标题组件
+    function GithubRightbarTitle() {
+      var h = React.createElement;
+      return h("span", { style: { display: "flex", alignItems: "center", gap: "6px" } }, "🐙 GitHub");
+    }
+
+    // 3. 右侧栏“开始”引导页的大图标 (Artwork)
+    function GithubArtwork() {
+      var h = React.createElement;
+      return h(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "32px",
+            height: "32px",
+            borderRadius: "8px",
+            background: "rgba(88, 166, 255, 0.15)",
+            color: "#58a6ff",
+            fontSize: "18px",
+          },
+        },
+        "🐙"
+      );
+    }
+
+    // 4. 左侧栏全局入口与中央大面板
     function GithubSidebarIcon(props: any) {
       return React.createElement(
         "div",
@@ -512,7 +510,6 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // 2. 中央大视口主面板 (Main Slot)
     function GithubWorkspacePanel() {
       var [loading, setLoading] = React.useState(true);
       var [data, setData] = React.useState(null as any);
@@ -522,241 +519,24 @@ window.__ModuleLoader__.load({
         setLoading(true);
         setError(null);
         try {
-          if (forceRefresh) {
-            await fetch("/api/github/refresh", { method: "POST" }).catch(() => {});
-          }
-          var res = await fetch("/api/github/overview");
-          var json = await res.json();
-          if (json.ok && json.data) {
-            setData(json.data);
-          } else {
-            setError(json.error || json.message || "获取 GitHub 概览失败");
-          }
-        } catch (err: any) {
-          setError(err.message || "网络连接异常");
-        } finally {
-          setLoading(false);
-        }
-      }, []);
-
-      React.useEffect(() => {
-        loadData(false);
-        var timer = setInterval(() => loadData(false), 60000);
-        return () => clearInterval(timer);
-      }, [loadData]);
-
-      var h = React.createElement;
-      return h(
-        "div",
-        { className: "dsh-github-panel" },
-        ...renderGithubRepoView(h, data, loading, error, () => loadData(true))
-      );
-    }
-
-    // 3. 对话右上角快捷按钮 (Conversation Session Utilities)
-    function GithubHeaderAction() {
-      var [showDrawer, setShowDrawer] = React.useState(false);
-      var [loading, setLoading] = React.useState(false);
-      var [data, setData] = React.useState(null as any);
-      var [error, setError] = React.useState(null as string | null);
-
-      var loadData = async (forceRefresh = false) => {
-        setLoading(true);
-        try {
           if (forceRefresh) await fetch("/api/github/refresh", { method: "POST" }).catch(() => {});
           var res = await fetch("/api/github/overview");
           var json = await res.json();
           if (json.ok && json.data) setData(json.data);
+          else setError(json.error || "获取失败");
         } catch (err: any) {
           setError(err.message);
         } finally {
           setLoading(false);
         }
-      };
+      }, []);
 
-      var toggle = () => {
-        var next = !showDrawer;
-        setShowDrawer(next);
-        if (next && !data) loadData(false);
-      };
-
+      React.useEffect(() => { loadData(false); }, [loadData]);
       var h = React.createElement;
-
-      return h(
-        "div",
-        { style: { position: "relative", display: "inline-flex" } },
-        h(
-          "button",
-          {
-            className: "dsh-github-action-btn",
-            style: { padding: "4px 8px", background: "transparent", border: "0" },
-            title: "当前文件夹 GitHub 仓库与操作",
-            onClick: toggle,
-          },
-          h("span", { style: { fontSize: "16px" } }, "🐙"),
-          h("span", { style: { fontSize: "12px", marginLeft: "4px" } }, "GitHub")
-        ),
-        showDrawer
-          ? h(
-              "div",
-              {
-                className: "dsh-github-drawer-shell",
-                style: {
-                  position: "fixed",
-                  top: "40px",
-                  right: "0",
-                  width: "420px",
-                  height: "calc(100vh - 40px)",
-                  boxShadow: "-4px 0 20px rgba(0,0,0,0.5)",
-                },
-              },
-              ...renderGithubRepoView(h, data, loading, error, () => loadData(true), () => setShowDrawer(false))
-            )
-          : null
-      );
+      return h("div", { className: "dsh-github-panel" }, ...renderGithubRepoView(h, data, loading, error, () => loadData(true), false));
     }
 
-    // 4. 右侧栏开始页面中的卡片自动挂载器 (Observer for Guide Page in Right Sidebar)
-    function setupRightbarGuideObserver() {
-      if (typeof window === "undefined" || !window.document) return;
-
-      var checkAndMount = () => {
-        // 精准匹配截图中的右侧栏卡片容器（包含“工作区文件”或“新建终端”或“浏览器”）
-        var nodes = Array.from(document.querySelectorAll("div, button, a"));
-        var guideItem = nodes.find((el) => {
-          var txt = el.textContent || '';
-          return (txt.includes("工作区文件") && txt.includes("浏览会话工作区")) ||
-                 (txt.includes("新建终端") && txt.includes("运行命令")) ||
-                 (txt.includes("浏览器") && txt.includes("浏览网页"));
-        });
-
-        if (guideItem && guideItem.parentElement) {
-          var container = guideItem.parentElement;
-          if (!container.querySelector(".dsh-github-mounted-card")) {
-            var btn = document.createElement("div");
-            btn.className = "dsh-github-right-card dsh-github-mounted-card";
-            btn.style.cssText = "display: flex; align-items: center; gap: 16px; width: 100%; box-sizing: border-box; padding: 14px 18px; margin-top: 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.04); color: #fff; cursor: pointer; transition: all 0.15s ease;";
-            btn.innerHTML = `
-              <div style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; background: rgba(88, 166, 255, 0.15); color: #58a6ff; font-size: 20px; flex-shrink: 0;">🐙</div>
-              <div style="display: flex; flex-direction: column; gap: 3px; flex: 1;">
-                <div style="font-size: 14px; font-weight: 600; color: #fff;">GitHub 仓库</div>
-                <div style="font-size: 12px; color: #8c8c8c;">查看与操作当前工作区 GitHub 仓库 (PR / Issue / CI)</div>
-              </div>
-              <div style="font-size: 12px; color: #666; font-family: monospace;">Ctrl + G</div>
-            `;
-            btn.onmouseenter = () => { btn.style.background = "rgba(255, 255, 255, 0.08)"; btn.style.borderColor = "#58a6ff"; };
-            btn.onmouseleave = () => { btn.style.background = "rgba(255, 255, 255, 0.04)"; btn.style.borderColor = "rgba(255, 255, 255, 0.1)"; };
-
-            btn.onclick = () => {
-              var rightPane = container.closest(".dsh-github-drawer-parent") || container.parentElement || document.body;
-              var existingDrawer = document.getElementById("dsh-github-floating-drawer");
-              if (existingDrawer) existingDrawer.remove();
-
-              var drawer = document.createElement("div");
-              drawer.id = "dsh-github-floating-drawer";
-              drawer.className = "dsh-github-drawer-shell";
-              drawer.style.cssText = "position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 999; background: var(--dsw-alias-bg-primary, #1e1e20); display: flex; flex-direction: column; padding: 16px; box-sizing: border-box; overflow-y: auto;";
-              drawer.innerHTML = `<div style="padding: 30px; text-align: center; color: #aaa;">正在获取当前工作区文件夹的 GitHub 仓库状态...</div>`;
-
-              rightPane.appendChild(drawer);
-
-              // 自动拉取数据并渲染右侧栏面板
-              fetch("/api/github/overview")
-                .then((r) => r.json())
-                .then((res) => {
-                  var data = res.data;
-                  var repo = data?.repo;
-                  var auth = data?.auth;
-                  var prs = data?.pullRequests || [];
-                  var runs = data?.runs || [];
-
-                  drawer.innerHTML = `
-                    <div class="dsh-github-drawer-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1);">
-                      <button id="dsh-drawer-close-btn" class="dsh-github-back-btn" style="background: transparent; border: 0; color: #58a6ff; cursor: pointer; font-size: 13px; font-weight: 500;">← 返回开始</button>
-                      <button id="dsh-drawer-refresh-btn" class="dsh-github-refresh-btn" style="padding: 4px 10px; font-size: 12px;">🔄 刷新</button>
-                    </div>
-
-                    <div class="dsh-github-card" style="margin-bottom: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 12px 16px;">
-                      <div class="dsh-github-card-title" style="font-size: 11px; color: #888; text-transform: uppercase;">当前文件夹 GitHub 仓库</div>
-                      <div class="dsh-github-card-value" style="font-size: 15px; font-weight: 600; margin-top: 4px; display: flex; align-items: center; gap: 8px;">
-                        ${repo ? `<a href="${repo.url}" target="_blank" style="color: #58a6ff; text-decoration: none;">${repo.nameWithOwner}</a>` : '<span style="color: #f85149;">未关联 GitHub 远程仓库</span>'}
-                        ${repo ? `<span class="dsh-github-badge dsh-badge-green" style="font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(46,160,67,0.2); color: #3fb950;">${repo.defaultBranch}</span>` : ''}
-                      </div>
-                      ${auth?.loggedIn ? `<div style="font-size: 12px; color: #aaa; margin-top: 6px;">登录账号: <strong>${auth.user}</strong> (已通过 gh 授权)</div>` : ''}
-                      ${!repo ? '<div style="font-size: 12px; color: #888; margin-top: 6px;">提示：可在系统终端使用 <code>git remote add origin &lt;url&gt;</code> 绑定远程仓库。</div>' : ''}
-                    </div>
-
-                    <div class="dsh-github-quick-actions" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px;">
-                      <button id="dsh-act-open" class="dsh-github-action-btn" style="padding: 8px; font-size: 12px; border-radius: 6px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #fff; cursor: pointer;">🌐 浏览器打开</button>
-                      <button id="dsh-act-prs" class="dsh-github-action-btn" style="padding: 8px; font-size: 12px; border-radius: 6px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #fff; cursor: pointer;">🔀 查看 PRs</button>
-                      <button id="dsh-act-new-pr" class="dsh-github-action-btn" style="padding: 8px; font-size: 12px; border-radius: 6px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #fff; cursor: pointer;">🚀 新建 PR</button>
-                      <button id="dsh-act-new-issue" class="dsh-github-action-btn" style="padding: 8px; font-size: 12px; border-radius: 6px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #fff; cursor: pointer;">📝 新建 Issue</button>
-                    </div>
-
-                    <div class="dsh-github-section" style="margin-bottom: 16px;">
-                      <div class="dsh-github-section-header" style="margin-bottom: 8px;"><h3 style="font-size: 13px; margin: 0; color: #ddd;">🔀 Pull Requests (${prs.length})</h3></div>
-                      <div class="dsh-github-list" style="display: flex; flex-direction: column; gap: 6px;">
-                        ${prs.length === 0 ? '<div class="dsh-github-empty" style="padding: 12px; font-size: 12px; text-align: center; color: #777; border: 1px dashed rgba(255,255,255,0.1); border-radius: 6px;">当前无开放中的 PR</div>' : prs.map((p: any) => `
-                          <div class="dsh-github-item" style="padding: 8px 12px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 4px;">
-                            <a class="dsh-github-item-title" href="${p.url}" target="_blank" style="font-size: 13px; color: #fff; text-decoration: none; font-weight: 500;">#${p.number} ${p.title}</a>
-                            <div class="dsh-github-item-meta" style="font-size: 11px; color: #888; display: flex; gap: 8px;">
-                              <span>${p.headRefName} → ${p.baseRefName}</span>
-                              <span style="color: ${p.mergeable === 'CONFLICTING' ? '#f85149' : '#3fb950'};">${p.mergeable === 'CONFLICTING' ? '⚠️ 代码冲突' : '✓ 可合并'}</span>
-                            </div>
-                          </div>
-                        `).join('')}
-                      </div>
-                    </div>
-
-                    <div class="dsh-github-section">
-                      <div class="dsh-github-section-header" style="margin-bottom: 8px;"><h3 style="font-size: 13px; margin: 0; color: #ddd;">⚡ 最近 Actions 流水线 (${runs.length})</h3></div>
-                      <div class="dsh-github-list" style="display: flex; flex-direction: column; gap: 6px;">
-                        ${runs.length === 0 ? '<div class="dsh-github-empty" style="padding: 12px; font-size: 12px; text-align: center; color: #777; border: 1px dashed rgba(255,255,255,0.1); border-radius: 6px;">暂无运行记录</div>' : runs.map((r: any) => `
-                          <div class="dsh-github-item" style="padding: 8px 12px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 4px;">
-                            <a class="dsh-github-item-title" href="${r.url}" target="_blank" style="font-size: 13px; color: #fff; text-decoration: none; font-weight: 500;">${r.name}</a>
-                            <div class="dsh-github-item-meta" style="font-size: 11px; color: #888; display: flex; gap: 8px;">
-                              <span>分支: ${r.headBranch}</span>
-                              <span style="color: ${r.conclusion === 'success' ? '#3fb950' : (r.conclusion === 'failure' ? '#f85149' : '#d29922')};">${r.conclusion === 'success' ? '✓ 成功' : (r.conclusion === 'failure' ? '✕ 失败' : r.status)}</span>
-                            </div>
-                          </div>
-                        `).join('')}
-                      </div>
-                    </div>
-                  `;
-
-                  document.getElementById("dsh-drawer-close-btn")!.onclick = () => drawer.remove();
-                  document.getElementById("dsh-drawer-refresh-btn")!.onclick = () => btn.click();
-                  document.getElementById("dsh-act-open")!.onclick = () => { if (repo?.url) window.open(repo.url, '_blank'); else alert('未关联远程仓库'); };
-                  document.getElementById("dsh-act-prs")!.onclick = () => { if (repo?.url) window.open(`${repo.url}/pulls`, '_blank'); else alert('未关联远程仓库'); };
-                  document.getElementById("dsh-act-new-pr")!.onclick = async () => {
-                    var title = prompt("请输入要创建的 PR 标题:");
-                    if (title) {
-                      await fetch("/api/github/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create_pr", title }) });
-                      alert("PR 创建命令已提交");
-                      btn.click();
-                    }
-                  };
-                  document.getElementById("dsh-act-new-issue")!.onclick = async () => {
-                    var title = prompt("请输入 Issue 标题:");
-                    if (title) {
-                      await fetch("/api/github/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create_issue", title }) });
-                      alert("Issue 创建命令已提交");
-                      btn.click();
-                    }
-                  };
-                });
-            };
-
-            container.appendChild(btn);
-          }
-        }
-      };
-
-      // 快速且稳定地轮询检查右侧栏开合
-      setInterval(checkAndMount, 800);
-    }
-
-    var inject = ["slots"];
+    var inject = ["slots", "sidebarRightTabs", "sessions", "layout"];
 
     function apply(ctx: any) {
       if (ctx.effect) {
@@ -765,38 +545,61 @@ window.__ModuleLoader__.load({
         injectStyles();
       }
 
-      // 启动右侧栏引导卡片监听注入器
-      setupRightbarGuideObserver();
+      // A. 原生接入 DSH 右侧栏 Tab 体系 (sidebarRightTabs)
+      // 这会让 GitHub 仓库自动、原生出现在“开始”引导页上（排在浏览器下方，无任何错位代码！）
+      if (ctx.sidebarRightTabs && typeof ctx.sidebarRightTabs.register === "function") {
+        ctx.effect(() => {
+          return ctx.sidebarRightTabs.register({
+            id: "dsh-github-flow",
+            kind: "github",
+            priority: "plugin",
+            title: () => "GitHub 仓库",
+            guide: [
+              {
+                id: "workspace.github",
+                commandId: "workspace.github",
+                order: 40,
+                title: () => "GitHub 仓库",
+                description: () => "查看与操作当前工作区目录下的 GitHub 仓库",
+                icon: GithubArtwork,
+              },
+            ],
+          });
+        }, "github: sidebar right tab definition");
+      }
 
+      // B. 注册右侧栏的真实 Tab 内容与标题 (sidebar.right.pane.tab)
       if (ctx.slots) {
-        // 1. 左侧栏图标（全局工作台入口）
-        if (typeof ctx.slots.inject === "function") {
-          ctx.slots.inject("sidebar.panellist", () => {
-            return ctx.slots.register({
-              name: "sidebar.panellist",
-              id: "github",
-              order: 20,
-              label: "GitHub"
-            }, GithubSidebarIcon);
-          });
+        ctx.slots.inject("sidebar.right.pane.tab", () => {
+          return ctx.slots.register({
+            name: "sidebar.right.pane.tab",
+            key: "dsh-github-flow",
+          }, GithubRightbarBody);
+        });
 
-          ctx.slots.inject("main", () => {
-            return ctx.slots.register({
-              name: "main",
-              key: "github"
-            }, GithubWorkspacePanel);
-          });
+        ctx.slots.inject("sidebar.right.pane.tab.title", () => {
+          return ctx.slots.register({
+            name: "sidebar.right.pane.tab.title",
+            key: "dsh-github-flow",
+          }, GithubRightbarTitle);
+        });
 
-          // 2. 对话右上角工具栏（会话常驻右侧入口）
-          ctx.slots.inject("conversation.session.header.utilities", () => {
-            return ctx.slots.register({
-              name: "conversation.session.header.utilities",
-              id: "github-header-utility",
-              order: 10,
-              label: "GitHub"
-            }, GithubHeaderAction);
-          });
-        }
+        // C. 保留左侧栏导航与中央大面板（双向可达）
+        ctx.slots.inject("sidebar.panellist", () => {
+          return ctx.slots.register({
+            name: "sidebar.panellist",
+            id: "github",
+            order: 20,
+            label: "GitHub",
+          }, GithubSidebarIcon);
+        });
+
+        ctx.slots.inject("main", () => {
+          return ctx.slots.register({
+            name: "main",
+            key: "github",
+          }, GithubWorkspacePanel);
+        });
       }
     }
 
