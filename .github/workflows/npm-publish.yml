@@ -1,0 +1,67 @@
+name: Publish to npm
+
+on:
+  # 1. 标签触发（主流推荐）：当推送符合 v*.*.* 语义化版本标签时触发自动发布
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*'
+
+  # 2. 手动调度触发（兜底/调试）：允许在 GitHub 网页 Actions 界面点击按钮一键发包
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '仅预演测试（不真实发布到 npm，Dry Run）'
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # 用于 npm 产物 Provenance 签名
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - name: 配置 Node.js 与 npm 官方源
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile=false
+
+      - name: 执行全量构建与产物净化
+        run: pnpm run build
+
+      - name: 校验产物完整性
+        run: |
+          test -f lib/index.js || { echo "❌ 缺少 lib/index.js"; exit 1; }
+          test -f lib/client.js || { echo "❌ 缺少 lib/client.js"; exit 1; }
+          echo "✅ 核心产物文件校验通过"
+
+      - name: 预演发布 (Dry Run)
+        if: ${{ inputs.dry_run == true }}
+        run: npm publish --access public --dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: 正式发布至 npm 官方注册表
+        if: ${{ inputs.dry_run != true }}
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

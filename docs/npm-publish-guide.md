@@ -1,112 +1,98 @@
-# npm 发布与版本维护指南 (npm Publishing Guide)
+# npm 发布与 GitHub Actions 自动推送指南
 
-本文档面向维护者，详细记录了 `dsh-github-flow` 插件在 npm 公共注册表（[https://www.npmjs.com/package/dsh-github-flow](https://www.npmjs.com/package/dsh-github-flow)）上的发布流程、鉴权配置、版本更新与故障排查。
+本文档详细记录 `dsh-github-flow` 插件在 npm 公共注册表（[https://www.npmjs.com/package/dsh-github-flow](https://www.npmjs.com/package/dsh-github-flow)）上的发布流程、鉴权策略、版本规范，以及基于 **GitHub Actions 实现全自动构建、测试与推送 npm** 的具体触发规则与安全机制。
 
 ---
 
-## 1. 快速发布三部曲
+## 1. GitHub Actions 自动化推送架构与触发规则分析
 
-在项目根目录下，执行以下标准三步即可完成新版本发布：
+本项目已在 [`.github/workflows/npm-publish.yml`](../.github/workflows/npm-publish.yml) 中配置了工业级的自动化 CI/CD 发包流水线。
+
+### 1.1 触发规则深度剖析 (Trigger Rules)
+
+流水线设计了 **两种触发模式**，兼顾了版本规范性与调试灵活性：
+
+| 触发模式 | 触发条件 | 语法定义 | 适用场景与安全保障 |
+| :--- | :--- | :--- | :--- |
+| **模式 A：Git Tag 语义化标签触发（推荐生产）** | 推送符合 `v*` 规则的版本标签 | `on.push.tags: ['v*.*.*', 'v*']` | **生产标准**：日常分支开发、合并 PR **不会**触发发包，彻底避免因版本号未变导致 npm 403 冲突；仅当打上发布标签时精准触发。 |
+| **模式 B：手动调度触发（Workflow Dispatch）** | GitHub 网页 Actions 面板手动点击 | `on.workflow_dispatch` | **排错与测试**：支持勾选 `dry_run`（预演模式），在不实际发布到 npm 的情况下完整跑通 build 与打包流水线。 |
+
+#### 为什么不采用「代码 push 到 main 分支就自动发包」？
+1. **npm 版本的不可篡改性**：npm 绝对禁止覆盖已发布的相同版本号。若每次 git push main 均发包，一旦开发者忘记递增 `package.json` 中的 `version`，CI 必定直接报错失败；
+2. **发布意图明确**：通过 `git tag v0.1.1` 将代码快照、GitHub Release 与 npm 注册表版本三者完全对齐（1:1:1 映射），符合开源软件主流最佳实践。
+
+---
+
+### 1.2 GitHub 仓库密钥配置 (One-Time Setup)
+
+在自动化工作流执行前，只需在 GitHub 仓库中配置一次 npm Token：
+
+1. **获取 npm Granular Access Token**：
+   - 登录 npm 访问：[https://www.npmjs.com/settings/~/tokens/create](https://www.npmjs.com/settings/~/tokens/create)；
+   - 权限选择：**Packages and scopes** 勾选 `Read and write`；
+   - **关键勾选**：勾选 **`Bypass two-factor authentication (2FA) for publishing`**；
+   - 复制生成的 `npm_xxxxxxxxxxxx` 密匙。
+2. **存入 GitHub Secrets**：
+   - 打开 GitHub 仓库页面 ➔ 点击 **Settings** ➔ **Secrets and variables** ➔ **Actions**；
+   - 点击 **New repository secret**：
+     - **Name**：`NPM_TOKEN`
+     - **Secret**：粘贴你刚刚复制的 `npm_` Token；
+   - 点击 **Add secret** 保存。
+
+---
+
+### 1.3 自动发布操作三步走 (发布新版本日常流程)
+
+配置好上述 Secret 后，日常发布新版本只需在本地终端运行：
 
 ```bash
-# 1. 更新版本号（遵循语义化版本 Semantic Versioning）
-# 例如发布补丁版本：0.1.0 -> 0.1.1
-npm version patch
+# 第一步：递增版本号（自动修改 package.json 并生成对应 git commit 和 git tag）
+npm version patch   # 修补 Bug: 0.1.0 -> 0.1.1
+# 或者 npm version minor # 新增特性: 0.1.0 -> 0.2.0
 
-# 2. 全量编译与客户端产物净化
+# 第二步：将代码与标签推送到 GitHub
+git push origin master --tags
+```
+
+**推送完成后**：
+- GitHub Actions 会在 5 秒内自动感知到 `v0.1.1` 标签被创建；
+- 启动 Ubuntu runner，全自动执行：
+  `检出代码 ➔ 安装 pnpm ➔ 安装依赖 ➔ pnpm run build (编译 + 清理) ➔ 产物完整性校验 ➔ 带 Provenance 签名发布到 npm`；
+- 约 1 分钟后，npm 官网版本即可自动更新！
+
+---
+
+## 2. 安全机制与 Provenance 产物溯源
+
+流水线中配置了 `permissions.id-token: write` 与 `--provenance` 参数：
+- **软件供应链安全**：通过 GitHub OIDC 向 npm 提供加密的签名凭据；
+- **官方认证徽章**：发布到 npm 后的包页面将自动挂上绿色的 **`Verified`** 徽章，向用户证明此版本由 GitHub Actions 在干净沙箱中从本开源仓库公开构建产出，杜绝后门与供应链投毒。
+
+---
+
+## 3. 本地手动备用发布流程 (Local Fallback)
+
+若遇到 GitHub Actions 宕机或需要紧急本地直发，可按以下流程：
+
+```bash
+# 1. 编译
 pnpm run build
 
-# 3. 推送发布至 npm
+# 2. 本地绑定 Token
+npm config set //registry.npmjs.org/:_authToken=npm_你的Token
+
+# 3. 本地直接发布
 npm publish --access public
 ```
 
-由于 `package.json` 中配置了 `"prepare": "pnpm run build"` 和 `"publishConfig"`，发布过程会自动触发代码校验和编译，并强制发布至 npm 官方源。
-
 ---
 
-## 2. 鉴权与 2FA 安全策略配置
+## 4. 常见问题排查 (Troubleshooting)
 
-npm 官方强制要求所有公开发布包的账号必须具备 **2FA 双重身份验证** 或配置有 **Bypass 2FA 权限的 Granular Access Token**。
+### Q1: GitHub Actions 报错 `npm error code E403: Forbidden - Two-factor authentication...`
+- **原因**：GitHub Secrets 中的 `NPM_TOKEN` 未勾选 `Bypass two-factor authentication (2FA) for publishing`。
+- **解法**：在 npm 重新生成勾选了 Bypass 2FA 的 Granular Access Token，并更新 GitHub 仓库里的 `NPM_TOKEN` Secret。
 
-### 方案 A：通过 Granular Access Token 实现免密秒发（推荐日常维护）
-
-1. **生成专用发布 Token**：
-   - 访问 [npm Token 管理页](https://www.npmjs.com/settings/~/tokens/create)；
-   - **Token Name**：填写便于识别的名字，如 `dsh-github-flow-publish`；
-   - **Expiration**：选择有效期（如 90 天）；
-   - **Packages and scopes**：勾选 `Read and write` 并指定 `dsh-github-flow` 或所有包；
-   - **关键选项**：勾选 **`Bypass two-factor authentication (2FA) for publishing`**；
-   - 点击 **Generate Token** 并复制生成的字符串（形如 `npm_xxxxxxxxxxxx`）。
-
-2. **本地环境绑定**：
-   在本地终端执行一次配置绑定（或写入 `~/.npmrc`）：
-   ```bash
-   npm config set //registry.npmjs.org/:_authToken=npm_你的Token字符串
-   ```
-3. **后续发布**：
-   配置完成后，后续运行 `npm publish` 无需任何二次验证弹窗或手机动态码，直接自动秒发。
-
----
-
-### 方案 B：使用 Security Key (WebAuthn / Windows Hello)
-
-如果采用账号交互式登录：
-1. 在 [npm Account 设置页](https://www.npmjs.com/settings/~/account) 的 **Two-Factor Authentication** 区域开启 2FA；
-2. 选择 **Security Key** 方式，直接绑定电脑的 **Windows Hello 指纹 / 开机 PIN 码**；
-3. 发布时终端会提示确认，在系统弹窗中验证 PIN 码即可完成签名发布。
-
----
-
-## 3. 常见问题排查 (Troubleshooting)
-
-### Q1: 提示 `npm error code E403: Forbidden - Two-factor authentication...`
-- **原因**：账号未开启 2FA，或使用的 Token 未勾选 `Bypass two-factor authentication (2FA) for publishing`。
-- **解法**：参考上述第 2 节方案 A，重新生成带有 Bypass 2FA 的 Granular Access Token。
-
-### Q2: 提示 `npm notice Log in on https://registry.npmmirror.com/`
-- **原因**：本地全局 npm registry 指向了国内只读镜像（如淘宝源），镜像源不支持发布。
-- **解法**：`package.json` 内已配置 `publishConfig.registry = "https://registry.npmjs.org/"`。如果仍有异常，执行命令显式指定：
-  ```bash
-  npm login --registry=https://registry.npmjs.org/
-  npm publish --registry=https://registry.npmjs.org/
-  ```
-
-### Q3: 为什么版本号必须递增？
-- npm 注册表出于安全性考虑，**严禁覆盖已发布的相同版本号**。每次代码修改发布前，必须递增版本号：
-  - 修补 Bug：`npm version patch` (0.1.0 -> 0.1.1)
-  - 新增特性：`npm version minor` (0.1.0 -> 0.2.0)
-  - 重大重构：`npm version major` (0.1.0 -> 1.0.0)
-
----
-
-## 4. 自动化 CI/CD 发布（可选 GitHub Actions）
-
-若需要实现推送 Git Tag 自动触发 npm 发包，可在仓库创建 `.github/workflows/publish.yml`：
-
-```yaml
-name: Publish to npm
-
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          registry-url: 'https://registry.npmjs.org'
-      - run: pnpm install
-      - run: pnpm run build
-      - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-```
-*(在 GitHub 仓库 Settings -> Secrets 中添加 `NPM_TOKEN` 即可)*
+### Q2: 报错 `403 You cannot publish over the previously published versions`
+- **原因**：当前打 tag 的代码版本在 `package.json` 中的 `version` 已经被发布过了。
+- **解法**：本地执行 `npm version patch` 递增版本号后再重新打 tag 推送。

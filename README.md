@@ -13,14 +13,12 @@
 </p>
 
 <p align="center">
-  <b><a href="#-简体中文">简体中文</a></b> | <b><a href="#-english">English</a></b>
+  <b>简体中文</b> | <b><a href="./README.en.md">English</a></b>
 </p>
 
 ---
 
-## 🇨🇳 简体中文
-
-### 🌟 核心特性
+## 🌟 核心特性
 
 1. **零鉴权配置，开箱即用**：
    - 自动复用宿主机已通过 `gh auth login` 认证的登录凭据（OAuth Token / 系统 Keyring），无需在 DSH 中存储任何明文 GitHub PAT。
@@ -39,28 +37,28 @@
 
 ---
 
-### 🚀 快速安装
+## 🚀 快速安装
 
-#### 方式 1：通过 npm 安装（推荐）
+### 方式 1：通过 npm 安装（推荐）
 在 DSH 终端执行：
 ```bash
-# 安装到当前桌面端 Profile
+# 安装到桌面端 Profile
 dsh plugin --profile desktop add dsh-github-flow
 
 # 或者安装到 Web Profile
 dsh plugin --profile web add dsh-github-flow
 ```
 
-#### 方式 2：通过 DSH 插件市场一键安装
+### 方式 2：通过 DSH 插件市场一键安装
 在 DSH 客户端界面打开 **「插件市场 (Market)」**，搜索 `dsh-github-flow` 并点击“安装”。
 
-#### 方式 3：直接让 AI Agent 安装（对话式安装）
+### 方式 3：直接让 AI Agent 安装（对话式安装）
 在 DSH 聊天框中对 Agent 直接说：
 > *“帮我安装一下 `dsh-github-flow` 插件。”*
 
 ---
 
-### 🛠️ Agent 工具集速查
+## 🛠️ Agent 工具集速查
 
 | 工具名称 | 核心操作 (`action`) | 典型场景 |
 |---|---|---|
@@ -72,7 +70,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ---
 
-### 💬 人类 Slash 命令
+## 💬 人类 Slash 命令
 
 在 DSH 对话输入框直接使用：
 - `/gh status`：检查当前 GitHub CLI 账号登录状态、授权作用域与当前本地目录关联仓库；
@@ -80,7 +78,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ---
 
-### ⚙️ 插件配置项 (Config)
+## ⚙️ 插件配置项 (Config)
 
 在 `cordis.patch.yml` 或 Profile 配置中自由覆盖如下字段：
 
@@ -98,7 +96,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ---
 
-### 🔌 生态服务扩展 (Cordis Service)
+## 🔌 生态服务扩展 (Cordis Service)
 
 其他 DSH 插件可通过依赖注入复用本插件的能力：
 
@@ -116,85 +114,13 @@ export function apply(ctx: Context) {
 
 ---
 
-## 🇺🇸 English
+## 📚 开发与维护文档
 
-### 🌟 Key Features
-
-1. **Zero-Configuration Authentication**:
-   - Seamlessly reuses existing host credentials from `gh auth login` (OAuth tokens / system Keyrings) without exposing plain-text Personal Access Tokens (PATs) in DSH.
-2. **Deep Workspace Affinity (CWD Binding)**:
-   - Automatically scopes commands to the active session workspace. `gh` resolves the remote repository and current Git branch automatically, saving model tokens from redundant `owner/repo` arguments.
-3. **High Signal-to-Noise Ratio & Token Budget Protection**:
-   - Consolidates over 70+ scattered micro-tools into **5 focused domain tools**.
-   - Queries use `--json <fields>` projections by default; long diffs and failed CI logs are safely truncated (default 24KB) to protect the model's context window.
-4. **Dual Native Web UI Views**:
-   - **Global Cockpit** (`sidebar.panellist`, Order 20): Account-wide repository overview, local workspace matrix, and pending personal PRs/issues.
-   - **Right Sidebar Panel** (`sidebarRightTabs`, Order 40): Shows current repository status, PR list with CI check pills, and quick action buttons inside the session.
-5. **Standard Cordis Microkernel Compliance**:
-   - Exposes native `GitHubService` (`ctx.github`) for ecosystem extensibility;
-   - Strongly typed runtime validation via Schemastery (`Config`);
-   - Domain event broadcasting (`github/pr:create`, `github/issue:create`).
+- [npm 发布与版本维护指南](./docs/npm-publish-guide.md)
+- [架构设计与技术规范](./docs/architecture.md)
 
 ---
 
-### 🚀 Installation
+## 📄 开源协议 (License)
 
-#### Option 1: Via npm (Recommended)
-Run in your DSH terminal:
-```bash
-# Install to desktop profile
-dsh plugin --profile desktop add dsh-github-flow
-
-# Or install to web profile
-dsh plugin --profile web add dsh-github-flow
-```
-
-#### Option 2: Via DSH In-App Marketplace
-Open the **Marketplace** tab in DSH, search for `dsh-github-flow`, and click **Install**.
-
-#### Option 3: Conversational Install via AI Agent
-Simply ask your DSH Agent in chat:
-> *"Please install the `dsh-github-flow` plugin for me."*
-
----
-
-### 🛠️ Agent Tools Reference
-
-| Tool Name | Actions | Typical Use Cases |
-|---|---|---|
-| `github_pr` | `list`, `view`, `create`, `diff`, `checks`, `review`, `merge` | Inspect PR details, verify CI checks, conduct code reviews, merge pull requests |
-| `github_issue` | `list`, `view`, `create`, `comment`, `close`, `reopen` | Search and view issues, create issues, add comments |
-| `github_run` | `list`, `view`, `log_failed`, `rerun`, `cancel` | Monitor Actions workflows; `log_failed` extracts failure logs for automatic fixes |
-| `github_repo` | `view`, `search_code`, `search_repos` | Query repository metadata, search cross-repo code |
-| `github_api` | Any GitHub REST / GraphQL endpoint | Universal escape hatch for custom queries (supports `--jq`) |
-
----
-
-### ⚙️ Configuration
-
-Customize options in your `cordis.patch.yml` or profile:
-
-```yaml
-- insert:
-    - id: github-flow
-      name: dsh-github-flow
-      config:
-        ghPath: 'gh'              # Custom path to gh binary
-        defaultTimeoutMs: 30000   # Timeout in milliseconds
-        maxOutputChars: 24000     # Maximum characters per output (Token guard)
-        cacheTtlMs: 15000         # Web overview cache time
-        defaultListLimit: 20      # Default page size
-```
-
----
-
-## 📚 Documentation
-
-- [npm Publishing & Maintenance Guide](./docs/npm-publish-guide.md)
-- [Architecture & Design Specifications](./docs/architecture.md)
-
----
-
-## 📄 License
-
-This project is licensed under the [MIT License](./LICENSE).
+本项目基于 [MIT License](./LICENSE) 协议开源。
