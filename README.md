@@ -1,4 +1,4 @@
-# 🐙 DSH GitHub Flow (`dsh-github-flow`)
+# DSH GitHub Flow (`dsh-github-flow`)
 
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-github-flow"><img src="https://img.shields.io/npm/v/dsh-github-flow.svg?style=flat-square&color=0969da" alt="npm version" /></a>

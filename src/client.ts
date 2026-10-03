@@ -714,7 +714,7 @@ window.__ModuleLoader__.load({
                   "div",
                   { style: { fontSize: "12px", marginTop: "4px", display: "flex", gap: "8px", alignItems: "center" } },
                   ws.repo
-                    ? h("span", { style: { color: "#58a6ff" } }, `🐙 关联远程: ${ws.repo.nameWithOwner} (${ws.repo.defaultBranch})`)
+                    ? h("span", { style: { color: "#58a6ff", display: "inline-flex", alignItems: "center", gap: "5px" } }, renderOctocat(13, "#58a6ff"), `关联远程: ${ws.repo.nameWithOwner} (${ws.repo.defaultBranch})`)
                     : h("span", { style: { color: "#888" } }, ws.hasGit ? "本地有 Git，未关联 GitHub 远程" : "本地无 Git 仓库"),
                   ws.repo ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "已关联") : null
                 )
