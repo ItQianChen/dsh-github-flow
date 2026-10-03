@@ -14,9 +14,7 @@
     "lib",
     "icon.svg",
     "cordis.patch.yml",
-    "README.md",
-    "PLAN.md",
-    "REPAIR_PLAN.md"
+    "README.md"
   ],
   "scripts": {
     "build": "tsc && node scripts/build.mjs",
