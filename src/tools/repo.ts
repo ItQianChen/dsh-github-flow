@@ -1,7 +1,8 @@
 import type { GhExecutor } from '../executor.js';
+import { defineSafeTool } from './define.js';
 
 export function createRepoTool(executor: GhExecutor) {
-  return {
+  return defineSafeTool({
     name: 'github_repo',
     description: '查看 GitHub 仓库元数据与跨仓库检索代码、Issue。默认查询当前工作区关联的仓库。',
     parameters: {
@@ -73,5 +74,5 @@ export function createRepoTool(executor: GhExecutor) {
           throw new Error(`未知的 Repo 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

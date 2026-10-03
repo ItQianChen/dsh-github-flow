@@ -1,2 +1,3 @@
 import type { GhExecutor } from '../executor.js';
-export declare function registerApiRoutes(webServerService: any, executor: GhExecutor, workspaceRegistry?: any): void;
+import type { PluginConfig } from '../types.js';
+export declare function registerApiRoutes(ctx: any, executor: GhExecutor, config?: PluginConfig): void;

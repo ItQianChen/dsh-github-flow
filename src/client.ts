@@ -384,8 +384,11 @@ window.__ModuleLoader__.load({
           {
             className: "dsh-github-action-btn",
             onClick: () => {
-              if (repo?.url) runAction("open_browser", { url: repo.url });
-              else alert("当前工作区尚未关联 GitHub 仓库");
+              if (repo?.url) {
+                window.open(repo.url, "_blank", "noopener,noreferrer");
+              } else {
+                alert("当前工作区尚未关联 GitHub 仓库");
+              }
             },
           },
           "🌐 浏览器打开"
@@ -395,8 +398,11 @@ window.__ModuleLoader__.load({
           {
             className: "dsh-github-action-btn",
             onClick: () => {
-              if (repo?.url) runAction("open_browser", { url: `${repo.url}/pulls` });
-              else alert("当前工作区尚未关联 GitHub 仓库");
+              if (repo?.url) {
+                window.open(`${repo.url}/pulls`, "_blank", "noopener,noreferrer");
+              } else {
+                alert("当前工作区尚未关联 GitHub 仓库");
+              }
             },
           },
           "🔀 查看所有 PRs"

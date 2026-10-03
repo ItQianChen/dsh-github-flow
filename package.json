@@ -15,10 +15,12 @@
     "icon.svg",
     "cordis.patch.yml",
     "README.md",
-    "PLAN.md"
+    "PLAN.md",
+    "REPAIR_PLAN.md"
   ],
   "scripts": {
-    "build": "tsc && node scripts/build.mjs"
+    "build": "tsc && node scripts/build.mjs",
+    "prepare": "pnpm run build"
   },
   "dsh": {
     "bundle": {
@@ -38,6 +40,13 @@
   ],
   "author": "DSH Contributor",
   "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
   "devDependencies": {
     "@types/node": "^26.6.3",
     "typescript": "^7.0.2"

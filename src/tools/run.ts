@@ -1,7 +1,8 @@
 import type { GhExecutor } from '../executor.js';
+import { defineSafeTool } from './define.js';
 
 export function createRunTool(executor: GhExecutor) {
-  return {
+  return defineSafeTool({
     name: 'github_run',
     description: '排查和诊断 GitHub Actions 工作流构建状态。特别优化了获取失败步骤日志能力（log_failed），专供 Agent 快速定位 CI 报错。',
     parameters: {
@@ -87,5 +88,5 @@ export function createRunTool(executor: GhExecutor) {
           throw new Error(`未知的 Run 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

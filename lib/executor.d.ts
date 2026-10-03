@@ -1,7 +1,10 @@
-import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig } from './types.js';
 export declare class GhExecutor {
-    private defaultTimeoutMs;
-    constructor(defaultTimeoutMs?: number);
+    ghPath: string;
+    defaultTimeoutMs: number;
+    maxOutputChars: number;
+    constructor(config?: PluginConfig);
+    updateConfig(config?: PluginConfig): void;
     /**
      * 安全执行 gh 命令
      * 采用 execFile 参数数组隔离，彻底杜绝 Shell 字符串拼接注入漏洞

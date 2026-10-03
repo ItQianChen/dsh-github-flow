@@ -1,6 +1,18 @@
 /**
  * DSH GitHub 插件核心数据类型定义
  */
+export interface PluginConfig {
+    /** GitHub CLI (gh) 可执行文件路径，默认 'gh' */
+    ghPath?: string;
+    /** 进程超时限制（毫秒），默认 30,000ms */
+    defaultTimeoutMs?: number;
+    /** 单次安全输出字符数上限（防止 Token 溢出），默认 24,000 */
+    maxOutputChars?: number;
+    /** Web API 概览数据缓存时长（毫秒），默认 15,000ms */
+    cacheTtlMs?: number;
+    /** 查询列表默认限制条数，默认 20 */
+    defaultListLimit?: number;
+}
 export interface GhExecutionOptions {
     /** 命令执行的工作目录，优先使用当前 Agent 会话所在的 Workspace 物理路径 */
     cwd?: string;
@@ -139,4 +151,17 @@ export interface GlobalOverviewData {
     }>;
     lastUpdated: string;
     error?: string;
+}
+declare module '@deepseek-ai/cordis' {
+    interface Events {
+        'github/pr:create'(repo: string, pr: {
+            title: string;
+            url: string;
+        }): void;
+        'github/pr:merge'(repo: string, prNumber: number): void;
+        'github/issue:create'(repo: string, issue: {
+            title: string;
+            url: string;
+        }): void;
+    }
 }

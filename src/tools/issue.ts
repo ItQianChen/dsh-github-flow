@@ -1,7 +1,8 @@
 import type { GhExecutor } from '../executor.js';
+import { defineSafeTool } from './define.js';
 
 export function createIssueTool(executor: GhExecutor) {
-  return {
+  return defineSafeTool({
     name: 'github_issue',
     description: '管理 GitHub Issues。支持查看 Issue 列表、详情、创建新 Issue、追加评论以及关闭 Issue。',
     parameters: {
@@ -109,5 +110,5 @@ export function createIssueTool(executor: GhExecutor) {
           throw new Error(`未知的 Issue 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

@@ -1,3 +1,7 @@
 - insert:
     - id: github-flow
       name: dsh-github-flow
+      config:
+        defaultTimeoutMs: 30000
+        maxOutputChars: 24000
+        cacheTtlMs: 15000
