@@ -34,14 +34,14 @@ export function registerGhCommand(ctx: any, executor: GhExecutor) {
           }
 
           return {
-            kind: 'markdown',
+            kind: 'success',
             text: md,
           };
         }
 
         if (trimmed === 'help') {
           return {
-            kind: 'markdown',
+            kind: 'success',
             text: `### DSH GitHub Flow 帮助\n\n- \`/gh status\`: 检查当前 GitHub CLI 账号与仓库连接\n- \`/gh help\`: 显示此帮助信息\n\n可以在对话中直接让 Agent 操作 GitHub，如：\n- *"查看当前仓库有哪些开放的 PR"* \n- *"查看最近一次 CI 失败的原因"* \n- *"帮我给当前分支创建 PR"*`,
           };
         }

@@ -37,10 +37,10 @@
 
 ---
 
-## 🚀 Quick Installation
+## 🚀 Installation
 
-### Option 1: Via npm (Recommended)
-Run in your DSH terminal:
+Run in your DSH terminal to install directly from npm:
+
 ```bash
 # Install to desktop profile
 dsh plugin --profile desktop add dsh-github-flow
@@ -48,13 +48,6 @@ dsh plugin --profile desktop add dsh-github-flow
 # Or install to web profile
 dsh plugin --profile web add dsh-github-flow
 ```
-
-### Option 2: Via DSH In-App Marketplace
-Open the **Marketplace** tab in DSH, search for `dsh-github-flow`, and click **Install**.
-
-### Option 3: Conversational Install via AI Agent
-Simply ask your DSH Agent in chat:
-> *"Please install the `dsh-github-flow` plugin for me."*
 
 ---
 

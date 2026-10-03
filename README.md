@@ -37,10 +37,10 @@
 
 ---
 
-## 🚀 快速安装
+## 🚀 安装指南
 
-### 方式 1：通过 npm 安装（推荐）
-在 DSH 终端执行：
+在 DSH 终端执行以下命令直接从 npm 安装：
+
 ```bash
 # 安装到桌面端 Profile
 dsh plugin --profile desktop add dsh-github-flow
@@ -48,13 +48,6 @@ dsh plugin --profile desktop add dsh-github-flow
 # 或者安装到 Web Profile
 dsh plugin --profile web add dsh-github-flow
 ```
-
-### 方式 2：通过 DSH 插件市场一键安装
-在 DSH 客户端界面打开 **「插件市场 (Market)」**，搜索 `dsh-github-flow` 并点击“安装”。
-
-### 方式 3：直接让 AI Agent 安装（对话式安装）
-在 DSH 聊天框中对 Agent 直接说：
-> *“帮我安装一下 `dsh-github-flow` 插件。”*
 
 ---
 
