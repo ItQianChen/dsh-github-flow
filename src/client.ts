@@ -268,6 +268,46 @@ window.__ModuleLoader__.load({
       return () => style.remove();
     }
 
+    // 官方高清 Octocat SVG 矢量组件
+    function renderOctocat(size = 18, color = "currentColor") {
+      return React.createElement(
+        "svg",
+        {
+          viewBox: "0 0 16 16",
+          width: size,
+          height: size,
+          fill: color,
+          style: { flexShrink: 0, display: "inline-block", verticalAlign: "middle" }
+        },
+        React.createElement("path", {
+          fillRule: "evenodd",
+          clipRule: "evenodd",
+          d: "M8 0C3.58 0 0 3.58 0 8C0 11.54 2.29 14.53 5.47 15.59C5.87 15.66 6.02 15.42 6.02 15.21C6.02 15.02 6.01 14.39 6.01 13.72C4 14.09 3.48 13.23 3.32 12.78C3.23 12.55 2.84 11.84 2.5 11.65C2.22 11.5 1.82 11.13 2.49 11.12C3.12 11.11 3.57 11.7 3.72 11.94C4.44 13.15 5.59 12.81 6.05 12.6C6.12 12.08 6.33 11.72 6.56 11.52C4.78 11.32 2.92 10.63 2.92 7.58C2.92 6.71 3.23 5.99 3.74 5.43C3.66 5.23 3.38 4.41 3.82 3.31C3.82 3.31 4.49 3.1 6.02 4.13C6.66 3.95 7.34 3.86 8.02 3.86C8.7 3.86 9.38 3.95 10.02 4.13C11.55 3.09 12.22 3.31 12.22 3.31C12.66 4.41 12.38 5.23 12.3 5.43C12.81 5.99 13.12 6.7 13.12 7.58C13.12 10.65 11.25 11.32 9.47 11.52C9.76 11.77 10.01 12.25 10.01 13C10.01 14.08 10 14.95 10 15.21C10 15.42 10.15 15.67 10.55 15.59C13.71 14.53 16 11.53 16 8C16 3.58 12.42 0 8 0Z"
+        })
+      );
+    }
+
+    // 现代暗黑科技风勋章图标（深邃蓝紫微渐变 + 白描）
+    function renderOctocatBadge(size = 32) {
+      return React.createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: size + "px",
+            height: size + "px",
+            borderRadius: Math.round(size * 0.25) + "px",
+            background: "linear-gradient(135deg, #2ea043 0%, #1f6feb 60%, #8957e5 100%)",
+            boxShadow: "0 2px 8px rgba(31, 111, 235, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25)",
+            flexShrink: 0
+          }
+        },
+        renderOctocat(Math.round(size * 0.58), "#ffffff")
+      );
+    }
+
     // 渲染 GitHub 仓库信息与操作视图的核心函数
     function renderGithubRepoView(h: any, data: any, loading: boolean, error: string | null, onRefresh: () => void, isRightbar: boolean = false) {
       var auth = data ? data.auth : null;
@@ -281,7 +321,7 @@ window.__ModuleLoader__.load({
         h(
           "div",
           { className: "dsh-github-title" },
-          h("span", { style: { fontSize: isRightbar ? "18px" : "22px" } }, "🐙"),
+          renderOctocatBadge(isRightbar ? 26 : 30),
           h("h2", null, isRightbar ? "GitHub 仓库" : "GitHub 工作台")
         ),
         h(
@@ -507,38 +547,27 @@ window.__ModuleLoader__.load({
     // 2. 右侧栏 Tab 标题组件
     function GithubRightbarTitle() {
       var h = React.createElement;
-      return h("span", { style: { display: "flex", alignItems: "center", gap: "6px" } }, "🐙 GitHub");
+      return h(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: "6px" } },
+        renderOctocat(15, "#58a6ff"),
+        h("span", null, "GitHub")
+      );
     }
 
     // 3. 右侧栏“开始”引导页的大图标 (Artwork)
     function GithubArtwork() {
-      var h = React.createElement;
-      return h(
-        "div",
-        {
-          style: {
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "32px",
-            height: "32px",
-            borderRadius: "8px",
-            background: "rgba(88, 166, 255, 0.15)",
-            color: "#58a6ff",
-            fontSize: "18px",
-          },
-        },
-        "🐙"
-      );
+      return renderOctocatBadge(32);
     }
 
     // 4. 左侧栏全局入口与中央大面板
     function GithubSidebarIcon(props: any) {
+      const active = Boolean(props && props.active);
       return React.createElement(
         "div",
         {
-          className: "dsh-github-icon",
-          title: "GitHub 工作台",
+          className: "dsh-github-icon" + (active ? " active" : ""),
+          title: "GitHub 全景驾驶舱",
           style: {
             display: "flex",
             alignItems: "center",
@@ -546,15 +575,26 @@ window.__ModuleLoader__.load({
             width: "100%",
             height: "100%",
             cursor: "pointer",
-            color: props && props.active ? "var(--dsw-alias-label-primary, #ffffff)" : "var(--dsw-alias-label-secondary, #8c8c8c)"
+            transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)"
           }
         },
         React.createElement(
-          "svg",
-          { viewBox: "0 0 16 16", width: 18, height: 18, fill: "currentColor" },
-          React.createElement("path", {
-            d: "M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"
-          })
+          "div",
+          {
+            style: {
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "28px",
+              height: "28px",
+              borderRadius: "7px",
+              background: active ? "linear-gradient(135deg, rgba(46,160,67,0.3) 0%, rgba(31,111,235,0.45) 100%)" : "transparent",
+              color: active ? "#ffffff" : "var(--dsw-alias-label-secondary, #9ca3af)",
+              boxShadow: active ? "0 0 12px rgba(31, 111, 235, 0.4)" : "none",
+              border: active ? "1px solid rgba(88, 166, 255, 0.45)" : "1px solid transparent"
+            }
+          },
+          renderOctocat(18, active ? "#ffffff" : "currentColor")
         )
       );
     }
@@ -591,7 +631,7 @@ window.__ModuleLoader__.load({
         h(
           "div",
           { className: "dsh-github-title" },
-          h("span", { style: { fontSize: "22px" } }, "🐙"),
+          renderOctocatBadge(32),
           h("h2", null, "GitHub 全景驾驶舱")
         ),
         h(

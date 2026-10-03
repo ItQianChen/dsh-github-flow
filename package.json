@@ -1,6 +1,7 @@
 {
   "name": "dsh-github-flow",
   "version": "0.1.0",
+  "icon": "icon.svg",
   "description": "GitHub Flow: Native GitHub CLI (gh) integration for DeepSeek Harness — Agent Tools, Slash Commands, and Web UI Workspace",
   "type": "module",
   "main": "./lib/index.js",
@@ -11,6 +12,7 @@
   },
   "files": [
     "lib",
+    "icon.svg",
     "cordis.patch.yml",
     "README.md",
     "PLAN.md"
