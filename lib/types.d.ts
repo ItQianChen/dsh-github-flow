@@ -97,3 +97,46 @@ export interface GitHubOverviewData {
     lastUpdated: string;
     error?: string;
 }
+export interface UserRepoItem {
+    name: string;
+    nameWithOwner: string;
+    description?: string;
+    defaultBranch: string;
+    isPrivate: boolean;
+    stargazerCount?: number;
+    updatedAt: string;
+    url: string;
+}
+export interface WorkspaceMatrixItem {
+    id: string;
+    title: string;
+    path: string;
+    hasGit: boolean;
+    repo?: RepoMetadata;
+    sessionCount: number;
+}
+export interface GlobalOverviewData {
+    auth: AuthStatus;
+    userRepos: UserRepoItem[];
+    workspaceMatrix: WorkspaceMatrixItem[];
+    myPrs: Array<{
+        number: number;
+        title: string;
+        repository: {
+            nameWithOwner: string;
+        };
+        url: string;
+        updatedAt: string;
+    }>;
+    myIssues: Array<{
+        number: number;
+        title: string;
+        repository: {
+            nameWithOwner: string;
+        };
+        url: string;
+        updatedAt: string;
+    }>;
+    lastUpdated: string;
+    error?: string;
+}

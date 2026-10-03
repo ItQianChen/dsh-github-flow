@@ -1,5 +1,5 @@
 import type { GhExecutor } from '../executor.js';
-import type { GitHubOverviewData, PrItem, IssueItem, WorkflowRunItem } from '../types.js';
+import type { GitHubOverviewData, GlobalOverviewData, UserRepoItem, WorkspaceMatrixItem, RepoMetadata, PrItem, IssueItem, WorkflowRunItem } from '../types.js';
 
 const cacheMap = new Map<string, { data: GitHubOverviewData; time: number }>();
 const CACHE_TTL_MS = 15_000;
@@ -190,6 +190,110 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
           sendJson(res, 500, { ok: false, error: err.message || '操作执行失败' });
         }
       });
+    },
+  });
+
+  // 4. 获取全局视角的驾驶舱概览数据 (不绑定单一项目)
+  webServerService.register({
+    kind: 'exact',
+    path: '/api/github/global-overview',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, message: '仅支持 GET 请求' });
+        return;
+      }
+
+      try {
+        const auth = await executor.checkAuth();
+        let userRepos: UserRepoItem[] = [];
+        let myPrs: any[] = [];
+        let myIssues: any[] = [];
+        let workspaceMatrix: WorkspaceMatrixItem[] = [];
+
+        if (auth.loggedIn) {
+          // 并发执行：1. 账号下仓库列表 2. 个人 PRs 3. 个人 Issues
+          const [reposRes, prsRes, issuesRes] = await Promise.all([
+            executor.run<any[]>(
+              ['repo', 'list', '--limit', '20', '--json', 'name,nameWithOwner,description,defaultBranchRef,isPrivate,stargazerCount,updatedAt,url'],
+              { timeoutMs: 12_000 }
+            ),
+            executor.run<any[]>(
+              ['search', 'prs', '--author=@me', '--state=open', '--limit', '10', '--json', 'number,title,repository,url,updatedAt'],
+              { timeoutMs: 12_000 }
+            ),
+            executor.run<any[]>(
+              ['search', 'issues', '--author=@me', '--state=open', '--limit', '10', '--json', 'number,title,repository,url,updatedAt'],
+              { timeoutMs: 12_000 }
+            ),
+          ]);
+
+          if (reposRes.ok && Array.isArray(reposRes.data)) {
+            userRepos = reposRes.data.map((r: any) => ({
+              name: r.name || '',
+              nameWithOwner: r.nameWithOwner || '',
+              description: r.description || '',
+              defaultBranch: r.defaultBranchRef?.name || 'main',
+              isPrivate: Boolean(r.isPrivate),
+              stargazerCount: r.stargazerCount || 0,
+              updatedAt: r.updatedAt || '',
+              url: r.url || `https://github.com/${r.nameWithOwner}`,
+            }));
+          }
+
+          if (prsRes.ok && Array.isArray(prsRes.data)) {
+            myPrs = prsRes.data;
+          }
+          if (issuesRes.ok && Array.isArray(issuesRes.data)) {
+            myIssues = issuesRes.data;
+          }
+        }
+
+        // 4. 解析本地所有工作区与 GitHub 关联矩阵
+        try {
+          const fs = await import('node:fs');
+          const path = await import('node:path');
+          const os = await import('node:os');
+          const wsJsonPath = path.join(os.homedir(), '.dsh', 'storages', 'workspace.json');
+          if (fs.existsSync(wsJsonPath)) {
+            const wsData = JSON.parse(fs.readFileSync(wsJsonPath, 'utf8'));
+            const workspaces = wsData.tables?.workspaces || {};
+            const wsEntries = Object.keys(workspaces).map((id) => ({ id, ...workspaces[id] }));
+
+            // 并发探测每个工作区路径的 Git Remote
+            const matrixResults = await Promise.all(
+              wsEntries.map(async (ws) => {
+                const hasGit = fs.existsSync(path.join(ws.path, '.git'));
+                let repoMeta: RepoMetadata | undefined = undefined;
+                if (hasGit) {
+                  repoMeta = (await executor.getRepoMetadata(ws.path)) || undefined;
+                }
+                return {
+                  id: ws.id,
+                  title: ws.title || path.basename(ws.path),
+                  path: ws.path,
+                  hasGit,
+                  repo: repoMeta,
+                  sessionCount: (ws.sessionIds && ws.sessionIds.length) || 0,
+                };
+              })
+            );
+            workspaceMatrix = matrixResults;
+          }
+        } catch (e) {}
+
+        const globalData: GlobalOverviewData = {
+          auth,
+          userRepos,
+          workspaceMatrix,
+          myPrs,
+          myIssues,
+          lastUpdated: new Date().toISOString(),
+        };
+
+        sendJson(res, 200, { ok: true, data: globalData });
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, error: err.message || '获取全局驾驶舱数据失败' });
+      }
     },
   });
 }

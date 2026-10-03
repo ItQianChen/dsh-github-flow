@@ -214,6 +214,48 @@ window.__ModuleLoader__.load({
   border: 1px dashed var(--dsw-alias-border-l1, #333);
   border-radius: 6px;
 }
+.dsh-github-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, #333);
+  padding-bottom: 8px;
+}
+.dsh-github-tab-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #8c8c8c);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.dsh-github-tab-btn:hover {
+  color: var(--dsw-alias-label-primary, #fff);
+  background: rgba(255, 255, 255, 0.05);
+}
+.dsh-github-tab-btn.active {
+  color: #58a6ff;
+  background: rgba(88, 166, 255, 0.12);
+  font-weight: 600;
+}
+.dsh-github-search-input {
+  width: 100%;
+  max-width: 320px;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l1, #444);
+  background: var(--dsw-alias-bg-secondary, #252528);
+  color: #fff;
+  outline: none;
+  margin-bottom: 14px;
+}
+.dsh-github-search-input:focus {
+  border-color: #58a6ff;
+}
 `;
 
     function injectStyles() {
@@ -521,16 +563,18 @@ window.__ModuleLoader__.load({
       var [loading, setLoading] = React.useState(true);
       var [data, setData] = React.useState(null as any);
       var [error, setError] = React.useState(null as string | null);
+      var [activeTab, setActiveTab] = React.useState("workspaces"); // 'workspaces' | 'repos' | 'mywork'
+      var [searchQuery, setSearchQuery] = React.useState("");
 
       var loadData = React.useCallback(async (forceRefresh = false) => {
         setLoading(true);
         setError(null);
         try {
           if (forceRefresh) await fetch("/api/github/refresh", { method: "POST" }).catch(() => {});
-          var res = await fetch("/api/github/overview");
+          var res = await fetch("/api/github/global-overview");
           var json = await res.json();
           if (json.ok && json.data) setData(json.data);
-          else setError(json.error || "获取失败");
+          else setError(json.error || "获取全局数据失败");
         } catch (err: any) {
           setError(err.message);
         } finally {
@@ -540,7 +584,156 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => { loadData(false); }, [loadData]);
       var h = React.createElement;
-      return h("div", { className: "dsh-github-panel" }, ...renderGithubRepoView(h, data, loading, error, () => loadData(true), false));
+
+      var headerEl = h(
+        "div",
+        { className: "dsh-github-header" },
+        h(
+          "div",
+          { className: "dsh-github-title" },
+          h("span", { style: { fontSize: "22px" } }, "🐙"),
+          h("h2", null, "GitHub 全景驾驶舱")
+        ),
+        h(
+          "button",
+          {
+            className: "dsh-github-refresh-btn",
+            onClick: () => loadData(true),
+            disabled: loading,
+          },
+          loading ? "刷新中..." : "🔄 刷新全局数据"
+        )
+      );
+
+      if (loading && !data) {
+        return h("div", { className: "dsh-github-panel" }, headerEl, h("div", { className: "dsh-github-empty" }, "正在加载全局 GitHub 账号与工作区数据..."));
+      }
+
+      var auth = data ? data.auth : null;
+      var userRepos = (data && data.userRepos) || [];
+      var workspaceMatrix = (data && data.workspaceMatrix) || [];
+      var myPrs = (data && data.myPrs) || [];
+      var myIssues = (data && data.myIssues) || [];
+
+      // 顶部统计卡片
+      var statsCardsEl = h(
+        "div",
+        { className: "dsh-github-overview-cards" },
+        h(
+          "div",
+          { className: "dsh-github-card" },
+          h("div", { className: "dsh-github-card-title" }, "CLI 认证账号"),
+          h("div", { className: "dsh-github-card-value" }, auth?.loggedIn ? `👤 ${auth.user}` : "未登录", auth?.loggedIn ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "Active") : null)
+        ),
+        h(
+          "div",
+          { className: "dsh-github-card" },
+          h("div", { className: "dsh-github-card-title" }, "账号云端仓库"),
+          h("div", { className: "dsh-github-card-value" }, `${userRepos.length} 个 Repositories`)
+        ),
+        h(
+          "div",
+          { className: "dsh-github-card" },
+          h("div", { className: "dsh-github-card-title" }, "本地工作区联动"),
+          h("div", { className: "dsh-github-card-value" }, `${workspaceMatrix.length} 个工作区 (${workspaceMatrix.filter((w: any) => w.repo).length} 个已关联)`)
+        )
+      );
+
+      // Tab 栏
+      var tabsEl = h(
+        "div",
+        { className: "dsh-github-tabs" },
+        h("button", { className: `dsh-github-tab-btn ${activeTab === 'workspaces' ? 'active' : ''}`, onClick: () => setActiveTab('workspaces') }, `📂 本地工作区矩阵 (${workspaceMatrix.length})`),
+        h("button", { className: `dsh-github-tab-btn ${activeTab === 'repos' ? 'active' : ''}`, onClick: () => setActiveTab('repos') }, `☁️ 我的 GitHub 仓库 (${userRepos.length})`),
+        h("button", { className: `dsh-github-tab-btn ${activeTab === 'mywork' ? 'active' : ''}`, onClick: () => setActiveTab('mywork') }, `📋 个人待办 (PR: ${myPrs.length} · Issue: ${myIssues.length})`)
+      );
+
+      // 内容区
+      var contentEl = null;
+
+      if (activeTab === 'workspaces') {
+        contentEl = h(
+          "div",
+          { className: "dsh-github-list" },
+          workspaceMatrix.map((ws: any) =>
+            h(
+              "div",
+              { key: ws.id, className: "dsh-github-card", style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" } },
+              h(
+                "div",
+                { style: { display: "flex", flexDirection: "column", gap: "4px" } },
+                h("div", { style: { fontSize: "14px", fontWeight: "600", color: "#fff" } }, ws.title),
+                h("div", { style: { fontSize: "12px", color: "#888", fontFamily: "monospace" } }, ws.path),
+                h(
+                  "div",
+                  { style: { fontSize: "12px", marginTop: "4px", display: "flex", gap: "8px", alignItems: "center" } },
+                  ws.repo
+                    ? h("span", { style: { color: "#58a6ff" } }, `🐙 关联远程: ${ws.repo.nameWithOwner} (${ws.repo.defaultBranch})`)
+                    : h("span", { style: { color: "#888" } }, ws.hasGit ? "本地有 Git，未关联 GitHub 远程" : "本地无 Git 仓库"),
+                  ws.repo ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "已关联") : null
+                )
+              ),
+              h(
+                "div",
+                { style: { display: "flex", gap: "8px" } },
+                ws.repo
+                  ? h("a", { className: "dsh-github-btn-sm", href: ws.repo.url, target: "_blank", style: { textDecoration: "none" } }, "在 GitHub 打开")
+                  : null
+              )
+            )
+          )
+        );
+      } else if (activeTab === 'repos') {
+        var filteredRepos = userRepos.filter((r: any) => !searchQuery || r.nameWithOwner.toLowerCase().includes(searchQuery.toLowerCase()) || r.description?.toLowerCase().includes(searchQuery.toLowerCase()));
+        contentEl = h(
+          "div",
+          null,
+          h("input", {
+            className: "dsh-github-search-input",
+            placeholder: "🔍 搜索我的 GitHub 仓库...",
+            value: searchQuery,
+            onChange: (e: any) => setSearchQuery(e.target.value)
+          }),
+          h(
+            "div",
+            { className: "dsh-github-list" },
+            filteredRepos.map((r: any) =>
+              h(
+                "div",
+                { key: r.nameWithOwner, className: "dsh-github-item" },
+                h("a", { className: "dsh-github-item-title", href: r.url, target: "_blank" }, r.nameWithOwner),
+                r.description ? h("div", { style: { fontSize: "12px", color: "#bbb" } }, r.description) : null,
+                h(
+                  "div",
+                  { className: "dsh-github-item-meta" },
+                  h("span", null, `默认分支: ${r.defaultBranch}`),
+                  r.isPrivate ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "Private") : h("span", { className: "dsh-github-badge dsh-badge-green" }, "Public"),
+                  h("span", null, `⭐ ${r.stargazerCount}`)
+                )
+              )
+            )
+          )
+        );
+      } else {
+        contentEl = h(
+          "div",
+          null,
+          h("h3", { style: { fontSize: "14px", marginBottom: "8px" } }, `🔀 我发起的 PR (${myPrs.length})`),
+          myPrs.length === 0 ? h("div", { className: "dsh-github-empty", style: { marginBottom: "16px" } }, "暂无开放中的 PR") : h(
+            "div",
+            { className: "dsh-github-list", style: { marginBottom: "16px" } },
+            myPrs.map((pr: any) => h("div", { key: pr.number, className: "dsh-github-item" }, h("a", { className: "dsh-github-item-title", href: pr.url, target: "_blank" }, `[${pr.repository?.nameWithOwner || 'Repo'}] #${pr.number} ${pr.title}`)))
+          ),
+          h("h3", { style: { fontSize: "14px", marginBottom: "8px" } }, `📝 我的待办 Issues (${myIssues.length})`),
+          myIssues.length === 0 ? h("div", { className: "dsh-github-empty" }, "暂无开放中的 Issue") : h(
+            "div",
+            { className: "dsh-github-list" },
+            myIssues.map((is: any) => h("div", { key: is.number, className: "dsh-github-item" }, h("a", { className: "dsh-github-item-title", href: is.url, target: "_blank" }, `[${is.repository?.nameWithOwner || 'Repo'}] #${is.number} ${is.title}`)))
+          )
+        );
+      }
+
+      return h("div", { className: "dsh-github-panel" }, headerEl, statsCardsEl, tabsEl, contentEl);
     }
 
     var inject = ["slots", "sidebarRightTabs", "sessions", "layout"];
