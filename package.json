@@ -14,7 +14,9 @@
     "lib",
     "icon.svg",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "docs"
   ],
   "scripts": {
     "build": "tsc && node scripts/build.mjs",
@@ -38,6 +40,10 @@
   ],
   "author": "DSH Contributor",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
     "@deepseek-ai/schemastery": "^3.18.4"
