@@ -2,12 +2,11 @@ import Schema from '@deepseek-ai/schemastery';
 import type { PluginConfig } from './types.js';
 export declare const name = "dsh-github-flow";
 /**
- * 仅将核心基础服务作为硬性依赖，解绑 webServer 与 commands。
- * 在无 Web 界面环境（如 Headless、纯终端、CI 自动化模式）下也能即刻激活，杜绝 PENDING 卡死。
+ * 完整注入 DSH 宿主环境的核心服务，确保命令、工具与 WebServer 即刻挂载激活
  */
-export declare const inject: readonly ['tools'];
+export declare const inject: readonly ['tools', 'commands', 'webServer', 'workspaceRegistry'];
 /**
- * 遵循官方 Cordis 规范导出的强类型配置接口与运行时校验器
+ * 强类型配置接口与运行时校验器
  */
 export interface Config extends PluginConfig {
 }

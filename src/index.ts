@@ -13,13 +13,12 @@ import type { PluginConfig } from './types.js';
 export const name = 'dsh-github-flow';
 
 /**
- * 仅将核心基础服务作为硬性依赖，解绑 webServer 与 commands。
- * 在无 Web 界面环境（如 Headless、纯终端、CI 自动化模式）下也能即刻激活，杜绝 PENDING 卡死。
+ * 完整注入 DSH 宿主环境的核心服务，确保命令、工具与 WebServer 即刻挂载激活
  */
-export const inject = ['tools'] as const;
+export const inject = ['tools', 'commands', 'webServer', 'workspaceRegistry'] as const;
 
 /**
- * 遵循官方 Cordis 规范导出的强类型配置接口与运行时校验器
+ * 强类型配置接口与运行时校验器
  */
 export interface Config extends PluginConfig {}
 
@@ -47,21 +46,13 @@ export function apply(ctx: any, config: Config = {}) {
     ctx.tools.register(createApiTool(executor));
   }
 
-  // 4. 可选依赖：命令服务（存在时动态激活，不阻塞主流程）
-  if (ctx.inject && typeof ctx.inject === 'function') {
-    ctx.inject(['commands'], (innerCtx: any) => {
-      registerGhCommand(innerCtx, executor);
-    });
-  } else if (ctx.commands) {
+  // 4. 注册 /gh 斜杠命令（直接同步挂载）
+  if (ctx.commands) {
     registerGhCommand(ctx, executor);
   }
 
-  // 5. 可选依赖：Web 界面服务（存在时动态注入路由并由 effect 管理生命周期）
-  if (ctx.inject && typeof ctx.inject === 'function') {
-    ctx.inject(['webServer'], (innerCtx: any) => {
-      registerApiRoutes(innerCtx, executor, config);
-    });
-  } else if (ctx.webServer) {
+  // 5. 注册面向 Client 端的 WebServer HTTP 路由（直接同步挂载）
+  if (ctx.webServer) {
     registerApiRoutes(ctx, executor, config);
   }
 }
