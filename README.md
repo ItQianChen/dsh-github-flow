@@ -22,17 +22,19 @@
 
 1. **零鉴权配置，开箱即用**：
    - 自动复用宿主机已通过 `gh auth login` 认证的登录凭据（OAuth Token / 系统 Keyring），无需在 DSH 中存储任何明文 GitHub PAT。
-2. **工作区目录深度亲和 (CWD 绑定)**：
-   - 自动继承当前会话所在的 Workspace 物理目录，`gh` 自动识别当前 Git 仓库与本地工作分支，无需 Agent 每次显式传递 `owner/repo`。
+2. **工作区目录深度亲和与零参数探测 (CWD & Git Auto-Binding)**：
+   - 自动绑定当前会话所在的物理工作区目录，原生直读本地 `.git/config` 并映射 `workspace.json`，无需 Agent 或人类手动传参 `owner/repo`，零参数直接识别关联仓库。
 3. **高信噪比与 Token 防溢出治理**：
    - 拒绝 70+ 个碎片化微型工具撑爆上下文，收敛聚合为 **5 大领域核心 Tool**。
    - 所有查询原生采用 `--json <fields>` 按需返回；对 `diff`、`log_failed` 设置安全截断保护（默认 24KB），防止模型上下文窗口溢出崩溃。
-4. **原生 Web UI 双重视图**：
+   - 工具层已通过防御性输出包装，列表与标量 100% 契合 DSH 工具网关模式约束。
+4. **原生 Web UI 双重视图与双模式自适应**：
    - **全局驾驶舱**（主导航栏 `sidebar.panellist`，Order 20）：透视账号全局仓库、本地工作区矩阵、个人待办 PR 与 Issues；
-   - **右侧栏工作区面板**（`sidebarRightTabs`，Order 40）：在会话引导页与右侧抽屉常驻呈现当前仓库的 PR 列表、Checks 状态药丸与快捷操作。
+   - **右侧栏工作区面板**（`sidebarRightTabs`，Order 40）：常驻呈现当前仓库的 PR 状态、Checks 门禁药丸与 2x2 黄金快捷网格（浏览器打开、查看 PRs、快速创建 PR、新建 Issue），一键直达官方比对与创建页，零弹窗依赖；
+   - **全场景双模式原生自适应**：深度契合 DSH 官方 DSW（DeepSeek Web）设计变量规范，通过 `body[data-ds-dark-theme]` 驱动浅色与深色主题实时零延迟平滑切换。
 5. **符合 Cordis 官方微内核架构**：
    - 暴露原生 `GitHubService`（`ctx.github`），允许生态其他插件复用；
-   - 具备 Schemastery 强类型运行时配置校验（`Config`）；
+   - 具备符合 Standard Schema 规范的运行时配置校验（`Config`）；
    - 支持领域事件系统（`github/pr:create`, `github/issue:create`）。
 
 ---

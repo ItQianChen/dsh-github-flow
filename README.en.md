@@ -22,17 +22,19 @@
 
 1. **Zero-Configuration Authentication**:
    - Seamlessly reuses existing host credentials from `gh auth login` (OAuth tokens / system Keyrings) without exposing plain-text Personal Access Tokens (PATs) in DSH.
-2. **Deep Workspace Affinity (CWD Binding)**:
-   - Automatically scopes commands to the active session workspace. `gh` resolves the remote repository and current Git branch automatically, saving model tokens from redundant `owner/repo` arguments.
+2. **Deep Workspace Affinity & Zero-Config Detection**:
+   - Automatically scopes commands to the active session workspace by natively reading local `.git/config` and mapping DSH `workspace.json`. Neither models nor humans need to supply redundant `owner/repo` arguments.
 3. **High Signal-to-Noise Ratio & Token Budget Protection**:
    - Consolidates over 70+ scattered micro-tools into **5 focused domain tools**.
    - Queries use `--json <fields>` projections by default; long diffs and failed CI logs are safely truncated (default 24KB) to protect the model's context window.
-4. **Dual Native Web UI Views**:
+   - All tool outputs are defensively normalized into root objects to strictly comply with DSH Tool Gateway schema validation.
+4. **Dual Native Web UI Views & Dynamic Dual-Theme Support**:
    - **Global Cockpit** (`sidebar.panellist`, Order 20): Account-wide repository overview, local workspace matrix, and pending personal PRs/issues.
-   - **Right Sidebar Panel** (`sidebarRightTabs`, Order 40): Shows current repository status, PR list with CI check pills, and quick action buttons inside the session.
+   - **Right Sidebar Panel** (`sidebarRightTabs`, Order 40): Shows current repository status, PR list with CI check pills, and a 2x2 quick action grid (Open Repo, View PRs, Create PR, New Issue) with zero popup dependencies.
+   - **Native Light/Dark Dual-Theme Adaptation**: Deeply aligned with DSH official DSW (DeepSeek Web) design tokens, seamlessly reacting to `body[data-ds-dark-theme]` without lag or flickering.
 5. **Standard Cordis Microkernel Compliance**:
    - Exposes native `GitHubService` (`ctx.github`) for ecosystem extensibility;
-   - Strongly typed runtime validation via Schemastery (`Config`);
+   - Strongly typed runtime validation via Standard Schema (`Config`);
    - Domain event broadcasting (`github/pr:create`, `github/issue:create`).
 
 ---
