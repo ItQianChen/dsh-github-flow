@@ -57,8 +57,9 @@ export function createRepoTool(executor: GhExecutor) {
       switch (args.action) {
         case 'view': {
           let repoTarget = args.repo;
+          let meta: any = null;
           if (!repoTarget) {
-            const meta = await executor.getRepoMetadata(cwd);
+            meta = await executor.getRepoMetadata(cwd);
             if (meta?.nameWithOwner) {
               repoTarget = meta.nameWithOwner;
             }
@@ -68,7 +69,13 @@ export function createRepoTool(executor: GhExecutor) {
             ['repo', 'view', ...repoArgs, '--json', 'nameWithOwner,description,defaultBranchRef,isPrivate,stargazerCount,forkCount,url'],
             { cwd }
           );
-          if (!res.ok) throw new Error(res.error);
+          if (!res.ok) {
+            // 若执行 gh 失败（如离线或环境限制），但本地已成功识别仓库元数据，进行优雅兜底返回
+            if (meta && meta.nameWithOwner) {
+              return normalizeOutput(meta);
+            }
+            throw new Error(res.error);
+          }
           return normalizeOutput(res.data || res.rawOutput);
         }
 

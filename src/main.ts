@@ -6,19 +6,56 @@ import { createRepoTool } from './tools/repo.js';
 import { createApiTool } from './tools/api.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
+import type { PluginConfig } from './types.js';
 
 export const name = 'dsh-github-flow';
-export const inject = ['tools', 'commands', 'webServer', 'workspaceRegistry'] as const;
 
-export function apply(ctx: any) {
-  const executor = new GhExecutor();
+/**
+ * 核心必需依赖：仅声明 Agent 工具与命令系统
+ * webServer 与 workspaceRegistry 作为可选依赖在 apply 内部按需探测，确保在 Headless / 命令行模式下核心工具正常运行
+ */
+export const inject = ['tools', 'commands'] as const;
 
-  // 1. 注册人类 Slash 命令 (/gh status, /gh help)
+export type Config = PluginConfig;
+
+/**
+ * 符合 Standard Schema / Cordis Loader 契约的 Config 运行时校验规范
+ */
+export const Config = {
+  '~standard': {
+    version: 1,
+    vendor: 'dsh',
+    validate(value: unknown) {
+      const cfg = (typeof value === 'object' && value !== null) ? value as Record<string, any> : {};
+      return {
+        value: {
+          ghPath: typeof cfg.ghPath === 'string' ? cfg.ghPath : 'gh',
+          defaultTimeoutMs: typeof cfg.defaultTimeoutMs === 'number' ? cfg.defaultTimeoutMs : 30_000,
+          maxOutputChars: typeof cfg.maxOutputChars === 'number' ? cfg.maxOutputChars : 24_000,
+          cacheTtlMs: typeof cfg.cacheTtlMs === 'number' ? cfg.cacheTtlMs : 15_000,
+          defaultListLimit: typeof cfg.defaultListLimit === 'number' ? cfg.defaultListLimit : 20,
+        } as PluginConfig
+      };
+    }
+  }
+};
+
+export function apply(ctx: any, config: PluginConfig = {}) {
+  const executor = new GhExecutor(config);
+
+  // 1. 兑现生态服务契约：将 GitHub 执行引擎作为服务暴露给其他 DSH 插件 (ctx.github)
+  if (ctx.provide && typeof ctx.provide === 'function') {
+    ctx.provide('github', executor);
+  } else {
+    ctx.github = executor;
+  }
+
+  // 2. 注册人类 Slash 命令 (/gh status, /gh help)
   if (ctx.commands) {
     registerGhCommand(ctx.commands, executor);
   }
 
-  // 2. 注册 Agent 模型工具集（5 大核心领域工具）
+  // 3. 注册 Agent 模型工具集（5 大核心领域工具）
   if (ctx.tools) {
     ctx.tools.register(createPrTool(executor));
     ctx.tools.register(createIssueTool(executor));
@@ -27,10 +64,13 @@ export function apply(ctx: any) {
     ctx.tools.register(createApiTool(executor));
   }
 
-  // 3. 注册面向 Client 端的 WebServer HTTP 路由
+  // 4. 注册面向 Client 端的 WebServer HTTP 路由（如果当前环境启用了 Web UI 服务）
   if (ctx.webServer) {
     registerApiRoutes(ctx.webServer, executor, ctx.workspaceRegistry);
   }
 }
 
+export type GitHubService = GhExecutor;
+
 export * from './types.js';
+
