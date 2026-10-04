@@ -1,7 +1,7 @@
-name: Publish to npm
+name: Release & Publish to npm
 
 on:
-  # 1. 标签触发（主流推荐）：当推送符合 v*.*.* 语义化版本标签时触发自动发布
+  # 1. 标签触发（主流推荐）：当推送符合 v*.*.* 语义化版本标签时触发自动发布 npm 与 GitHub Release
   push:
     tags:
       - 'v*.*.*'
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: '仅预演测试（不真实发布到 npm，Dry Run）'
+        description: '仅预演测试（不真实发布到 npm 与 Release，Dry Run）'
         required: true
         type: boolean
         default: false
@@ -24,12 +24,14 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # 赋予创建 GitHub Release 权限
       id-token: write # 用于 npm 产物 Provenance 签名
 
     steps:
       - name: 检出源码
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 完整克隆历史以支持自动生成 Release Notes
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
@@ -65,3 +67,15 @@ jobs:
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: 自动创建并发布 GitHub Release
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.dry_run != true }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
