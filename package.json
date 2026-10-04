@@ -4,9 +4,10 @@
   "icon": "icon.svg",
   "description": "GitHub Flow: Native GitHub CLI (gh) integration for DeepSeek Harness — Agent Tools, Slash Commands, and Web UI Workspace",
   "type": "module",
-  "main": "./lib/index.js",
+  "main": "./lib/main.js",
   "exports": {
-    ".": "./lib/index.js",
+    ".": "./lib/main.js",
+    "./entry": "./lib/main.js",
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
@@ -44,13 +45,6 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/schemastery": "^3.18.4"
-  },
-  "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.4"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

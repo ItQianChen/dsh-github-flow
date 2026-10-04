@@ -1,7 +1,3 @@
 - insert:
-    - id: github-flow
-      name: dsh-github-flow
-      config:
-        defaultTimeoutMs: 30000
-        maxOutputChars: 24000
-        cacheTtlMs: 15000
+    - id: github-flow-v3
+      name: 'D:/Desktop/AgentWork/DSHQuestion/dsh-github-flow/lib/main.js'

@@ -661,6 +661,8 @@ window.__ModuleLoader__.load({
       var myPrs = (data && data.myPrs) || [];
       var myIssues = (data && data.myIssues) || [];
 
+      var errorEl = error ? h("div", { style: { color: "#f85149", background: "rgba(248,81,73,0.1)", border: "1px solid rgba(248,81,73,0.3)", padding: "8px 12px", borderRadius: "6px", marginBottom: "16px", fontSize: "12px" } }, `⚠️ 加载失败: ${error}`) : null;
+
       // 顶部统计卡片
       var statsCardsEl = h(
         "div",
@@ -779,7 +781,7 @@ window.__ModuleLoader__.load({
         );
       }
 
-      return h("div", { className: "dsh-github-panel" }, headerEl, statsCardsEl, tabsEl, contentEl);
+      return h("div", { className: "dsh-github-panel" }, headerEl, errorEl, statsCardsEl, tabsEl, contentEl);
     }
 
     var inject = ["slots", "sidebarRightTabs", "sessions", "layout"];

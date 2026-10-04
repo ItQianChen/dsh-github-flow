@@ -150,11 +150,3 @@ export interface GlobalOverviewData {
   lastUpdated: string;
   error?: string;
 }
-
-declare module '@deepseek-ai/cordis' {
-  interface Events {
-    'github/pr:create'(repo: string, pr: { title: string; url: string }): void;
-    'github/pr:merge'(repo: string, prNumber: number): void;
-    'github/issue:create'(repo: string, issue: { title: string; url: string }): void;
-  }
-}

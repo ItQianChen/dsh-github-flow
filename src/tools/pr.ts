@@ -1,8 +1,7 @@
 import type { GhExecutor } from '../executor.js';
-import { defineSafeTool } from './define.js';
 
 export function createPrTool(executor: GhExecutor) {
-  return defineSafeTool({
+  return {
     name: 'github_pr',
     description: '管理与审查 GitHub Pull Request (PR)。支持查看列表、详情、差异比对、CI 检查状态、代码审查与合并操作。默认针对当前工作区关联的仓库。',
     parameters: {
@@ -130,5 +129,5 @@ export function createPrTool(executor: GhExecutor) {
           throw new Error(`未知的 PR 操作: ${args.action}`);
       }
     },
-  });
+  };
 }

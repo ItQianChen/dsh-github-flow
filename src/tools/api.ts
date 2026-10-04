@@ -1,8 +1,7 @@
 import type { GhExecutor } from '../executor.js';
-import { defineSafeTool } from './define.js';
 
 export function createApiTool(executor: GhExecutor) {
-  return defineSafeTool({
+  return {
     name: 'github_api',
     description: '通过 GitHub CLI 认证环境直接调用任意 GitHub REST 或 GraphQL API 端点（兜底逃生门）。支持 --jq 过滤。',
     parameters: {
@@ -54,5 +53,5 @@ export function createApiTool(executor: GhExecutor) {
       if (!res.ok) throw new Error(res.error);
       return res.data || res.rawOutput;
     },
-  });
+  };
 }
