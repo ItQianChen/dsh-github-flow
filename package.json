@@ -1,10 +1,18 @@
 {
   "name": "dsh-github-flow",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "icon": "icon.svg",
   "description": "GitHub Flow: Native GitHub CLI (gh) integration for DeepSeek Harness — Agent Tools, Slash Commands, and Web UI Workspace",
   "type": "module",
   "main": "./lib/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ItQianChen/dsh-github-flow.git"
+  },
+  "homepage": "https://github.com/ItQianChen/dsh-github-flow#readme",
+  "bugs": {
+    "url": "https://github.com/ItQianChen/dsh-github-flow/issues"
+  },
   "exports": {
     ".": "./lib/main.js",
     "./entry": "./lib/main.js",
