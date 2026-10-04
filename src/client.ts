@@ -837,6 +837,11 @@ body[data-ds-dark-theme] .dsh-github-subheading {
             url += "?" + params.join("&");
           }
           var res = await fetch(url);
+          if (!res.ok) {
+            var errText = await res.text().catch(() => "");
+            setError(`后端服务未就绪 (${res.status}): ${errText || res.statusText}`);
+            return;
+          }
           var json = await res.json();
           if (json.ok && json.data) {
             setData(json.data);
@@ -910,6 +915,11 @@ body[data-ds-dark-theme] .dsh-github-subheading {
         try {
           if (forceRefresh) await fetch("/api/github/refresh", { method: "POST" }).catch(() => {});
           var res = await fetch("/api/github/global-overview");
+          if (!res.ok) {
+            var errText = await res.text().catch(() => "");
+            setError(`后端服务未就绪或接口不存在 (${res.status}): ${errText || res.statusText}`);
+            return;
+          }
           var json = await res.json();
           if (json.ok && json.data) setData(json.data);
           else setError(json.error || "获取全局数据失败");
