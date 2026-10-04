@@ -49,8 +49,8 @@ export declare function createIssueTool(executor: GhExecutor): {
         };
         render(args: any, value: any): {
             type: string;
-            text: string;
+            text: any;
         }[];
     };
-    execute(args: any, execContext: any): Promise<{} | undefined>;
+    execute(args: any, execContext: any): Promise<Record<string, any>>;
 };

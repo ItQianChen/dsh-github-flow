@@ -1,5 +1,15 @@
 import type { GhExecutor } from '../executor.js';
 
+function normalizeOutput(data: any): Record<string, any> {
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return { items: data, count: data.length };
+  }
+  return { result: data !== undefined && data !== null ? data : '' };
+}
+
 export function createPrTool(executor: GhExecutor) {
   return {
     name: 'github_pr',
@@ -52,12 +62,26 @@ export function createPrTool(executor: GhExecutor) {
     output: {
       schema: { type: 'object' },
       render(args: any, value: any) {
-        return [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }];
+        if (!value) return [{ type: 'text', text: '无返回内容' }];
+        if (typeof value.result === 'string') {
+          return [{ type: 'text', text: value.result }];
+        }
+        if (Array.isArray(value.items)) {
+          return [{ type: 'text', text: JSON.stringify(value.items, null, 2) }];
+        }
+        return [{ type: 'text', text: JSON.stringify(value, null, 2) }];
       },
     },
     async execute(args: any, execContext: any) {
       const cwd = execContext?.cwd || process.cwd();
-      const repoArgs = args.repo ? ['-R', args.repo] : [];
+      let repoTarget = args.repo;
+      if (!repoTarget) {
+        const meta = await executor.getRepoMetadata(cwd);
+        if (meta?.nameWithOwner) {
+          repoTarget = meta.nameWithOwner;
+        }
+      }
+      const repoArgs = repoTarget ? ['-R', repoTarget] : [];
 
       switch (args.action) {
         case 'list': {
@@ -66,7 +90,7 @@ export function createPrTool(executor: GhExecutor) {
             { cwd }
           );
           if (!res.ok) throw new Error(res.error);
-          return res.data || res.rawOutput;
+          return normalizeOutput(res.data || res.rawOutput);
         }
 
         case 'view': {
@@ -76,7 +100,7 @@ export function createPrTool(executor: GhExecutor) {
             { cwd }
           );
           if (!res.ok) throw new Error(res.error);
-          return res.data || res.rawOutput;
+          return normalizeOutput(res.data || res.rawOutput);
         }
 
         case 'checks': {
@@ -86,14 +110,14 @@ export function createPrTool(executor: GhExecutor) {
             { cwd }
           );
           if (!res.ok) throw new Error(res.error);
-          return res.data || res.rawOutput;
+          return normalizeOutput(res.data || res.rawOutput);
         }
 
         case 'diff': {
           const target = args.pr_number ? [String(args.pr_number)] : [];
           const res = await executor.run(['pr', 'diff', ...target, ...repoArgs], { cwd });
           if (!res.ok) throw new Error(res.error);
-          return res.rawOutput || '无差异内容';
+          return { result: res.rawOutput || '无差异内容' };
         }
 
         case 'create': {

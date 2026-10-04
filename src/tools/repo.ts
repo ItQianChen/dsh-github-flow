@@ -1,5 +1,15 @@
 import type { GhExecutor } from '../executor.js';
 
+function normalizeOutput(data: any): Record<string, any> {
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return { items: data, count: data.length };
+  }
+  return { result: data !== undefined && data !== null ? data : '' };
+}
+
 export function createRepoTool(executor: GhExecutor) {
   return {
     name: 'github_repo',
@@ -30,7 +40,14 @@ export function createRepoTool(executor: GhExecutor) {
     output: {
       schema: { type: 'object' },
       render(args: any, value: any) {
-        return [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }];
+        if (!value) return [{ type: 'text', text: '无返回内容' }];
+        if (typeof value.result === 'string') {
+          return [{ type: 'text', text: value.result }];
+        }
+        if (Array.isArray(value.items)) {
+          return [{ type: 'text', text: JSON.stringify(value.items, null, 2) }];
+        }
+        return [{ type: 'text', text: JSON.stringify(value, null, 2) }];
       },
     },
     async execute(args: any, execContext: any) {
@@ -39,13 +56,20 @@ export function createRepoTool(executor: GhExecutor) {
 
       switch (args.action) {
         case 'view': {
-          const repoArgs = args.repo ? [args.repo] : [];
+          let repoTarget = args.repo;
+          if (!repoTarget) {
+            const meta = await executor.getRepoMetadata(cwd);
+            if (meta?.nameWithOwner) {
+              repoTarget = meta.nameWithOwner;
+            }
+          }
+          const repoArgs = repoTarget ? [repoTarget] : [];
           const res = await executor.run(
             ['repo', 'view', ...repoArgs, '--json', 'nameWithOwner,description,defaultBranchRef,isPrivate,stargazerCount,forkCount,url'],
             { cwd }
           );
           if (!res.ok) throw new Error(res.error);
-          return res.data || res.rawOutput;
+          return normalizeOutput(res.data || res.rawOutput);
         }
 
         case 'search_code': {
@@ -56,7 +80,7 @@ export function createRepoTool(executor: GhExecutor) {
             { cwd }
           );
           if (!res.ok) throw new Error(res.error);
-          return res.data || res.rawOutput;
+          return normalizeOutput(res.data || res.rawOutput);
         }
 
         case 'search_repos': {
@@ -66,7 +90,7 @@ export function createRepoTool(executor: GhExecutor) {
             { cwd }
           );
           if (!res.ok) throw new Error(res.error);
-          return res.data || res.rawOutput;
+          return normalizeOutput(res.data || res.rawOutput);
         }
 
         default:
