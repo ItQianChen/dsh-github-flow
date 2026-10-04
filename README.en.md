@@ -39,6 +39,24 @@
 
 ---
 
+## 📸 UI Previews
+
+### Global Cockpit (Main Navigation)
+Overview of account-wide repositories, local workspace matrix mapping, and pending personal PRs/issues:
+
+<p align="center">
+  <img src="./docs/images/1.png" alt="GitHub Global Cockpit" width="100%" />
+</p>
+
+### Session Right Sidebar Panel (In-Session Collaboration)
+Automatically detects current workspace repository, displaying live PR checks, Actions pipelines, and quick action shortcuts:
+
+<p align="center">
+  <img src="./docs/images/2.png" alt="Session Right Sidebar Panel" width="100%" />
+</p>
+
+---
+
 ## 🚀 Installation
 
 Run in your DSH terminal to install directly from npm:

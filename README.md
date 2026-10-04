@@ -39,6 +39,24 @@
 
 ---
 
+## 📸 界面预览
+
+### 全局全景驾驶舱 (Global Cockpit)
+透视账号云端所有 GitHub 仓库、本地工作区矩阵联动状态，以及待办 PR 和 Issues：
+
+<p align="center">
+  <img src="./docs/images/1.png" alt="GitHub 全景驾驶舱" width="100%" />
+</p>
+
+### 会话右侧栏工作区面板 (Session Workspace Panel)
+自动绑定当前工程关联仓库，常驻呈现 PR 状态药丸、Actions 构建流水线与 2x2 黄金操作网格：
+
+<p align="center">
+  <img src="./docs/images/2.png" alt="右侧栏工作区面板" width="100%" />
+</p>
+
+---
+
 ## 🚀 安装指南
 
 在 DSH 终端执行以下命令直接从 npm 安装：
