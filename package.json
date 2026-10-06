@@ -1,6 +1,6 @@
 {
   "name": "dsh-github-flow",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "icon": "icon.svg",
   "description": "GitHub Flow: Native GitHub CLI (gh) integration for DeepSeek Harness — Agent Tools, Slash Commands, and Web UI Workspace",
   "type": "module",

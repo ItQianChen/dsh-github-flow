@@ -52,7 +52,53 @@ async function testPlugin() {
   const cmdResult = await ghCmd.handler({ rawInput: 'status' });
   console.log('Slash 命令输出:\n', cmdResult.text);
 
-  console.log('=== 插件集成测试 100% 通过 ===');
+  console.log('\n--- 测试 Cordis 规范生命周期与 Web 路由冲突自愈能力 ---');
+  const exact = new Map();
+  const disposers = [];
+  const cordisCtx = {
+    webServer: {
+      exact,
+      register(route) {
+        if (route.kind === 'exact') {
+          if (exact.has(route.path)) {
+            throw new Error(`webserver: duplicate exact route "${route.path}"`);
+          }
+          exact.set(route.path, route);
+          return () => exact.delete(route.path);
+        }
+      },
+    },
+    effect(fn) {
+      const d = fn();
+      disposers.push(d);
+      return d;
+    },
+  };
+
+  // 1. 模拟标准 Cordis 上下文注册
+  apply(cordisCtx);
+  if (exact.size !== 4) {
+    throw new Error(`预期注册 4 个 exact 路由，实际 ${exact.size} 个`);
+  }
+
+  // 2. 模拟热重载/未清理历史残留场景下再次激活（必须自愈且不抛 duplicate exact route）
+  apply(cordisCtx);
+  if (exact.size !== 4) {
+    throw new Error(`冲突自愈后应保持 4 个 exact 路由，实际 ${exact.size} 个`);
+  }
+
+  // 3. 模拟 Cordis 卸载插件（触发 effect 回卷清理函数）
+  while (disposers.length) {
+    const d = disposers.pop();
+    if (typeof d === 'function') d();
+  }
+  if (exact.size !== 0) {
+    throw new Error(`卸载后路由表应完全清空，实际剩余 ${exact.size} 个`);
+  }
+
+  console.log('Cordis 生命周期回卷与冲突自愈断言全部通过！');
+
+  console.log('\n=== 插件集成测试 100% 通过 ===');
 }
 
 testPlugin().catch((err) => {

@@ -66,9 +66,9 @@ export function apply(ctx: any, config: PluginConfig = {}) {
 
   // 4. 注册面向 Client 端的 WebServer HTTP 路由（如果当前环境启用了 Web UI 服务）
   if (ctx.webServer) {
-    // cacheTtlMs 必须传下去：它是面向用户的公开配置项，此前只在校验层出现、从未被消费，
-    // 实际生效的是 routes.ts 里的硬编码常量，用户改配置没有任何效果。
-    registerApiRoutes(ctx.webServer, executor, ctx.workspaceRegistry, config.cacheTtlMs || 15_000);
+    // 传入 ctx 作用域对象，使 routes 能够通过 ctx.effect 绑定生命周期并在插件卸载/重载时自动注销；
+    // cacheTtlMs 传给路由层以尊重用户的缓存 TTL 配置。
+    registerApiRoutes(ctx, executor, ctx.workspaceRegistry, config.cacheTtlMs || 15_000);
   }
 }
 

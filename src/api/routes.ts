@@ -46,8 +46,10 @@ function isSafeExternalUrl(raw: unknown): raw is string {
   }
 }
 
-export function registerApiRoutes(webServerService: any, executor: GhExecutor, workspaceRegistry?: any, cacheTtlMs = 15_000) {
-  if (!webServerService || typeof webServerService.register !== 'function') return;
+export function registerApiRoutes(ctxOrWebServer: any, executor: GhExecutor, workspaceRegistry?: any, cacheTtlMs = 15_000) {
+  const ctx = ctxOrWebServer;
+  const webServer = ctx?.webServer || ctx;
+  if (!webServer || typeof webServer.register !== 'function') return;
 
   const cacheMap = new TtlCache<GitHubOverviewData>(cacheTtlMs);
   const globalCache = new TtlCache<GlobalOverviewData>(globalCacheTtlMs(cacheTtlMs));
@@ -59,8 +61,38 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
     res.end(JSON.stringify(data));
   }
 
+  /**
+   * 注册单个路由并返回注销器。
+   * 为什么需要前置探测与清理：Cordis 插件在经历热重载、异常崩溃或重新启用时，若先前的 disposer
+   * 未能顺利执行，宿主全局长生命周期的 WebServer 内部 exact/prefixes 映射表中会残留历史路由；
+   * 而 WebServer.register 会在键冲突时直接抛出 duplicate route 异常阻断激活。
+   * 前置探测并清理残留条目可实现自愈防护与安全幂等注册。
+   */
+  const registerOneRoute = (route: any) => {
+    const table = route.kind === 'exact' ? webServer.exact : webServer.prefixes;
+    if (table && typeof table.delete === 'function' && table.has(route.path)) {
+      table.delete(route.path);
+    }
+    return webServer.register(route);
+  };
+
+  /**
+   * 将路由生命周期绑定到 Cordis 上下文作用域。
+   * 为什么必须包裹在 ctx.effect 中：Cordis 框架要求外部服务的绑定通过 effect 纳管，
+   * 当插件被禁用、配置更新热重载或 scope 销毁时，Cordis 会自动执行返回的 disposer，
+   * 干净地从 WebServer 中注销路由，彻底杜绝孤儿路由残留与重复注册报错。
+   * 当在缺乏 ctx.effect 的简易单元测试环境下运行时，优雅退化为直接注册。
+   */
+  const bindRoute = (route: any) => {
+    if (ctx && typeof ctx.effect === 'function') {
+      ctx.effect(() => registerOneRoute(route), `github-flow: ${route.kind} ${route.path}`);
+    } else {
+      registerOneRoute(route);
+    }
+  };
+
   // 1. 获取全局与当前仓库的 GitHub 概览
-  webServerService.register({
+  bindRoute({
     kind: 'exact',
     path: '/api/github/overview',
     handler: async (req: any, res: any) => {
@@ -140,7 +172,7 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
   });
 
   // 2. 强制刷新缓存
-  webServerService.register({
+  bindRoute({
     kind: 'exact',
     path: '/api/github/refresh',
     handler: async (req: any, res: any) => {
@@ -151,7 +183,7 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
   });
 
   // 3. 右侧栏快捷操作代理接口
-  webServerService.register({
+  bindRoute({
     kind: 'exact',
     path: '/api/github/action',
     handler: async (req: any, res: any) => {
@@ -215,7 +247,7 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
   });
 
   // 4. 获取全局视角的驾驶舱概览数据 (不绑定单一项目)
-  webServerService.register({
+  bindRoute({
     kind: 'exact',
     path: '/api/github/global-overview',
     handler: async (req: any, res: any) => {
