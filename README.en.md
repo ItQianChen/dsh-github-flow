@@ -104,9 +104,15 @@ Customize options in your `cordis.patch.yml` or profile:
         defaultTimeoutMs: 30000   # Timeout in milliseconds
         maxOutputChars: 24000     # Maximum characters per output (Token guard)
         maxOutputBytes: 96000     # Hard UTF-8 byte ceiling per output, defaults to maxOutputChars * 4
-        cacheTtlMs: 15000         # Web overview cache time
+        cacheTtlMs: 15000         # Single-repo overview cache TTL (ms); the global cockpit caches for 20x this, floor 5 minutes
         defaultListLimit: 20      # Default page size
 ```
+
+> On Web panel refresh cadence: a global cockpit refresh runs a dozen or so `gh` calls
+> (measured 8-13 s on a local machine), so it caches for 5 minutes and re-fetches when you
+> click "🔄 Refresh global data". The workspace matrix only reads local `.git/config` to
+> identify repository ownership and makes no network requests. The `/gh status` command
+> always bypasses the auth cache, so you see the real state immediately after `gh auth login`.
 
 ---
 

@@ -104,9 +104,14 @@ dsh plugin --profile web add dsh-github-flow
         defaultTimeoutMs: 30000   # 命令执行超时时间（毫秒）
         maxOutputChars: 24000     # 单次命令最大返回字符数（防 Token 溢出保护）
         maxOutputBytes: 96000     # 单次命令最大返回字节数硬上限，默认 maxOutputChars × 4
-        cacheTtlMs: 15000         # 界面概览数据缓存时间（毫秒）
+        cacheTtlMs: 15000         # 单仓库概览缓存时长（毫秒）；全局驾驶舱按此值的 20 倍缓存，下限 5 分钟
         defaultListLimit: 20      # 默认查询列表返回条数
 ```
+
+> 关于 Web 面板的刷新节奏：全局驾驶舱每次刷新要执行十余次 `gh`（本机实测 8-13 秒），
+> 因此它按 5 分钟缓存，并在你点击「🔄 刷新全局数据」时强制重取。
+> 工作区矩阵只读取本地 `.git/config` 识别仓库归属，不发起网络请求。
+> `/gh status` 命令始终绕过认证缓存，保证你 `gh auth login` 后立刻能看到真实状态。
 
 ---
 

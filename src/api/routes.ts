@@ -1,11 +1,56 @@
+import { execFile } from 'node:child_process';
+import path from 'node:path';
 import type { GhExecutor } from '../executor.js';
+import { TtlCache } from '../cache.js';
+import { mapLimit, tryReadWorkspaces, findWorkspacePathBySession, findMostRecentWorkspacePath, hasGitDir } from '../workspace.js';
 import type { GitHubOverviewData, GlobalOverviewData, UserRepoItem, WorkspaceMatrixItem, RepoMetadata, PrItem, IssueItem, WorkflowRunItem } from '../types.js';
 
-const cacheMap = new Map<string, { data: GitHubOverviewData; time: number }>();
-const CACHE_TTL_MS = 15_000;
+/** path.basename 在空串/异常输入上会抛错，工作区路径来自磁盘文件，必须防御 */
+function basenameSafe(p: string): string {
+  try {
+    return path.basename(p) || p;
+  } catch {
+    return p;
+  }
+}
 
-export function registerApiRoutes(webServerService: any, executor: GhExecutor, workspaceRegistry?: any) {
+/** 探测单个工作区时在途的 gh 进程数上限；libuv 线程池默认 4，留出余量给其他请求 */
+const WORKSPACE_PROBE_CONCURRENCY = 3;
+
+/**
+ * 全局驾驶舱的缓存时长下限。
+ * 这个端点要 spawn 十几次 gh，比单仓库概览重得多，因此不直接沿用 cacheTtlMs（默认 15s）。
+ * 定在 5 分钟的依据：它展示的是「我的仓库 / 待办 PR / Issues」这类分钟级不变的数据，
+ * 而每次刷新本机实测要 8-13 秒。缓存太短等于让用户反复等这段延迟——实测 60 秒缓存下，
+ * 用户 65 秒后再打开面板仍需等 9.7 秒。仍随 cacheTtlMs 缩放，用户调大时这里同步变长。
+ */
+const GLOBAL_CACHE_MIN_TTL_MS = 300_000;
+
+/**
+ * 由用户配置推导全局驾驶舱的缓存时长。
+ * 抽成导出的纯函数：TTL 的推导规则是测试断言的对象，埋在闭包里就只能靠猜。
+ */
+export function globalCacheTtlMs(cacheTtlMs: number): number {
+  const base = Number.isFinite(cacheTtlMs) && cacheTtlMs >= 0 ? cacheTtlMs : 15_000;
+  return Math.max(base * 20, GLOBAL_CACHE_MIN_TTL_MS);
+}
+
+/** open_browser 只允许 http/https，杜绝 file:// 与自定义协议被当作打开目标 */
+function isSafeExternalUrl(raw: unknown): raw is string {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > 2048) return false;
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function registerApiRoutes(webServerService: any, executor: GhExecutor, workspaceRegistry?: any, cacheTtlMs = 15_000) {
   if (!webServerService || typeof webServerService.register !== 'function') return;
+
+  const cacheMap = new TtlCache<GitHubOverviewData>(cacheTtlMs);
+  const globalCache = new TtlCache<GlobalOverviewData>(globalCacheTtlMs(cacheTtlMs));
 
   function sendJson(res: any, status: number, data: any) {
     res.statusCode = status;
@@ -29,59 +74,21 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
         let cwd = url.searchParams.get('cwd');
         const sessionId = url.searchParams.get('sessionId');
 
-        // 1. 优先通过 sessionId 从 workspace.json 逆向解析物理路径
+        // 会话 ID → 物理路径，以及「最近活跃工作区」兜底，统一由 workspace 模块提供
         if (!cwd && sessionId) {
-          try {
-            const fs = await import('node:fs');
-            const path = await import('node:path');
-            const os = await import('node:os');
-            const wsJsonPath = path.join(os.homedir(), '.dsh', 'storages', 'workspace.json');
-            if (fs.existsSync(wsJsonPath)) {
-              const wsData = JSON.parse(fs.readFileSync(wsJsonPath, 'utf8'));
-              const workspaces = wsData.tables?.workspaces || {};
-              for (const wsId of Object.keys(workspaces)) {
-                const item = workspaces[wsId];
-                if (item.sessionIds && item.sessionIds.includes(sessionId)) {
-                  cwd = item.path;
-                  break;
-                }
-              }
-            }
-          } catch (e) {}
+          cwd = findWorkspacePathBySession(sessionId) || null;
         }
-
-        // 2. 若仍未获取，从 workspace.json 自动匹配最近活跃的工作区
         if (!cwd) {
-          try {
-            const fs = await import('node:fs');
-            const path = await import('node:path');
-            const os = await import('node:os');
-            const wsJsonPath = path.join(os.homedir(), '.dsh', 'storages', 'workspace.json');
-            if (fs.existsSync(wsJsonPath)) {
-              const wsData = JSON.parse(fs.readFileSync(wsJsonPath, 'utf8'));
-              const workspaces = wsData.tables?.workspaces || {};
-              let latestItem: any = null;
-              for (const wsId of Object.keys(workspaces)) {
-                const item = workspaces[wsId];
-                if (!latestItem || new Date(item.updatedAt || 0) > new Date(latestItem.updatedAt || 0)) {
-                  latestItem = item;
-                }
-              }
-              if (latestItem && latestItem.path) {
-                cwd = latestItem.path;
-              }
-            }
-          } catch (e) {}
+          cwd = findMostRecentWorkspacePath() || null;
         }
-
         if (!cwd) {
           cwd = process.cwd();
         }
 
         const now = Date.now();
-        const cached = cacheMap.get(cwd);
-        if (cached && now - cached.time < CACHE_TTL_MS) {
-          sendJson(res, 200, { ok: true, data: cached.data, fromCache: true, cwd });
+        const cachedData = cacheMap.get(cwd, now);
+        if (cachedData) {
+          sendJson(res, 200, { ok: true, data: cachedData, fromCache: true, cwd });
           return;
         }
 
@@ -97,15 +104,15 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
           const [prsRes, issuesRes, runsRes] = await Promise.all([
             executor.run<PrItem[]>(
               ['pr', 'list', '--json', 'number,title,state,author,headRefName,baseRefName,isDraft,mergeable,reviewDecision,statusCheckRollup,url,updatedAt', '-L', '10'],
-              { cwd, timeoutMs: 12_000 }
+              { cwd, timeoutMs: 8_000 }
             ),
             executor.run<IssueItem[]>(
               ['issue', 'list', '--json', 'number,title,state,author,labels,assignees,url,updatedAt', '-L', '10'],
-              { cwd, timeoutMs: 12_000 }
+              { cwd, timeoutMs: 8_000 }
             ),
             executor.run<WorkflowRunItem[]>(
               ['run', 'list', '--json', 'databaseId,name,status,conclusion,event,headBranch,url,createdAt', '-L', '5'],
-              { cwd, timeoutMs: 12_000 }
+              { cwd, timeoutMs: 8_000 }
             ),
           ]);
 
@@ -123,7 +130,7 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
           lastUpdated: new Date().toISOString(),
         };
 
-        cacheMap.set(cwd, { data: freshData, time: now });
+        cacheMap.set(cwd, freshData, now);
 
         sendJson(res, 200, { ok: true, data: freshData, fromCache: false, cwd });
       } catch (err: any) {
@@ -138,6 +145,7 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
     path: '/api/github/refresh',
     handler: async (req: any, res: any) => {
       cacheMap.clear();
+      globalCache.clear();
       sendJson(res, 200, { ok: true, message: '缓存已清空，下次读取将拉取最新数据' });
     },
   });
@@ -176,10 +184,23 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
               break;
             }
             case 'open_browser': {
-              if (!payload.url) throw new Error('缺少 url 参数');
-              const { exec } = await import('node:child_process');
-              const openCmd = process.platform === 'win32' ? `start "" "${payload.url}"` : (process.platform === 'darwin' ? `open "${payload.url}"` : `xdg-open "${payload.url}"`);
-              exec(openCmd);
+              // 原实现把 payload.url 直接拼进 shell 字符串再交给 exec()，
+              // 形如 https://x" & calc & " 的 URL 可闭合引号并追加任意命令——本机任意页面
+              // 都能通过 POST 这个端点触发命令执行。
+              // 现在改为：先用 URL 解析白名单协议，再用 execFile 参数数组传递，全程不经过 shell。
+              if (!isSafeExternalUrl(payload.url)) {
+                throw new Error('url 参数无效：只允许 http/https 开头的完整地址');
+              }
+              const { execFile } = await import('node:child_process');
+              const [bin, args] = process.platform === 'win32'
+                ? ['cmd', ['/c', 'start', '', payload.url]]
+                : process.platform === 'darwin'
+                  ? ['open', [payload.url]]
+                  : ['xdg-open', [payload.url]];
+              // 不 await，也不让打开失败反向影响接口语义；仅记录以便排查
+              execFile(bin, args, (err: any) => {
+                if (err) console.warn('[dsh-github-flow] 打开浏览器失败:', err?.message || err);
+              });
               sendJson(res, 200, { ok: true, message: '已在浏览器打开' });
               break;
             }
@@ -203,27 +224,39 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
         return;
       }
 
+      // 全局驾驶舱要 spawn 十几次 gh（认证 + 仓库 + PR + Issue + 每个工作区探测），
+      // 实测冷启动曾达 18.9 秒。缓存是这里唯一的解药：面板每次挂载都会来取一次。
+      const now = Date.now();
+      const cachedGlobal = globalCache.get('global', now);
+      if (cachedGlobal) {
+        sendJson(res, 200, { ok: true, data: cachedGlobal, fromCache: true });
+        return;
+      }
+
       try {
         const auth = await executor.checkAuth();
         let userRepos: UserRepoItem[] = [];
         let myPrs: any[] = [];
         let myIssues: any[] = [];
         let workspaceMatrix: WorkspaceMatrixItem[] = [];
+        let workspaceError: string | undefined;
 
         if (auth.loggedIn) {
           // 并发执行：1. 账号下仓库列表 2. 个人 PRs 3. 个人 Issues
+          // 超时压到 8 秒：本机实测 `gh search issues --author=@me` 单次就要 10 秒，
+          // 它是这组的木桶短板，直接决定首屏等待时间。面板查询不值得为它多等 4 秒。
           const [reposRes, prsRes, issuesRes] = await Promise.all([
             executor.run<any[]>(
               ['repo', 'list', '--limit', '20', '--json', 'name,nameWithOwner,description,defaultBranchRef,isPrivate,stargazerCount,updatedAt,url'],
-              { timeoutMs: 12_000 }
+              { timeoutMs: 8_000 }
             ),
             executor.run<any[]>(
               ['search', 'prs', '--author=@me', '--state=open', '--limit', '10', '--json', 'number,title,repository,url,updatedAt'],
-              { timeoutMs: 12_000 }
+              { timeoutMs: 8_000 }
             ),
             executor.run<any[]>(
               ['search', 'issues', '--author=@me', '--state=open', '--limit', '10', '--json', 'number,title,repository,url,updatedAt'],
-              { timeoutMs: 12_000 }
+              { timeoutMs: 8_000 }
             ),
           ]);
 
@@ -248,38 +281,28 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
           }
         }
 
-        // 4. 解析本地所有工作区与 GitHub 关联矩阵
-        try {
-          const fs = await import('node:fs');
-          const path = await import('node:path');
-          const os = await import('node:os');
-          const wsJsonPath = path.join(os.homedir(), '.dsh', 'storages', 'workspace.json');
-          if (fs.existsSync(wsJsonPath)) {
-            const wsData = JSON.parse(fs.readFileSync(wsJsonPath, 'utf8'));
-            const workspaces = wsData.tables?.workspaces || {};
-            const wsEntries = Object.keys(workspaces).map((id) => ({ id, ...workspaces[id] }));
+        // 解析本地所有工作区与 GitHub 关联矩阵
+        const wsRead = tryReadWorkspaces();
+        workspaceError = wsRead.error;
+        if (!workspaceError) {
+          const wsEntries = wsRead.workspaces.filter((ws) => ws.path);
 
-            // 并发探测每个工作区路径的 Git Remote
-            const matrixResults = await Promise.all(
-              wsEntries.map(async (ws) => {
-                const hasGit = fs.existsSync(path.join(ws.path, '.git'));
-                let repoMeta: RepoMetadata | undefined = undefined;
-                if (hasGit) {
-                  repoMeta = (await executor.getRepoMetadata(ws.path)) || undefined;
-                }
-                return {
-                  id: ws.id,
-                  title: ws.title || path.basename(ws.path),
-                  path: ws.path,
-                  hasGit,
-                  repo: repoMeta,
-                  sessionCount: (ws.sessionIds && ws.sessionIds.length) || 0,
-                };
-              })
-            );
-            workspaceMatrix = matrixResults;
-          }
-        } catch (e) {}
+          // 有界并发探测：每个工作区最多 spawn 2 个 gh 进程，无上限并发会让它们全挤进
+          // libuv 默认 4 线程的队列里排队，延迟随工作区数量线性劣化。
+          // 这里刻意只用本地 .git/config 识别身份、不发网络请求——全局矩阵只需要「属于哪个仓库」，
+          // 每次网络往返都要秒级，5 个工作区就足以把该端点拖到 20 秒。
+          workspaceMatrix = await mapLimit(wsEntries, WORKSPACE_PROBE_CONCURRENCY, async (ws) => {
+            const hasGit = hasGitDir(ws.path);
+            return {
+              id: ws.id,
+              title: ws.title || basenameSafe(ws.path),
+              path: ws.path,
+              hasGit,
+              repo: hasGit ? executor.getRepoIdentityFromLocal(ws.path) || undefined : undefined,
+              sessionCount: ws.sessionIds.length,
+            };
+          });
+        }
 
         const globalData: GlobalOverviewData = {
           auth,
@@ -288,9 +311,11 @@ export function registerApiRoutes(webServerService: any, executor: GhExecutor, w
           myPrs,
           myIssues,
           lastUpdated: new Date().toISOString(),
+          ...(workspaceError ? { workspaceError } : {}),
         };
 
-        sendJson(res, 200, { ok: true, data: globalData });
+        globalCache.set('global', globalData, now);
+        sendJson(res, 200, { ok: true, data: globalData, fromCache: false });
       } catch (err: any) {
         sendJson(res, 500, { ok: false, error: err.message || '获取全局驾驶舱数据失败' });
       }

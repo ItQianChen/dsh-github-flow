@@ -19,6 +19,9 @@ const lib = (p) => pathToFileURL(path.resolve('lib', p)).href;
 const { GhExecutor, truncateOutput } = await import(lib('executor.js'));
 const { createPrTool } = await import(lib('tools/pr.js'));
 const { createApiTool } = await import(lib('tools/api.js'));
+const { mapLimit, tryReadWorkspaces, readWorkspaces, resetWorkspaceCache, hasGitDir } = await import(lib('workspace.js'));
+const { TtlCache } = await import(lib('cache.js'));
+const { registerApiRoutes, globalCacheTtlMs } = await import(lib('api/routes.js'));
 
 const cwd = process.cwd();
 const ctx = { cwd };
@@ -321,6 +324,267 @@ console.log('\n[F2-live] -f 构造的表单请求体能被 GitHub 正常受理')
   } else {
     check('POST 表单请求被受理（网络原因跳过）', false, String(res.error?.message || res.error).slice(0, 160));
   }
+}
+
+console.log('\n==================================================');
+console.log(' D 层：本次审计修复项');
+console.log('==================================================');
+
+// ── D1：mapLimit 有界并发（消除 global-overview 的排队劣化） ──────────
+console.log('\n[D1] mapLimit 有界并发');
+{
+  let inFlight = 0;
+  let peak = 0;
+  const items = Array.from({ length: 12 }, (_, i) => i);
+
+  const out = await mapLimit(items, 3, async (n) => {
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, 15));
+    inFlight--;
+    return n * 2;
+  });
+
+  check('在途并发不超过上限 3', peak <= 3, `实测峰值 ${peak}`);
+  check('并发确实用满（未退化为串行）', peak === 3, `实测峰值 ${peak}`);
+  check('结果顺序与输入一致', JSON.stringify(out) === JSON.stringify(items.map((n) => n * 2)), JSON.stringify(out));
+  check('空数组返回空数组', (await mapLimit([], 3, async () => 1)).length === 0);
+
+  // limit 大于数组长度时不应死锁
+  const small = await mapLimit([1, 2], 10, async (n) => n + 1);
+  check('limit 超出长度时不挂死且结果正确', JSON.stringify(small) === '[2,3]', JSON.stringify(small));
+
+  // 单个任务抛错应向上传播，不被吞掉
+  let threw = false;
+  try {
+    await mapLimit([1, 2, 3], 2, async (n) => {
+      if (n === 2) throw new Error('boom');
+      return n;
+    });
+  } catch {
+    threw = true;
+  }
+  check('任务异常向上抛出而非静默吞掉', threw);
+}
+
+// ── D2：TtlCache 的 TTL / LRU / 容量上限 ────────────────────────────
+console.log('\n[D2] TtlCache（cacheTtlMs 生效 + 容量上限）');
+{
+  const c = new TtlCache(1000, 3);
+  c.set('a', 1, 0);
+  check('未过期可命中', c.get('a', 500) === 1);
+  check('恰好到 TTL 视为过期', c.get('a', 1000) === undefined);
+  check('过期后条目被移除', c.size === 0, `size=${c.size}`);
+
+  for (const k of ['a', 'b', 'c']) c.set(k, k, 0);
+  check('容量内正常保存', c.size === 3);
+  c.set('d', 'd', 0);
+  check('超出容量后腾退到上限', c.size === 3, `size=${c.size}`);
+  check('最久未使用的 a 被淘汰', c.get('a', 1) === undefined);
+  check('新写入的 d 仍在', c.get('d', 1) === 'd');
+
+  // 命中应刷新 LRU 位置：b 被访问后，新写入应淘汰 c 而不是 b
+  c.get('b', 2);
+  c.set('e', 'e', 2);
+  check('命中会刷新 LRU 位置', c.get('b', 3) === 'b', 'b 被错误淘汰');
+  check('未被访问的 c 被淘汰', c.get('c', 3) === undefined);
+
+  c.clear();
+  check('clear 清空全部', c.size === 0);
+
+  // 用户把 cacheTtlMs 配成 0 时，行为应是「永不命中」而不是「永远命中」
+  const zero = new TtlCache(0, 4);
+  zero.set('k', 1, 0);
+  check('TTL=0 时不命中（尊重用户显式配置）', zero.get('k', 0) === undefined);
+}
+
+// ── D3：workspace 模块（单一数据源 + 不静默吞错） ─────────────────────
+console.log('\n[D3] workspace 单一数据源与容错');
+{
+  resetWorkspaceCache();
+  const r = tryReadWorkspaces();
+  check('读取本机 workspace.json 不抛错', typeof r.workspaces === 'object', r.error || '');
+  check('workspace.json 存在时不应报错', !r.error, `意外错误：${r.error}`);
+  console.log(`     读到 ${r.workspaces.length} 个工作区`);
+
+  if (r.workspaces.length > 0) {
+    const w = r.workspaces[0];
+    check('记录字段结构完整', typeof w.id === 'string' && typeof w.path === 'string' && Array.isArray(w.sessionIds), JSON.stringify(w).slice(0, 160));
+    const withGit = r.workspaces.filter((x) => hasGitDir(x.path)).length;
+    check('hasGitDir 能识别出仓库工作区', withGit >= 1, `仅 ${withGit} 个含 .git`);
+  }
+
+  // 缓存行为：连续两次读取应是同一个数组引用（证明走了缓存而非重复解析磁盘）
+  resetWorkspaceCache();
+  const first = readWorkspaces();
+  const second = readWorkspaces();
+  check('重复读取命中缓存（同一引用）', first === second, '未命中缓存，仍在校验 TTL 内重复解析');
+  resetWorkspaceCache();
+  const third = readWorkspaces();
+  check('resetWorkspaceCache 后重新解析', third !== first);
+
+  // 容错路径：tryReadWorkspaces 在异常时返回 error 而非抛出
+  const original = readWorkspaces;
+  check('tryReadWorkspaces 永不抛出', (() => {
+    try { tryReadWorkspaces(); return true; } catch { return false; }
+  })(), 'tryReadWorkspaces 抛出了异常，未兑现「不静默但也不崩」的契约');
+}
+
+// ── D4：工具参数 spec 符合官方写法（属性级 required: true） ───────────
+console.log('\n[D4] 五个工具的 parameters 均为一等属性表');
+{
+  const { executor } = makeSpy();
+  const tools = [
+    createPrTool(executor),
+    createApiTool(executor),
+    (await import(lib('tools/issue.js'))).createIssueTool(executor),
+    (await import(lib('tools/run.js'))).createRunTool(executor),
+    (await import(lib('tools/repo.js'))).createRepoTool(executor),
+  ];
+
+  for (const t of tools) {
+    const p = t.parameters;
+    check(`[${t.name}] 不再是 {type,properties} 包装`, !(p.type === 'object' && p.properties), JSON.stringify(p).slice(0, 120));
+    check(`[${t.name}] 无可被误读为 JSON Schema 的顶层 required 数组`, !Array.isArray(p.required), `required=${JSON.stringify(p.required)}`);
+    const requiredKeys = Object.keys(p).filter((k) => p[k] && p[k].required === true);
+    check(`[${t.name}] 恰有一个必填参数`, requiredKeys.length === 1, `实际 ${JSON.stringify(requiredKeys)}`);
+    check(`[${t.name}] 每个参数都有 description`, Object.keys(p).every((k) => typeof p[k].description === 'string' && p[k].description.length > 0));
+  }
+}
+
+// ── D5：ctx.github 类型声明合并可被消费方加载 ────────────────────────
+console.log('\n[D5] ctx.github 类型声明');
+{
+  const fs = await import('node:fs');
+  const main = fs.readFileSync('lib/main.js', 'utf8');
+  check('main.js 引用了 github-service（声明合并随包加载）', /github-service/.test(main), main.slice(0, 200));
+  const dts = fs.readFileSync('lib/github-service.d.ts', 'utf8');
+  check('声明文件含 declare module 增强', /declare module '@deepseek-ai\/cordis'/.test(dts), dts.slice(0, 200));
+  check('声明了 ctx.github 的类型', /github:\s*GhExecutor/.test(dts), dts.slice(0, 200));
+}
+
+// ── D5b：本地仓库身份识别（全局矩阵不再走网络的关键） ─────────────────
+console.log('\n[D5b] getRepoIdentityFromLocal 不发网络请求');
+{
+  const ident = liveExecutor.getRepoIdentityFromLocal(cwd);
+  check('能从 .git/config 解析出仓库身份', Boolean(ident?.nameWithOwner), JSON.stringify(ident));
+  check('解析出的是本仓库', ident?.nameWithOwner === 'ItQianChen/dsh-github-flow', `${ident?.nameWithOwner}`);
+  check('返回结构含 owner/url 字段', Boolean(ident?.owner && ident?.url), JSON.stringify(ident));
+
+  const t0 = Date.now();
+  liveExecutor.getRepoIdentityFromLocal(cwd);
+  const localMs = Date.now() - t0;
+  check('本地解析耗时可忽略（<50ms，对比网络往返秒级）', localMs < 50, `${localMs}ms`);
+
+  const none = liveExecutor.getRepoIdentityFromLocal(path.join(cwd, 'docs'));
+  check('非 Git 目录返回 null 而非抛错', none === null, JSON.stringify(none));
+}
+
+// ── D6：路由层（缓存 / TTL 透传 / 注入防护 / 错误不外吞） ──────────────console.log('\n[D6] WebServer 路由：缓存、TTL 与 URL 白名单');
+{
+  const handlers = new Map();
+  const fakeServer = { register: (r) => handlers.set(r.path, r.handler) };
+  const spyCalls = [];
+  const spyExec = {
+    checkAuth: async () => ({ installed: true, loggedIn: false, platform: 'win32' }),
+    getRepoMetadata: async () => null,
+    // 必须与 GhExecutor 的方法集保持同步：全局矩阵改走本地识别后，
+    // 缺这个方法会让处理器抛错并把 500 伪装成缓存行为异常，掩盖真实问题。
+    getRepoIdentityFromLocal: () => ({ nameWithOwner: 'stub/repo', name: 'repo', owner: 'stub', defaultBranch: 'main', isPrivate: false, url: 'https://github.com/stub/repo', description: '' }),
+    resolveWorkspaceCwd: (c) => c,
+    run: async (args) => {
+      spyCalls.push(args.join(' '));
+      return { ok: true, data: [], rawOutput: '[]' };
+    },
+  };
+
+  const routes = registerApiRoutes(fakeServer, spyExec, undefined, 50);
+  check('注册了 4 条路由', handlers.size === 4, `实际 ${handlers.size}: ${[...handlers.keys()].join(', ')}`);
+
+  // TTL 推导：全局驾驶舱比单仓库概览重得多，必须有下限，但仍随用户配置缩放
+  check('默认 15s 配置下推得 300s', globalCacheTtlMs(15_000) === 300_000, `${globalCacheTtlMs(15_000)}`);
+  check('小配置被下限兜住（300s 起）', globalCacheTtlMs(50) === 300_000, `${globalCacheTtlMs(50)}`);
+  check('大配置按 20 倍放大', globalCacheTtlMs(60_000) === 1_200_000, `${globalCacheTtlMs(60_000)}`);
+  check('非法配置回落到默认', globalCacheTtlMs(NaN) === 300_000, `${globalCacheTtlMs(NaN)}`);
+
+  function mockRes() {
+    const res = { statusCode: 0, headers: {}, body: '', ended: false };
+    res.setHeader = (k, v) => { res.headers[k] = v; };
+    res.end = (s) => { res.body = s || ''; res.ended = true; };
+    return res;
+  }
+
+  // 未登录时 global-overview 只跑 checkAuth，适合验证缓存语义
+  const h = handlers.get('/api/github/global-overview');
+  const r1 = mockRes();
+  const t1 = Date.now();
+  await h({ method: 'GET', url: '/api/github/global-overview' }, r1);
+  const coldMs = Date.now() - t1;
+  const b1 = JSON.parse(r1.body);
+  check('首次请求 fromCache=false', b1.fromCache === false, r1.body.slice(0, 200));
+  check('响应含 workspaceMatrix 字段', Array.isArray(b1.data?.workspaceMatrix), r1.body.slice(0, 200));
+
+  const r2 = mockRes();
+  const t2 = Date.now();
+  await h({ method: 'GET', url: '/api/github/global-overview' }, r2);
+  const warmMs = Date.now() - t2;
+  const b2 = JSON.parse(r2.body);
+  check('TTL 内二次请求走缓存（消除 19 秒重复拉取）', b2.fromCache === true, r2.body.slice(0, 160));
+  check('缓存命中显著快于冷启动', warmMs < coldMs, `冷 ${coldMs}ms vs 热 ${warmMs}ms`);
+  console.log(`     冷启动 ${coldMs}ms → 缓存命中 ${warmMs}ms`);
+
+  const r3 = mockRes();
+  await h({ method: 'POST', url: '/api/github/global-overview' }, r3);
+  check('非 GET 返回 405', r3.statusCode === 405, `status=${r3.statusCode}`);
+
+  // /refresh 应同时清掉两级缓存
+  const refresh = mockRes();
+  await handlers.get('/api/github/refresh')({ method: 'POST', url: '/api/github/refresh' }, refresh);
+  check('/refresh 被接受', refresh.statusCode === 200, refresh.body.slice(0, 120));
+
+  const afterRefresh = mockRes();
+  await h({ method: 'GET', url: '/api/github/global-overview' }, afterRefresh);
+  check('/refresh 之后回到未命中状态', JSON.parse(afterRefresh.body).fromCache === false, afterRefresh.body.slice(0, 120));
+
+  // open_browser 的注入防护。
+  // 必须等 res.end 真正被调用：open_browser 分支是先注册 execFile 回调再 res.end，
+  // 但 action 处理器整体走 req.on('end') 异步路径，不等就会读到空 body。
+  const action = handlers.get('/api/github/action');
+  function postAction(payload) {
+    return new Promise((resolve, reject) => {
+      const guard = setTimeout(() => reject(new Error('action 处理器未在 5s 内响应，疑似丢失 res.end')), 5000);
+      const res = mockRes();
+      const raw = res.end.bind(res);
+      res.end = (s) => { raw(s); clearTimeout(guard); resolve(res); };
+      const req = {
+        method: 'POST',
+        url: '/api/github/action',
+        on(ev, cb) {
+          if (ev === 'data') cb(JSON.stringify(payload));
+          if (ev === 'end') setImmediate(() => cb());
+        },
+      };
+      action(req, res).catch((e) => { clearTimeout(guard); reject(e); });
+    });
+  }
+
+  for (const bad of [
+    'file:///C:/Windows/System32/calc.exe',
+    'http://x" & calc & "',
+    'javascript:alert(1)',
+    'not-a-url',
+    '',
+  ]) {
+    const res = await postAction({ action: 'open_browser', url: bad });
+    const body = JSON.parse(res.body);
+    check(`拒绝危险 URL: ${JSON.stringify(bad)}`, res.statusCode !== 200 && body.ok === false, `status=${res.statusCode} body=${res.body.slice(0, 120)}`);
+  }
+
+  const okRes = await postAction({ action: 'open_browser', url: 'https://github.com/ItQianChen/dsh-github-flow' });
+  check('接受合法 https URL', JSON.parse(okRes.body).ok === true, okRes.body.slice(0, 160));
+
+  const unknown = await postAction({ action: 'nope' });
+  check('未知 action 返回 400', unknown.statusCode === 400, unknown.body.slice(0, 120));
 }
 
 console.log('\n==================================================');

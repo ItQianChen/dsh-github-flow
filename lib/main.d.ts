@@ -1,4 +1,5 @@
 import { GhExecutor } from './executor.js';
+import './github-service.js';
 import type { PluginConfig } from './types.js';
 export declare const name = "dsh-github-flow";
 export declare const inject: readonly ['tools', 'commands', 'webServer', 'workspaceRegistry'];
@@ -18,3 +19,4 @@ export declare const Config: {
 export declare function apply(ctx: any, config?: PluginConfig): void;
 export type GitHubService = GhExecutor;
 export * from './types.js';
+export * from './github-service.js';

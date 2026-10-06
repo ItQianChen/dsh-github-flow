@@ -3,27 +3,24 @@ export declare function createRepoTool(executor: GhExecutor): {
     name: string;
     description: string;
     parameters: {
-        type: string;
-        properties: {
-            action: {
-                type: string;
-                enum: string[];
-                description: string;
-            };
-            repo: {
-                type: string;
-                description: string;
-            };
-            query: {
-                type: string;
-                description: string;
-            };
-            limit: {
-                type: string;
-                description: string;
-            };
+        action: {
+            type: string;
+            enum: string[];
+            required: boolean;
+            description: string;
         };
-        required: string[];
+        repo: {
+            type: string;
+            description: string;
+        };
+        query: {
+            type: string;
+            description: string;
+        };
+        limit: {
+            type: string;
+            description: string;
+        };
     };
     output: {
         schema: {
