@@ -3,31 +3,28 @@ export declare function createApiTool(executor: GhExecutor): {
     name: string;
     description: string;
     parameters: {
-        type: string;
-        properties: {
-            endpoint: {
-                type: string;
-                description: string;
-            };
-            method: {
-                type: string;
-                enum: string[];
-                description: string;
-            };
-            jq: {
-                type: string;
-                description: string;
-            };
-            fields: {
-                type: string;
-                description: string;
-            };
-            raw: {
-                type: string;
-                description: string;
-            };
+        endpoint: {
+            type: string;
+            required: boolean;
+            description: string;
         };
-        required: string[];
+        method: {
+            type: string;
+            enum: string[];
+            description: string;
+        };
+        jq: {
+            type: string;
+            description: string;
+        };
+        fields: {
+            type: string;
+            description: string;
+        };
+        raw: {
+            type: string;
+            description: string;
+        };
     };
     output: {
         schema: {

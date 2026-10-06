@@ -976,20 +976,38 @@ body[data-ds-dark-theme] .dsh-github-subheading {
       var loadData = React.useCallback(async (forceRefresh = false) => {
         setLoading(true);
         setError(null);
+        // 全局驾驶舱要 spawn 十几次 gh，冷启动可能超过 10 秒。
+        // 不设显式超时的话浏览器会抛一个与真实原因无关的网络错误，
+        // 早先这里会把所有失败都归因成「后端服务未就绪或接口不存在」——归因错误比没有报错更糟。
+        var controller = new AbortController();
+        var timedOut = false;
+        var timer = setTimeout(function () { timedOut = true; controller.abort(); }, 30000);
         try {
           if (forceRefresh) await fetch("/api/github/refresh", { method: "POST" }).catch(() => {});
-          var res = await fetch("/api/github/global-overview");
+          var res = await fetch("/api/github/global-overview", { signal: controller.signal });
           if (!res.ok) {
             var errText = await res.text().catch(() => "");
-            setError(`后端服务未就绪或接口不存在 (${res.status}): ${errText || res.statusText}`);
+            setError(`获取全局数据失败（HTTP ${res.status}）${errText ? ": " + errText : ""}`);
             return;
           }
           var json = await res.json();
-          if (json.ok && json.data) setData(json.data);
-          else setError(json.error || "获取全局数据失败");
+          if (json.ok && json.data) {
+            setData(json.data);
+            // 工作区矩阵单独失败时不能静默：否则界面显示「暂无工作区」，把故障伪装成空状态
+            if (json.data.workspaceError) {
+              setError("工作区列表读取失败：" + json.data.workspaceError);
+            }
+          } else {
+            setError(json.error || "获取全局数据失败");
+          }
         } catch (err: any) {
-          setError(err.message);
+          if (timedOut || err.name === "AbortError") {
+            setError("获取超时（30 秒）：本机 gh 命令响应过慢，通常是网络或工作区数量较多所致。可稍后重试，或减少同时打开的工作区。");
+          } else {
+            setError("无法连接后端服务：" + (err.message || err));
+          }
         } finally {
+          clearTimeout(timer);
           setLoading(false);
         }
       }, []);

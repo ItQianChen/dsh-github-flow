@@ -10,7 +10,9 @@ export function registerGhCommand(commandsService: any, executor: GhExecutor) {
       const trimmed = (rawInput || '').trim();
 
       if (!trimmed || trimmed === 'status') {
-        const auth = await executor.checkAuth();
+        // 人类显式诊断必须绕过缓存：用户敲 /gh status 往往正是为了确认
+        // 「我刚 gh auth login 到底成没成」，给他 30 秒前的缓存等于答非所问。
+        const auth = await executor.checkAuth(undefined, true);
         const repo = await executor.getRepoMetadata();
 
         let md = `### GitHub 集成状态\n\n`;

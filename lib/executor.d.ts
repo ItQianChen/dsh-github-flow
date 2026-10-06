@@ -14,6 +14,8 @@ export declare class GhExecutor {
     maxOutputChars: number;
     /** UTF-8 字节口径的硬上限；未配置时按 maxOutputChars × 4 推导（覆盖 CJK 3 字节与 emoji 4 字节） */
     maxOutputBytes: number;
+    /** 认证状态缓存。`gh auth status` 实测 5.4 秒，而它位于全局驾驶舱关键路径的最前面 */
+    private authCache;
     constructor(config?: PluginConfig);
     updateConfig(config?: PluginConfig): void;
     /**
@@ -31,8 +33,24 @@ export declare class GhExecutor {
     run<T = unknown>(args: string[], options?: GhExecutionOptions): Promise<GhResult<T>>;
     /**
      * 检查宿主机当前 GitHub CLI 的认证状态与账号信息
+     *
+     * @param cwd 解析工作区用的路径
+     * @param bypassCache 跳过进程内缓存。`/gh status` 这类人类显式发起的诊断必须看到实时结果，
+     *   而 Web 面板每次挂载都会来问一次，重复执行实测要 5.4 秒，属于纯浪费。
      */
-    checkAuth(cwd?: string): Promise<AuthStatus>;
+    checkAuth(cwd?: string, bypassCache?: boolean): Promise<AuthStatus>;
+    /** 实际执行 `gh auth status` 并解析结果，不含缓存逻辑 */
+    private probeAuth;
+    /**
+     * 仅从本地 .git/config 解析仓库身份，绝不发起网络请求。
+     *
+     * 为什么需要它：全局驾驶舱要为每个工作区认识别仓库，而 getRepoMetadata 会调用
+     * `gh repo view` 走网络。实测 5 个工作区时该端点冷启动 20.5 秒，其中绝大部分耗在这 5 次
+     * 网络往返上——而有界并发根本救不了它，因为瓶颈是网络延迟而不是进程排队。
+     * 工作区矩阵只需要「这个目录属于哪个仓库」这一身份信息，本地 .git/config 已经完整具备，
+     * 描述/star 数等富字段是当前仓库详情才需要的。这一步把每个工作区从 1 次网络往返降为 0。
+     */
+    getRepoIdentityFromLocal(cwd?: string): RepoMetadata | null;
     /**
      * 获取当前目录（工作区）关联的远程仓库元数据
      * 采用 gh repo view + 本地 git remote 双保险机制，彻底杜绝已配置远程却误判未关联的问题

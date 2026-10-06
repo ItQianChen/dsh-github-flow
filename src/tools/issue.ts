@@ -15,41 +15,38 @@ export function createIssueTool(executor: GhExecutor) {
     name: 'github_issue',
     description: '管理 GitHub Issues。支持查看 Issue 列表、详情、创建新 Issue、追加评论以及关闭 Issue。',
     parameters: {
-      type: 'object',
-      properties: {
-        action: {
-          type: 'string',
-          enum: ['list', 'view', 'create', 'comment', 'close', 'reopen'],
-          description: 'Issue 操作类型。',
-        },
-        issue_number: {
-          type: 'number',
-          description: 'Issue 编号（view, comment, close, reopen 时使用）。',
-        },
-        repo: {
-          type: 'string',
-          description: '目标仓库 [owner/repo]，留空则识别当前仓库。',
-        },
-        title: {
-          type: 'string',
-          description: 'Issue 标题（create 时使用）。',
-        },
-        body: {
-          type: 'string',
-          description: 'Issue 描述正文或追加评论内容。',
-        },
-        labels: {
-          type: 'array',
-          items: { type: 'string' },
-          description: '标签名称列表。',
-        },
-        assignees: {
-          type: 'array',
-          items: { type: 'string' },
-          description: '被指派人的 GitHub 登录名列表。',
-        },
+      action: {
+        type: 'string',
+        enum: ['list', 'view', 'create', 'comment', 'close', 'reopen'],
+        required: true,
+        description: 'Issue 操作类型。',
       },
-      required: ['action'],
+      issue_number: {
+        type: 'number',
+        description: 'Issue 编号（view, comment, close, reopen 时使用）。',
+      },
+      repo: {
+        type: 'string',
+        description: '目标仓库 [owner/repo]，留空则识别当前仓库。',
+      },
+      title: {
+        type: 'string',
+        description: 'Issue 标题（create 时使用）。',
+      },
+      body: {
+        type: 'string',
+        description: 'Issue 描述正文或追加评论内容。',
+      },
+      labels: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '标签名称列表。',
+      },
+      assignees: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '被指派人的 GitHub 登录名列表。',
+      },
     },
     output: {
       schema: { type: 'object' },

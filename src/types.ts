@@ -151,4 +151,6 @@ export interface GlobalOverviewData {
   }>;
   lastUpdated: string;
   error?: string;
+  /** 工作区矩阵读取失败的原因。区分「没有工作区」与「读不到工作区」，避免把故障显示成空状态 */
+  workspaceError?: string;
 }
