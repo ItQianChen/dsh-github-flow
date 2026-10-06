@@ -79,7 +79,7 @@ dsh plugin --profile web add dsh-github-flow
 | `github_issue` | `list`, `view`, `create`, `comment`, `close`, `reopen` | Search and view issues, create issues, add comments |
 | `github_run` | `list`, `view`, `log_failed`, `rerun`, `cancel` | Monitor Actions workflows; `log_failed` extracts failure logs for automatic fixes |
 | `github_repo` | `view`, `search_code`, `search_repos` | Query repository metadata, search cross-repo code |
-| `github_api` | Any GitHub REST / GraphQL endpoint | Universal escape hatch for custom queries (supports `--jq`) |
+| `github_api` | Any GitHub REST / GraphQL endpoint | Universal escape hatch for custom queries (supports `--jq`, plus a `raw` response-body mode) |
 
 ---
 
@@ -103,6 +103,7 @@ Customize options in your `cordis.patch.yml` or profile:
         ghPath: 'gh'              # Custom path to gh binary
         defaultTimeoutMs: 30000   # Timeout in milliseconds
         maxOutputChars: 24000     # Maximum characters per output (Token guard)
+        maxOutputBytes: 96000     # Hard UTF-8 byte ceiling per output, defaults to maxOutputChars * 4
         cacheTtlMs: 15000         # Web overview cache time
         defaultListLimit: 20      # Default page size
 ```
