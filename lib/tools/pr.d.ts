@@ -30,6 +30,10 @@ export declare function createPrTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            head: {
+                type: string;
+                description: string;
+            };
             draft: {
                 type: string;
                 description: string;
@@ -42,6 +46,14 @@ export declare function createPrTool(executor: GhExecutor): {
             merge_method: {
                 type: string;
                 enum: string[];
+                description: string;
+            };
+            delete_branch: {
+                type: string;
+                description: string;
+            };
+            dry_run: {
+                type: string;
                 description: string;
             };
         };
