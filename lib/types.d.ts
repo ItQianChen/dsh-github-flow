@@ -8,6 +8,8 @@ export interface PluginConfig {
     defaultTimeoutMs?: number;
     /** 单次安全输出字符数上限（防止 Token 溢出），默认 24,000 */
     maxOutputChars?: number;
+    /** 单次安全输出 UTF-8 字节数硬上限，默认 maxOutputChars × 4（防止中文按字符计数时实际放行字节数倍增） */
+    maxOutputBytes?: number;
     /** Web API 概览数据缓存时长（毫秒），默认 15,000ms */
     cacheTtlMs?: number;
     /** 查询列表默认限制条数，默认 20 */

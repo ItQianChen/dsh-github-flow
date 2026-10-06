@@ -22,6 +22,10 @@ export declare function createApiTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            raw: {
+                type: string;
+                description: string;
+            };
         };
         required: string[];
     };

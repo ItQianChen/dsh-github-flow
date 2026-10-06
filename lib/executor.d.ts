@@ -1,8 +1,19 @@
 import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig } from './types.js';
+/**
+ * 按「字符数 + UTF-8 字节数」双口径截断输出。
+ * 抽成纯函数是刻意的：截断逻辑是崩溃高发区（切碎多字节字符、误伤 JSON、把二进制流截成垃圾），
+ * 但通过真实 gh 命令很难稳定复现超限输出，抽出来才能用单元测试覆盖边界。
+ */
+export declare function truncateOutput(input: string, maxChars: number, maxBytes: number): {
+    text: string;
+    truncated: boolean;
+};
 export declare class GhExecutor {
     ghPath: string;
     defaultTimeoutMs: number;
     maxOutputChars: number;
+    /** UTF-8 字节口径的硬上限；未配置时按 maxOutputChars × 4 推导（覆盖 CJK 3 字节与 emoji 4 字节） */
+    maxOutputBytes: number;
     constructor(config?: PluginConfig);
     updateConfig(config?: PluginConfig): void;
     /**

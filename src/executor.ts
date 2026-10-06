@@ -7,21 +7,117 @@ import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConf
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * 按码点安全截取字符串，等价于 String.prototype.slice 但对孤立的代理对（surrogate pair）做占位替换。
+ * 为什么必须这样截：本文件末尾会按 UTF-8 字节数截断，而 node:child_process 把 stdout 按字节缓冲区
+ * 切分后再 toString('utf8')，一个汉字被从中间切开时会变成 U+FFFD 替换字符。直接用 slice 会把半截
+ * 代理对留在结果里，导致下游 JSON.stringify 产出孤立转义序列、写入文件时编码报错。
+ */
+function safeSlice(input: string, start: number, end?: number): string {
+  const chars = Array.from(input);
+  const from = Math.max(0, start);
+  const to = end === undefined ? chars.length : Math.max(from, end);
+  return chars.slice(from, to).map((c) => (c.length === 1 && c.charCodeAt(0) >= 0xd800 && c.charCodeAt(0) <= 0xdfff ? '\ufffd' : c)).join('');
+}
+
+/**
+ * 以 UTF-8 字节数（而非字符串长度）为口径，从两端保留内容。
+ * 为什么需要：maxOutputChars 数的是字符，中文一个字占 3 字节。只按字符限长时，
+ * 中文环境下真实放行的字节量可达标称值的数倍，Token 预算保护会失真。
+ * 采用二分查找定位截断点，避免对超大输出逐字符累加造成 O(n) 反复编码。
+ */
+function cutByUtf8Bytes(input: string, headBytes: number, tailBytes: number): { head: string; tail: string; keptHeadBytes: number; keptTailBytes: number; truncated: boolean } {
+  const encoder = new TextEncoder();
+  const totalBytes = encoder.encode(input).length;
+  if (totalBytes <= headBytes + tailBytes) {
+    return { head: input, tail: '', keptHeadBytes: totalBytes, keptTailBytes: 0, truncated: false };
+  }
+
+  const chars = Array.from(input);
+  const atByte = (limit: number, fromEnd: boolean): { count: number; bytes: number } => {
+    let lo = 0;
+    let hi = chars.length;
+    let bytes = 0;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      const slice = fromEnd ? chars.slice(chars.length - mid) : chars.slice(0, mid);
+      const size = encoder.encode(slice.join('')).length;
+      if (size <= limit) {
+        lo = mid;
+        bytes = size;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return { count: lo, bytes };
+  };
+
+  const headPart = atByte(headBytes, false);
+  const tailPart = atByte(tailBytes, true);
+  return {
+    head: safeSlice(input, 0, headPart.count),
+    tail: safeSlice(input, chars.length - tailPart.count),
+    keptHeadBytes: headPart.bytes,
+    keptTailBytes: tailPart.bytes,
+    truncated: true,
+  };
+}
+
+/**
+ * 按「字符数 + UTF-8 字节数」双口径截断输出。
+ * 抽成纯函数是刻意的：截断逻辑是崩溃高发区（切碎多字节字符、误伤 JSON、把二进制流截成垃圾），
+ * 但通过真实 gh 命令很难稳定复现超限输出，抽出来才能用单元测试覆盖边界。
+ */
+export function truncateOutput(input: string, maxChars: number, maxBytes: number): { text: string; truncated: boolean } {
+  // 双重口径限长：字符数守住 Token 预算，字节数守住真实传输量。
+  // 中文场景下两者会分别触发，因此两条路径的提示文案必须区分，避免用户按错误的配置项去调参。
+  if (input.length > maxChars) {
+    // 保留前 1/3 字符和尾部 1/2 字符，保留开头上下文和错误尾部
+    const headLen = Math.floor(maxChars * 0.35);
+    const tailLen = Math.floor(maxChars * 0.55);
+    const head = safeSlice(input, 0, headLen);
+    const tail = safeSlice(input, input.length - tailLen);
+    return {
+      text: `${head}\n\n... [⚠️ 提示：内容过长已由 DSH GitHub 插件截断中间部分，当前截取前 ${Math.round(headLen / 1024)}KB 与后 ${Math.round(tailLen / 1024)}KB] ...\n\n${tail}`,
+      truncated: true,
+    };
+  }
+
+  const byteCut = cutByUtf8Bytes(input, Math.floor(maxBytes * 0.35), Math.floor(maxBytes * 0.55));
+  if (byteCut.truncated) {
+    // 这里必须用「实际保留的字节数」而非 maxChars 推导值：字节口径触发时 maxChars 往往远大于
+    // 字节上限，早先版本照抄字符分支的算法，会报出与实际严重不符的「已保留 100KB」（实际仅数百字节）。
+    return {
+      text: `${byteCut.head}\n\n... [⚠️ 提示：内容超出 UTF-8 字节上限 (${maxBytes} bytes) 已截断中间部分，实际保留前 ${byteCut.keptHeadBytes} 字节与后 ${byteCut.keptTailBytes} 字节；如需放宽请调大配置项 maxOutputBytes] ...\n\n${byteCut.tail}`,
+      truncated: true,
+    };
+  }
+
+  return { text: input, truncated: false };
+}
+
 export class GhExecutor {
   public ghPath: string;
   public defaultTimeoutMs: number;
   public maxOutputChars: number;
+  /** UTF-8 字节口径的硬上限；未配置时按 maxOutputChars × 4 推导（覆盖 CJK 3 字节与 emoji 4 字节） */
+  public maxOutputBytes: number;
 
   constructor(config: PluginConfig = {}) {
     this.ghPath = config.ghPath || 'gh';
     this.defaultTimeoutMs = config.defaultTimeoutMs || 30_000;
     this.maxOutputChars = config.maxOutputChars || 24_000;
+    this.maxOutputBytes = config.maxOutputBytes || this.maxOutputChars * 4;
   }
 
   updateConfig(config: PluginConfig = {}) {
     if (config.ghPath) this.ghPath = config.ghPath;
     if (config.defaultTimeoutMs) this.defaultTimeoutMs = config.defaultTimeoutMs;
-    if (config.maxOutputChars) this.maxOutputChars = config.maxOutputChars;
+    if (config.maxOutputChars) {
+      this.maxOutputChars = config.maxOutputChars;
+      if (!config.maxOutputBytes) this.maxOutputBytes = config.maxOutputChars * 4;
+    }
+    if (config.maxOutputBytes) this.maxOutputBytes = config.maxOutputBytes;
   }
 
   /**
@@ -102,16 +198,9 @@ export class GhExecutor {
         rawOutput = stderr.trim();
       }
 
-      let truncated = false;
-      if (rawOutput.length > this.maxOutputChars) {
-        // 保留前 1/3 字符和尾部 1/2 字符，保留开头上下文和错误尾部
-        const headLen = Math.floor(this.maxOutputChars * 0.35);
-        const tailLen = Math.floor(this.maxOutputChars * 0.55);
-        const head = rawOutput.slice(0, headLen);
-        const tail = rawOutput.slice(-tailLen);
-        rawOutput = `${head}\n\n... [⚠️ 提示：内容过长已由 DSH GitHub 插件截断中间部分，当前截取前 ${Math.round(headLen / 1024)}KB 与后 ${Math.round(tailLen / 1024)}KB] ...\n\n${tail}`;
-        truncated = true;
-      }
+      const outcome = truncateOutput(rawOutput, this.maxOutputChars, this.maxOutputBytes);
+      rawOutput = outcome.text;
+      const truncated = outcome.truncated;
 
       // 如果未被截断且命令带有 --json 或包含 api，尝试解析为 JSON
       if (!options.rawText && !truncated && (args.includes('--json') || args.includes('api'))) {
