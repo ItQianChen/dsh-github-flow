@@ -15,58 +15,61 @@ export function createPrTool(executor: GhExecutor) {
     name: 'github_pr',
     description: '管理与审查 GitHub Pull Request (PR)。支持查看列表、详情、差异比对、CI 检查状态、代码审查与合并操作。默认针对当前工作区关联的仓库。',
     parameters: {
-      action: {
-        type: 'string',
-        enum: ['list', 'view', 'create', 'diff', 'checks', 'review', 'merge'],
-        required: true,
-        description: 'PR 操作类型。',
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list', 'view', 'create', 'diff', 'checks', 'review', 'merge'],
+          description: 'PR 操作类型。',
+        },
+        pr_number: {
+          type: 'number',
+          description: 'PR 编号（view, diff, checks, review, merge 时使用；若在 PR 对应分支可不填，自动识别当前分支 PR）。',
+        },
+        repo: {
+          type: 'string',
+          description: '目标仓库 [owner/repo]，留空则自动识别当前本地 Git 仓库。',
+        },
+        title: {
+          type: 'string',
+          description: '创建 PR 时的标题。',
+        },
+        body: {
+          type: 'string',
+          description: '创建 PR 或提交 Review 时的内容描述。',
+        },
+        base: {
+          type: 'string',
+          description: '目标基准分支（默认主分支，如 main）。',
+        },
+        head: {
+          type: 'string',
+          description: '源分支，跨 fork 提 PR 时必填，格式 forkOwner:branch（如 ItQianChen:fix-bug）；同仓库分支可直接写分支名。',
+        },
+        draft: {
+          type: 'boolean',
+          description: '是否创建为草稿 PR。',
+        },
+        review_decision: {
+          type: 'string',
+          enum: ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'],
+          description: '代码审查意见判定（review 操作时使用）。',
+        },
+        merge_method: {
+          type: 'string',
+          enum: ['merge', 'squash', 'rebase'],
+          description: '合并策略（merge 操作时使用，默认 squash）。',
+        },
+        delete_branch: {
+          type: 'boolean',
+          description: '合并后是否删除源分支（merge 操作时使用，默认 false）。删除分支不可撤销，只在确认该分支已无用后再开启。',
+        },
+        dry_run: {
+          type: 'boolean',
+          description: '是否只预演不真正创建（create 操作时使用，默认 false）。透传 gh --dry-run：打印将要创建的 PR 详情而不落库，用于提交前确认 head/base/title 是否正确。',
+        },
       },
-      pr_number: {
-        type: 'number',
-        description: 'PR 编号（view, diff, checks, review, merge 时使用；若在 PR 对应分支可不填，自动识别当前分支 PR）。',
-      },
-      repo: {
-        type: 'string',
-        description: '目标仓库 [owner/repo]，留空则自动识别当前本地 Git 仓库。',
-      },
-      title: {
-        type: 'string',
-        description: '创建 PR 时的标题。',
-      },
-      body: {
-        type: 'string',
-        description: '创建 PR 或提交 Review 时的内容描述。',
-      },
-      base: {
-        type: 'string',
-        description: '目标基准分支（默认主分支，如 main）。',
-      },
-      head: {
-        type: 'string',
-        description: '源分支，跨 fork 提 PR 时必填，格式 forkOwner:branch（如 ItQianChen:fix-bug）；同仓库分支可直接写分支名。',
-      },
-      draft: {
-        type: 'boolean',
-        description: '是否创建为草稿 PR。',
-      },
-      review_decision: {
-        type: 'string',
-        enum: ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'],
-        description: '代码审查意见判定（review 操作时使用）。',
-      },
-      merge_method: {
-        type: 'string',
-        enum: ['merge', 'squash', 'rebase'],
-        description: '合并策略（merge 操作时使用，默认 squash）。',
-      },
-      delete_branch: {
-        type: 'boolean',
-        description: '合并后是否删除源分支（merge 操作时使用，默认 false）。删除分支不可撤销，只在确认该分支已无用后再开启。',
-      },
-      dry_run: {
-        type: 'boolean',
-        description: '是否只预演不真正创建（create 操作时使用，默认 false）。透传 gh --dry-run：打印将要创建的 PR 详情而不落库，用于提交前确认 head/base/title 是否正确。',
-      },
+      required: ['action'],
     },
     output: {
       schema: { type: 'object' },

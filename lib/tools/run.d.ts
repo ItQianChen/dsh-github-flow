@@ -3,24 +3,27 @@ export declare function createRunTool(executor: GhExecutor): {
     name: string;
     description: string;
     parameters: {
-        action: {
-            type: string;
-            enum: string[];
-            required: boolean;
-            description: string;
+        type: string;
+        properties: {
+            action: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            run_id: {
+                type: string;
+                description: string;
+            };
+            repo: {
+                type: string;
+                description: string;
+            };
+            limit: {
+                type: string;
+                description: string;
+            };
         };
-        run_id: {
-            type: string;
-            description: string;
-        };
-        repo: {
-            type: string;
-            description: string;
-        };
-        limit: {
-            type: string;
-            description: string;
-        };
+        required: string[];
     };
     output: {
         schema: {
