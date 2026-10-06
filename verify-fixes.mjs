@@ -430,8 +430,14 @@ console.log('\n[D3] workspace 单一数据源与容错');
   })(), 'tryReadWorkspaces 抛出了异常，未兑现「不静默但也不崩」的契约');
 }
 
-// ── D4：工具参数 spec 符合官方写法（属性级 required: true） ───────────
-console.log('\n[D4] 五个工具的 parameters 均为一等属性表');
+// ── D4：工具 parameters 必须是模型可用的 JSON Schema ─────────────────
+// 这一段曾经写反过：我按 skill 文档把 parameters 改成扁平属性表 + 属性级 required，
+// 结果整个插件的工具全线报 "Invalid schema for function 'github_api':
+// schema must be a JSON Schema of 'type: \"object\"', got 'type: null'"。
+// 教训：ctx.tools.register 接收的是【已经是 JSON Schema】的对象；skill 里的属性表是
+// defineTool 的【编写】格式，由 defineTool 负责编译成 JSON Schema。本插件不用 defineTool，
+// 因此必须自己交出合规的 JSON Schema。下面断言运行时真实契约，不是文档形态。
+console.log('\n[D4] 工具 parameters 是合规的模型可见 JSON Schema');
 {
   const { executor } = makeSpy();
   const tools = [
@@ -444,11 +450,45 @@ console.log('\n[D4] 五个工具的 parameters 均为一等属性表');
 
   for (const t of tools) {
     const p = t.parameters;
-    check(`[${t.name}] 不再是 {type,properties} 包装`, !(p.type === 'object' && p.properties), JSON.stringify(p).slice(0, 120));
-    check(`[${t.name}] 无可被误读为 JSON Schema 的顶层 required 数组`, !Array.isArray(p.required), `required=${JSON.stringify(p.required)}`);
-    const requiredKeys = Object.keys(p).filter((k) => p[k] && p[k].required === true);
-    check(`[${t.name}] 恰有一个必填参数`, requiredKeys.length === 1, `实际 ${JSON.stringify(requiredKeys)}`);
-    check(`[${t.name}] 每个参数都有 description`, Object.keys(p).every((k) => typeof p[k].description === 'string' && p[k].description.length > 0));
+    // 前四条就是 DSH 运行时的硬性要求，缺任何一条都会让该工具的请求被 API 拒绝
+    check(`[${t.name}] 顶层 type 为 'object'`, p.type === 'object', `type=${JSON.stringify(p.type)}`);
+    check(`[${t.name}] 含 properties 对象`, Boolean(p.properties) && typeof p.properties === 'object' && !Array.isArray(p.properties), JSON.stringify(p).slice(0, 120));
+    check(`[${t.name}] required 是字符串数组`, Array.isArray(p.required) && p.required.every((k) => typeof k === 'string'), `required=${JSON.stringify(p.required)}`);
+    check(`[${t.name}] parameters 可被 JSON 往返序列化`, (() => {
+      try { JSON.parse(JSON.stringify(p)); return true; } catch { return false; }
+    })());
+
+    const propKeys = Object.keys(p.properties);
+    // 结构与 required 必须自洽：required 里的键必须真实存在，否则模型会被要求填一个不存在的参数
+    check(`[${t.name}] required 的键都在 properties 内`, p.required.every((k) => propKeys.includes(k)), `required=${JSON.stringify(p.required)} props=${JSON.stringify(propKeys)}`);
+
+    const withoutType = propKeys.filter((k) => !p.properties[k] || typeof p.properties[k].type !== 'string');
+    check(`[${t.name}] 每个属性都声明了 type`, withoutType.length === 0, `缺 type: ${JSON.stringify(withoutType)}`);
+    // 属性级 required 是 defineTool 的编写格式，混进 JSON Schema 里属性会失去 type 语义
+    const strayRequired = propKeys.filter((k) => p.properties[k] && 'required' in p.properties[k]);
+    check(`[${t.name}] 无属性级 required 残留`, strayRequired.length === 0, `残留: ${JSON.stringify(strayRequired)}`);
+    check(`[${t.name}] 每个参数都有 description`, propKeys.every((k) => typeof p.properties[k].description === 'string' && p.properties[k].description.length > 0));
+  }
+
+  // 逐个核对必填项，防止还原时丢字段
+  const expectedRequired = {
+    github_pr: ['action'],
+    github_api: ['endpoint'],
+    github_issue: ['action'],
+    github_run: ['action'],
+    github_repo: ['action'],
+  };
+  for (const t of tools) {
+    check(`[${t.name}] required 内容正确`, JSON.stringify(t.parameters.required) === JSON.stringify(expectedRequired[t.name]), `实际 ${JSON.stringify(t.parameters.required)}`);
+  }
+
+  // 本次新增的参数必须真的暴露给模型，否则功能等于没加
+  const byName = Object.fromEntries(tools.map((t) => [t.name, t.parameters.properties]));
+  for (const key of ['head', 'delete_branch', 'dry_run']) {
+    check(`[github_pr] schema 暴露了 ${key}`, key in byName.github_pr, `缺 ${key}`);
+  }
+  for (const key of ['raw', 'fields']) {
+    check(`[github_api] schema 暴露了 ${key}`, key in byName.github_api, `缺 ${key}`);
   }
 }
 
