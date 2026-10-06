@@ -79,7 +79,7 @@ dsh plugin --profile web add dsh-github-flow
 | `github_issue` | `list`, `view`, `create`, `comment`, `close`, `reopen` | 查看与搜索 Issue、创建 Issue、追加排查进展评论 |
 | `github_run` | `list`, `view`, `log_failed`, `rerun`, `cancel` | 查看 CI 构建流水线，特别是 `log_failed` 可直接提取报错日志供 Agent 修复 |
 | `github_repo` | `view`, `search_code`, `search_repos` | 查看仓库元数据、跨仓库代码搜索 |
-| `github_api` | 任意端点（如 `repos/{owner}/{repo}/releases`） | 底层直接调用 REST / GraphQL API（支持 `--jq` 预过滤） |
+| `github_api` | 任意端点（如 `repos/{owner}/{repo}/releases`） | 底层直接调用 REST / GraphQL API（支持 `--jq` 预过滤、`raw` 原始响应体模式） |
 
 ---
 
@@ -103,6 +103,7 @@ dsh plugin --profile web add dsh-github-flow
         ghPath: 'gh'              # GitHub CLI 程序路径（内网或特定环境可指定绝对路径）
         defaultTimeoutMs: 30000   # 命令执行超时时间（毫秒）
         maxOutputChars: 24000     # 单次命令最大返回字符数（防 Token 溢出保护）
+        maxOutputBytes: 96000     # 单次命令最大返回字节数硬上限，默认 maxOutputChars × 4
         cacheTtlMs: 15000         # 界面概览数据缓存时间（毫秒）
         defaultListLimit: 20      # 默认查询列表返回条数
 ```
