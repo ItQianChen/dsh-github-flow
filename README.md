@@ -23,7 +23,7 @@
 1. **零鉴权配置，开箱即用**：
    - 自动复用宿主机已通过 `gh auth login` 认证的登录凭据（OAuth Token / 系统 Keyring），无需在 DSH 中存储任何明文 GitHub PAT。
 2. **工作区目录深度亲和与零参数探测 (CWD & Git Auto-Binding)**：
-   - 自动绑定当前会话所在的物理工作区目录，原生直读本地 `.git/config` 并映射 `workspace.json`，无需 Agent 或人类手动传参 `owner/repo`，零参数直接识别关联仓库。
+   - 自动绑定当前会话所在的物理工作区目录，原生直读本地 `.git/config` 并映射 `workspace.json`；具备 Git 强校验、父子级目录智能穿透与会话 ID 上下文透传机制，杜绝非 Git 目录误选，无需 Agent 或人类手动传参 `owner/repo`，零参数直接识别关联仓库。
 3. **高信噪比与 Token 防溢出治理**：
    - 拒绝 70+ 个碎片化微型工具撑爆上下文，收敛聚合为 **5 大领域核心 Tool**。
    - 所有查询原生采用 `--json <fields>` 按需返回；对 `diff`、`log_failed` 设置安全截断保护（默认 24KB），防止模型上下文窗口溢出崩溃。

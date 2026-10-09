@@ -23,7 +23,7 @@
 1. **Zero-Configuration Authentication**:
    - Seamlessly reuses existing host credentials from `gh auth login` (OAuth tokens / system Keyrings) without exposing plain-text Personal Access Tokens (PATs) in DSH.
 2. **Deep Workspace Affinity & Zero-Config Detection**:
-   - Automatically scopes commands to the active session workspace by natively reading local `.git/config` and mapping DSH `workspace.json`. Neither models nor humans need to supply redundant `owner/repo` arguments.
+   - Automatically scopes commands to the active session workspace by natively reading local `.git/config` and mapping DSH `workspace.json`. Enhanced with Git repository validation, parent-child directory auto-penetration, and session ID propagation to eliminate misidentification, so neither models nor humans need to supply redundant `owner/repo` arguments.
 3. **High Signal-to-Noise Ratio & Token Budget Protection**:
    - Consolidates over 70+ scattered micro-tools into **5 focused domain tools**.
    - Queries use `--json <fields>` projections by default; long diffs and failed CI logs are safely truncated (default 24KB) to protect the model's context window.
