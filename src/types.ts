@@ -37,6 +37,17 @@ export interface GhResult<T = unknown> {
   truncated?: boolean;
 }
 
+export interface AuthInstallGuide {
+  /** 推荐包管理器命令，例如 Windows 下 "winget install --id GitHub.cli" */
+  command: string;
+  /** 备选命令（如 choco/scoop/brew） */
+  altCommand?: string;
+  /** 官方下载与安装文档链接 */
+  downloadUrl: string;
+  /** 简明指引提示 */
+  description?: string;
+}
+
 export interface AuthStatus {
   installed: boolean;
   loggedIn: boolean;
@@ -46,6 +57,7 @@ export interface AuthStatus {
   activeAccount?: boolean;
   protocol?: string;
   scopes?: string[];
+  installGuide?: AuthInstallGuide;
   raw?: string;
 }
 

@@ -39,6 +39,8 @@ export declare class GhExecutor {
      *   而 Web 面板每次挂载都会来问一次，重复执行实测要 5.4 秒，属于纯浪费。
      */
     checkAuth(cwd?: string, bypassCache?: boolean): Promise<AuthStatus>;
+    /** 生成当前操作系统平台的推荐安装引导与命令 */
+    private getPlatformInstallGuide;
     /** 实际执行 `gh auth status` 并解析结果，不含缓存逻辑 */
     private probeAuth;
     /**

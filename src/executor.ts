@@ -237,6 +237,33 @@ export class GhExecutor {
     return value;
   }
 
+  /** 生成当前操作系统平台的推荐安装引导与命令 */
+  private getPlatformInstallGuide() {
+    const p = process.platform;
+    if (p === 'win32') {
+      return {
+        command: 'winget install --id GitHub.cli',
+        altCommand: 'scoop install gh',
+        downloadUrl: 'https://cli.github.com/',
+        description: '推荐使用 Windows Package Manager (winget) 一键安装，或下载官方 .msi 安装包。',
+      };
+    }
+    if (p === 'darwin') {
+      return {
+        command: 'brew install gh',
+        altCommand: 'port install gh',
+        downloadUrl: 'https://cli.github.com/',
+        description: '推荐使用 Homebrew 安装 GitHub CLI。',
+      };
+    }
+    return {
+      command: 'sudo apt install gh',
+      altCommand: 'sudo dnf install gh',
+      downloadUrl: 'https://cli.github.com/',
+      description: '推荐使用系统包管理器安装（Debian/Ubuntu 运行 apt，Fedora/CentOS 运行 dnf）。',
+    };
+  }
+
   /** 实际执行 `gh auth status` 并解析结果，不含缓存逻辑 */
   private async probeAuth(cwd?: string): Promise<AuthStatus> {
     const res = await this.run(['auth', 'status'], { cwd, timeoutMs: 10_000, rawText: true });
@@ -245,7 +272,7 @@ export class GhExecutor {
     const loggedIn = raw.includes('Logged in to') || raw.includes('✓');
 
     // 只要已登录或有常规输出，则必然安装了 gh
-    const isNotInstalled = Boolean(res.error && res.error.includes('系统未检测到 GitHub CLI'));
+    const isNotInstalled = Boolean(res.error && (res.error.includes('系统未检测到 GitHub CLI') || res.error.includes('ENOENT')));
     const installed = loggedIn || !isNotInstalled;
 
     if (!installed) {
@@ -253,6 +280,7 @@ export class GhExecutor {
         installed: false,
         loggedIn: false,
         platform: process.platform,
+        installGuide: this.getPlatformInstallGuide(),
         raw: res.error,
       };
     }

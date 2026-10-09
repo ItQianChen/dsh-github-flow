@@ -73,3 +73,9 @@
 - **服务依赖就绪**：声明 `['tools', 'commands', 'webServer', 'workspaceRegistry']`，确保 Web 路由与命令服务在环境就绪后激活；
 - **生命周期 Effect 闭环**：所有 HTTP 路由与命令注册均持有 Disposer 清理函数，插件热重载或重新挂载时自动彻底注销，零内存泄漏；
 - **配置自校验与服务暴露**：基于 Standard Schema 规范实现强类型校验与默认值注入，通过 `ctx.provide('github', executor)` 向生态插件暴露单例服务。
+
+### 2.6 三态环境诊断与交互引导状态机 (Setup & Authentication Lifecycle Guard)
+- **三态状态模型 (Three-State Machine)**：将环境就绪判定严格划分为 `NOT_INSTALLED`（未安装 CLI）、`NOT_LOGGED_IN`（已安装未登录）、`AUTHENTICATED`（已认证）三态，彻底消除“把未安装当作未登录”的状态屏蔽隐患；
+- **平台自适应安装策略**：后端探测到 `ENOENT` 时根据 `process.platform` 组装对应平台的安装命令（Windows: `winget`，macOS: `brew`，Linux: `apt/dnf`）与官方安装包地址；
+- **安全辅助与白名单终端唤起**：Web 端提供一键命令复制，后端 `/api/github/action` 提供 `open_terminal` 安全白名单唤起接口（只允许预设命令），避免在前端模拟复杂交互式 PTY 的脆弱性；
+- **焦点感知自愈 (Focus Auto-Recovery)**：前端挂载 `window.focus` 事件监听，用户在外部浏览器或终端完成认证后切回 DSH 界面，自动静默重新探测并无缝更新 UI，实现零摩擦闭环体验。

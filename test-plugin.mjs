@@ -98,6 +98,37 @@ async function testPlugin() {
 
   console.log('Cordis 生命周期回卷与冲突自愈断言全部通过！');
 
+  console.log('\n--- 测试未安装引导与 Action 接口白名单校验 ---');
+  const actionRoute = registeredRoutes.find((r) => r.path === '/api/github/action');
+  if (!actionRoute) {
+    throw new Error('未找到 /api/github/action 路由');
+  }
+
+  // 测试白名单拒绝非法命令
+  let rejected = false;
+  const mockReq = {
+    method: 'POST',
+    on: (evt, cb) => {
+      if (evt === 'data') cb(JSON.stringify({ action: 'open_terminal', command: 'calc.exe' }));
+      if (evt === 'end') cb();
+    },
+  };
+  const mockRes = {
+    statusCode: 200,
+    setHeader: () => {},
+    end: (str) => {
+      const data = JSON.parse(str);
+      if (data.ok === false && data.error?.includes('不支持唤起该指令')) {
+        rejected = true;
+      }
+    },
+  };
+  await actionRoute.handler(mockReq, mockRes);
+  if (!rejected) {
+    throw new Error('非法指令注入未能被白名单安全拦截！');
+  }
+  console.log('Action 路由命令白名单安全校验通过！');
+
   console.log('\n=== 插件集成测试 100% 通过 ===');
 }
 

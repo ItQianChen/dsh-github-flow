@@ -236,6 +236,38 @@ export function registerApiRoutes(ctxOrWebServer: any, executor: GhExecutor, wor
               sendJson(res, 200, { ok: true, message: '已在浏览器打开' });
               break;
             }
+            case 'open_terminal': {
+              const command = typeof payload.command === 'string' ? payload.command.trim() : 'gh auth login';
+              // 严格白名单过滤，严防任意命令注入
+              const allowedCommands = [
+                'gh auth login',
+                'winget install --id GitHub.cli',
+                'brew install gh',
+                'sudo apt install gh',
+                'sudo dnf install gh',
+              ];
+              if (!allowedCommands.includes(command)) {
+                throw new Error(`不支持唤起该指令: ${command}`);
+              }
+              const { execFile } = await import('node:child_process');
+              let bin = 'cmd';
+              let args: string[] = [];
+              if (process.platform === 'win32') {
+                bin = 'cmd';
+                args = ['/c', 'start', 'powershell', '-NoExit', '-Command', command];
+              } else if (process.platform === 'darwin') {
+                bin = 'osascript';
+                args = ['-e', `tell application "Terminal" to do script "${command}"`, '-e', 'tell application "Terminal" to activate'];
+              } else {
+                bin = 'x-terminal-emulator';
+                args = ['-e', command];
+              }
+              execFile(bin, args, (err: any) => {
+                if (err) console.warn('[dsh-github-flow] 唤起终端失败:', err?.message || err);
+              });
+              sendJson(res, 200, { ok: true, message: '已请求唤起系统终端' });
+              break;
+            }
             default:
               sendJson(res, 400, { ok: false, message: `未知的操作类型: ${payload.action}` });
           }

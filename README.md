@@ -32,7 +32,12 @@
    - **全局驾驶舱**（主导航栏 `sidebar.panellist`，Order 20）：透视账号全局仓库、本地工作区矩阵、个人待办 PR 与 Issues；
    - **右侧栏工作区面板**（`sidebarRightTabs`，Order 40）：常驻呈现当前仓库的 PR 状态、Checks 门禁药丸与 2x2 黄金快捷网格（浏览器打开、查看 PRs、快速创建 PR、新建 Issue），一键直达官方比对与创建页，零弹窗依赖；
    - **全场景双模式原生自适应**：深度契合 DSH 官方 DSW（DeepSeek Web）设计变量规范，通过 `body[data-ds-dark-theme]` 驱动浅色与深色主题实时零延迟平滑切换。
-5. **符合 Cordis 官方微内核架构**：
+5. **健全的环境诊断与三态就绪引导 (Three-State Setup Engine)**：
+   - 告别空状态困惑：精准建立「未安装 CLI (`Missing`)」➜「已安装未登录 (`Required`)」➜「已认证就绪 (`Active`)」三态状态机；
+   - 自动识别宿主机操作系统（Windows/macOS/Linux），按平台提供包管理器安装命令（Windows 下 `winget install --id GitHub.cli`、macOS 下 `brew install gh`）与官方安装包直达；
+   - 支持一键复制命令与安全白名单系统终端一键唤起；
+   - 具备**窗口焦点自愈（Focus Auto-Recovery）**机制：切到外部终端或浏览器授权完毕后，切回 DSH 界面自动探测刷新，无感恢复。
+6. **符合 Cordis 官方微内核架构**：
    - 暴露原生 `GitHubService`（`ctx.github`），允许生态其他插件复用；
    - 具备符合 Standard Schema 规范的运行时配置校验（`Config`）；
    - 支持领域事件系统（`github/pr:create`, `github/issue:create`）。
