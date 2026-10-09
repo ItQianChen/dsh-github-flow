@@ -28,9 +28,9 @@
    - 拒绝 70+ 个碎片化微型工具撑爆上下文，收敛聚合为 **5 大领域核心 Tool**。
    - 所有查询原生采用 `--json <fields>` 按需返回；对 `diff`、`log_failed` 设置安全截断保护（默认 24KB），防止模型上下文窗口溢出崩溃。
    - 工具层已通过防御性输出包装，列表与标量 100% 契合 DSH 工具网关模式约束。
-4. **原生 Web UI 双重视图与双模式自适应**：
-   - **全局驾驶舱**（主导航栏 `sidebar.panellist`，Order 20）：透视账号全局仓库、本地工作区矩阵、个人待办 PR 与 Issues；
-   - **右侧栏工作区面板**（`sidebarRightTabs`，Order 40）：常驻呈现当前仓库的 PR 状态、Checks 门禁药丸与 2x2 黄金快捷网格（浏览器打开、查看 PRs、快速创建 PR、新建 Issue），一键直达官方比对与创建页，零弹窗依赖；
+4. **原生 Web UI 双重视图与多维任务治理**：
+   - **全局驾驶舱**（主导航栏 `sidebar.panellist`，Order 20）：透视账号全局仓库、本地工作区矩阵联动状态；重构并支持**三维 Issue 智能聚合**（「📥 用户提单」/「🎯 分配待办」/「✍️ 我发起的」），提供四态响应式药丸过滤与身份徽章；
+   - **右侧栏工作区面板**（`sidebarRightTabs`，Order 40）：自动绑定当前工程，常驻呈现 PR 门禁状态、**当前仓库 Open Issues 任务列表**（带提出人、分类徽章、标签与直达链接）、CI 构建流水线，以及快捷黄金网格（浏览器打开、查看所有 Issues、查看所有 PRs、快速创建 PR、新建 Issue），零弹窗依赖；
    - **全场景双模式原生自适应**：深度契合 DSH 官方 DSW（DeepSeek Web）设计变量规范，通过 `body[data-ds-dark-theme]` 驱动浅色与深色主题实时零延迟平滑切换。
 5. **健全的环境诊断与三态就绪引导 (Three-State Setup Engine)**：
    - 告别空状态困惑：精准建立「未安装 CLI (`Missing`)」➜「已安装未登录 (`Required`)」➜「已认证就绪 (`Active`)」三态状态机；
@@ -47,14 +47,14 @@
 ## 📸 界面预览
 
 ### 全局全景驾驶舱 (Global Cockpit)
-透视账号云端所有 GitHub 仓库、本地工作区矩阵联动状态，以及待办 PR 和 Issues：
+透视账号云端所有 GitHub 仓库、本地工作区矩阵联动状态，以及待办 PR 和多维分类 Issues（支持用户提单、指派待办、我发起的多维药丸切换与状态徽章）：
 
 <p align="center">
   <img src="./docs/images/1.png" alt="GitHub 全景驾驶舱" width="100%" />
 </p>
 
 ### 会话右侧栏工作区面板 (Session Workspace Panel)
-自动绑定当前工程关联仓库，常驻呈现 PR 状态药丸、Actions 构建流水线与 2x2 黄金操作网格：
+自动绑定当前工程关联仓库，常驻呈现 PR 状态药丸、当前仓库 Open Issues 任务列表、Actions 构建流水线与快捷操作网格：
 
 <p align="center">
   <img src="./docs/images/2.png" alt="右侧栏工作区面板" width="100%" />

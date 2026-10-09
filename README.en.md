@@ -28,9 +28,9 @@
    - Consolidates over 70+ scattered micro-tools into **5 focused domain tools**.
    - Queries use `--json <fields>` projections by default; long diffs and failed CI logs are safely truncated (default 24KB) to protect the model's context window.
    - All tool outputs are defensively normalized into root objects to strictly comply with DSH Tool Gateway schema validation.
-4. **Dual Native Web UI Views & Dynamic Dual-Theme Support**:
-   - **Global Cockpit** (`sidebar.panellist`, Order 20): Account-wide repository overview, local workspace matrix, and pending personal PRs/issues.
-   - **Right Sidebar Panel** (`sidebarRightTabs`, Order 40): Shows current repository status, PR list with CI check pills, and a 2x2 quick action grid (Open Repo, View PRs, Create PR, New Issue) with zero popup dependencies.
+4. **Dual Native Web UI Views & Multi-Dimensional Task Governance**:
+   - **Global Cockpit** (`sidebar.panellist`, Order 20): Account-wide repository overview, local workspace matrix mapping, and a reconstructed **3-dimensional Issue aggregation engine** ("User Reported" / "Assigned to Me" / "Created by Me") featuring 4-state filter pills and role badges.
+   - **Right Sidebar Panel** (`sidebarRightTabs`, Order 40): Shows current repository status, PR list with CI check pills, **active workspace issues list** (with author attribution, role badges, labels, and external links), Actions pipelines, and quick action shortcuts (Open Repo, View All Issues, View All PRs, Create PR, New Issue) with zero popup dependencies.
    - **Native Light/Dark Dual-Theme Adaptation**: Deeply aligned with DSH official DSW (DeepSeek Web) design tokens, seamlessly reacting to `body[data-ds-dark-theme]` without lag or flickering.
 5. **Robust Environment Diagnosis & Three-State Setup Engine**:
    - Zero-guesswork onboarding: Accurately differentiates `NOT_INSTALLED` (`Missing`), `NOT_LOGGED_IN` (`Required`), and `AUTHENTICATED` (`Active`).
@@ -47,14 +47,14 @@
 ## 📸 UI Previews
 
 ### Global Cockpit (Main Navigation)
-Overview of account-wide repositories, local workspace matrix mapping, and pending personal PRs/issues:
+Overview of account-wide repositories, local workspace matrix mapping, and multi-dimensional categorized issues (supports filter pills across All, User Reported, Assigned, and Created with status badges):
 
 <p align="center">
   <img src="./docs/images/1.png" alt="GitHub Global Cockpit" width="100%" />
 </p>
 
 ### Session Right Sidebar Panel (In-Session Collaboration)
-Automatically detects current workspace repository, displaying live PR checks, Actions pipelines, and quick action shortcuts:
+Automatically detects current workspace repository, displaying live PR checks, workspace open issues list, Actions pipelines, and quick action shortcuts:
 
 <p align="center">
   <img src="./docs/images/2.png" alt="Session Right Sidebar Panel" width="100%" />

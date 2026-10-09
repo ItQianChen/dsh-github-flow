@@ -91,6 +91,21 @@ export interface PrItem {
   updatedAt: string;
 }
 
+/**
+ * Issue 分类维度契约：
+ * - reported: 用户提起的（他人向我名下项目或本仓库提交的 Issue 反馈）
+ * - assigned: 分配给我的（指派给当前账号的待办任务，跨仓库通用）
+ * - created: 我创建的（由当前账号亲自发起的 Issue）
+ */
+export type IssueCategory = 'reported' | 'assigned' | 'created';
+
+export interface IssueStats {
+  total: number;
+  reported: number;
+  assigned: number;
+  created: number;
+}
+
 export interface IssueItem {
   number: number;
   title: string;
@@ -100,6 +115,8 @@ export interface IssueItem {
   assignees: Array<{ login: string }>;
   url: string;
   updatedAt: string;
+  /** 命中的所有身份分类 */
+  categories?: IssueCategory[];
 }
 
 export interface WorkflowRunItem {
@@ -118,6 +135,7 @@ export interface GitHubOverviewData {
   repo?: RepoMetadata;
   pullRequests: PrItem[];
   issues: IssueItem[];
+  issueStats?: IssueStats;
   runs: WorkflowRunItem[];
   lastUpdated: string;
   error?: string;
@@ -143,6 +161,19 @@ export interface WorkspaceMatrixItem {
   sessionCount: number;
 }
 
+export interface GlobalIssueItem {
+  number: number;
+  title: string;
+  repository: { name?: string; nameWithOwner: string };
+  author?: { login: string };
+  assignees?: Array<{ login: string }>;
+  labels?: Array<{ name: string; color: string }>;
+  url: string;
+  updatedAt: string;
+  state?: 'OPEN' | 'CLOSED';
+  categories: IssueCategory[];
+}
+
 export interface GlobalOverviewData {
   auth: AuthStatus;
   userRepos: UserRepoItem[];
@@ -154,13 +185,8 @@ export interface GlobalOverviewData {
     url: string;
     updatedAt: string;
   }>;
-  myIssues: Array<{
-    number: number;
-    title: string;
-    repository: { nameWithOwner: string };
-    url: string;
-    updatedAt: string;
-  }>;
+  myIssues: GlobalIssueItem[];
+  issueStats?: IssueStats;
   lastUpdated: string;
   error?: string;
   /** 工作区矩阵读取失败的原因。区分「没有工作区」与「读不到工作区」，避免把故障显示成空状态 */

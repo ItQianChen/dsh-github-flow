@@ -41,7 +41,8 @@
 │   │       全局驾驶舱 (Main Slot)      │    │  右侧栏面板 (Right Sidebar)  │   │
 │   │   - 账号全局所有 GitHub 仓库      │    │  - 当前会话工作区关联仓库   │   │
 │   │   - 本地工作区矩阵透视           │    │  - PR 列表与 CI Checks 药丸 │   │
-│   │   - 个人待办 PRs & Issues        │    │  - 快速创建 PR / Issue      │   │
+│   │   - 三维待办 Issues (药丸筛选)   │    │  - 仓库 Open Issues 任务列表│   │
+│   │   - 用户提单 / 分配待办 / 我发起 │    │  - 快捷操作网格 (直达入口)   │   │
 │   └──────────────────────────────────┘    └─────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -65,9 +66,9 @@
 - 对长文本输出（如大型 PR 的完整 `diff`、CI 失败步骤日志）设置安全截断阈值（默认 24KB），保留头尾关键上下文并添加显式截断标记，杜绝撑爆模型上下文；
 - 所有 Agent 工具的输出统一经过 `normalizeOutput` 归一化，列表自动打包为 `{ items, count }`，标量打包为 `{ result }`，100% 严丝合缝契合 DSH 工具网关模式约束。
 
-### 2.4 原生浅色/深色主题自适应与 2x2 黄金操作栏
+### 2.4 原生浅色/深色主题自适应与快捷操作网格
 - 全面对齐 DSH 官方 DSW 语义设计变量，基于 `body[data-ds-dark-theme]` 驱动无闪烁双模式切换；
-- 右侧栏 2x2 快捷操作栏彻底废弃失效的 Electron `prompt()` 阻塞弹窗，全面采用官方直达模式（Compare / New Issue），享有 100% 官方富文本体验。
+- 右侧栏快捷操作栏彻底废弃失效的 Electron `prompt()` 阻塞弹窗，全面采用官方直达模式（查看所有 Issues、查看 PRs、Compare / New Issue），享有 100% 官方富文本体验。
 
 ### 2.5 Cordis 微内核标准规范
 - **服务依赖就绪**：声明 `['tools', 'commands', 'webServer', 'workspaceRegistry']`，确保 Web 路由与命令服务在环境就绪后激活；
@@ -79,3 +80,11 @@
 - **平台自适应安装策略**：后端探测到 `ENOENT` 时根据 `process.platform` 组装对应平台的安装命令（Windows: `winget`，macOS: `brew`，Linux: `apt/dnf`）与官方安装包地址；
 - **安全辅助与白名单终端唤起**：Web 端提供一键命令复制，后端 `/api/github/action` 提供 `open_terminal` 安全白名单唤起接口（只允许预设命令），避免在前端模拟复杂交互式 PTY 的脆弱性；
 - **焦点感知自愈 (Focus Auto-Recovery)**：前端挂载 `window.focus` 事件监听，用户在外部浏览器或终端完成认证后切回 DSH 界面，自动静默重新探测并无缝更新 UI，实现零摩擦闭环体验。
+
+### 2.7 多维 Issue 身份判定与并发聚合引擎 (Multi-Dimensional Issue Engine)
+- **多重身份决策矩阵**：基于当前登录用户 `currentUser`（`auth.user`）对 Issue 执行身份归类：
+  - `reported`（用户提单）：`repoOwner === currentUser && author != currentUser`（外部访客在本人维护的仓库中提出的反馈）；
+  - `assigned`（分配待办）：`assignees.includes(currentUser)`（指派给本人的任务，跨仓库通用）；
+  - `created`（我发起的）：`author === currentUser`（本人亲自创建的 Issue）。
+- **三路并发搜索与 URL 去重**：后端在 `/api/github/global-overview` 中通过 `Promise.all` 同时发起 `--owner=@me`、`--assignee=@me`、`--author=@me` 检索，按 URL 唯一性合并去重并按最后更新时间统一降序排列；
+- **双端视图无缝打标**：驾驶舱提供四态响应式药丸筛选（全部/用户提单/指派待办/我发起的），右侧栏直接常驻展现当前工作区所属 Issue 任务清单与状态徽章。

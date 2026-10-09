@@ -176,6 +176,88 @@ export function createGithubPanelComponent() {
           )
     );
 
+    // Issues 区域
+    const issuesSectionEl = h(
+      'div',
+      { className: 'dsh-github-section' },
+      h(
+        'div',
+        { className: 'dsh-github-section-header' },
+        h('h3', null, `📋 仓库 Issues (${issues.length})`),
+        repo?.url
+          ? h(
+              'a',
+              {
+                href: `${repo.url}/issues`,
+                target: '_blank',
+                style: { fontSize: '11px', color: 'var(--dsw-alias-link, #0969da)', textDecoration: 'none' },
+              },
+              '全部 ↗'
+            )
+          : null
+      ),
+      issues.length === 0
+        ? h('div', { className: 'dsh-github-empty' }, '当前无开放中的 Issue')
+        : h(
+            'div',
+            { className: 'dsh-github-list' },
+            issues.map((issue: any) => {
+              const cats = issue.categories || [];
+              const badges: any[] = [];
+              if (cats.includes('reported')) {
+                badges.push(h('span', { key: 'rep', className: 'dsh-github-badge dsh-badge-purple' }, '用户反馈'));
+              }
+              if (cats.includes('assigned')) {
+                badges.push(h('span', { key: 'asn', className: 'dsh-github-badge dsh-badge-blue' }, '已分配'));
+              }
+              if (cats.includes('created')) {
+                badges.push(h('span', { key: 'crt', className: 'dsh-github-badge dsh-badge-green' }, '我发起的'));
+              }
+
+              return h(
+                'div',
+                { key: issue.number, className: 'dsh-github-item' },
+                h(
+                  'div',
+                  { className: 'dsh-github-item-main' },
+                  h(
+                    'div',
+                    { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } },
+                    h(
+                      'a',
+                      { className: 'dsh-github-item-title', href: issue.url, target: '_blank' },
+                      `#${issue.number} ${issue.title}`
+                    ),
+                    ...badges
+                  ),
+                  h(
+                    'div',
+                    { className: 'dsh-github-item-meta' },
+                    h('span', null, `由 ${issue.author?.login || '未知'} 提出`),
+                    issue.assignees && issue.assignees.length > 0
+                      ? h('span', null, `指派: ${issue.assignees.map((a: any) => a.login).join(', ')}`)
+                      : null,
+                    issue.labels && issue.labels.length > 0
+                      ? issue.labels.map((lbl: any) =>
+                          h('span', { key: lbl.name, className: 'dsh-github-badge dsh-badge-yellow' }, lbl.name)
+                        )
+                      : null
+                  )
+                ),
+                h(
+                  'div',
+                  { className: 'dsh-github-item-actions' },
+                  h(
+                    'a',
+                    { className: 'dsh-github-btn-sm', href: issue.url, target: '_blank', style: { textDecoration: 'none' } },
+                    '在 GitHub 打开'
+                  )
+                )
+              );
+            })
+          )
+    );
+
     // GitHub Actions 区域
     const runsSectionEl = h(
       'div',
@@ -228,6 +310,6 @@ export function createGithubPanelComponent() {
           )
     );
 
-    return h('div', { className: 'dsh-github-panel' }, headerEl, cardsEl, prsSectionEl, runsSectionEl);
+    return h('div', { className: 'dsh-github-panel' }, headerEl, cardsEl, prsSectionEl, issuesSectionEl, runsSectionEl);
   };
 }
