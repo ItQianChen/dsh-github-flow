@@ -20,6 +20,8 @@ export interface PluginConfig {
 export interface GhExecutionOptions {
   /** 命令执行的工作目录，优先使用当前 Agent 会话所在的 Workspace 物理路径 */
   cwd?: string;
+  /** 当前调用的会话 ID，用于精确关联物理工作区路径 */
+  sessionId?: string;
   /** 进程超时限制（毫秒），默认 30,000ms */
   timeoutMs?: number;
   /** 附加环境变量 */

@@ -21,11 +21,12 @@ export declare class GhExecutor {
     /**
      * 智能解析最可靠的工作区物理路径：
      * 1. 优先使用显式指定的有效 cwd（若包含 .git 目录）
-     * 2. 读取当前进程/会话的 DSH_SESSION_ID 并匹配 ~/.dsh/storages/workspace.json
-     * 3. 匹配 ~/.dsh/storages/workspace.json 中最近活跃的工作区
-     * 4. 回退到 process.cwd()
+     * 2. 使用显式传入的 sessionId 或环境变量 DSH_SESSION_ID 精确反查工作区
+     * 3. 递归探测：若传入了 explicitCwd（如聚合父目录），自动检查其直系子目录中是否包含 Git 仓库
+     * 4. 匹配 ~/.dsh/storages/workspace.json 中最近活跃且存在 .git 的仓库工作区
+     * 5. 回退到 process.cwd()
      */
-    resolveWorkspaceCwd(explicitCwd?: string): string;
+    resolveWorkspaceCwd(explicitCwd?: string, explicitSessionId?: string): string;
     /**
      * 安全执行 gh 命令
      * 采用 execFile 参数数组隔离，彻底杜绝 Shell 字符串拼接注入漏洞
@@ -57,5 +58,5 @@ export declare class GhExecutor {
      * 获取当前目录（工作区）关联的远程仓库元数据
      * 采用 gh repo view + 本地 git remote 双保险机制，彻底杜绝已配置远程却误判未关联的问题
      */
-    getRepoMetadata(cwd?: string): Promise<RepoMetadata | null>;
+    getRepoMetadata(cwd?: string, sessionId?: string): Promise<RepoMetadata | null>;
 }

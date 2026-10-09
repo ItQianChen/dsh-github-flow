@@ -56,6 +56,7 @@ export function createApiTool(executor: GhExecutor) {
     },
     async execute(args: any, execContext: any) {
       const cwd = execContext?.cwd || process.cwd();
+      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
       const cmd = ['api', args.endpoint];
 
       if (args.method && args.method !== 'GET') {
@@ -86,7 +87,7 @@ export function createApiTool(executor: GhExecutor) {
         }
       }
 
-      const res = await executor.run(cmd, { cwd, rawText: args.raw === true });
+      const res = await executor.run(cmd, { cwd, sessionId, rawText: args.raw === true });
       if (!res.ok) throw new Error(res.error);
       return normalizeOutput(res.data !== undefined ? res.data : res.rawOutput);
     },

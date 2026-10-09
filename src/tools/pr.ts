@@ -86,20 +86,29 @@ export function createPrTool(executor: GhExecutor) {
     },
     async execute(args: any, execContext: any) {
       const cwd = execContext?.cwd || process.cwd();
+      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
       let repoTarget = args.repo;
       if (!repoTarget) {
-        const meta = await executor.getRepoMetadata(cwd);
+        const meta = await executor.getRepoMetadata(cwd, sessionId);
         if (meta?.nameWithOwner) {
           repoTarget = meta.nameWithOwner;
         }
       }
-      const repoArgs = repoTarget ? ['-R', repoTarget] : [];
+
+      if (!repoTarget) {
+        throw new Error(
+          '未能自动识别当前工作区关联的 GitHub 仓库。请通过 `repo` 参数显式指定目标仓库 [owner/repo]（例如: "ItQianChen/dsh-github-flow"），或在当前工作区目录下关联 Git 远程仓库。'
+        );
+      }
+
+      const repoArgs = ['-R', repoTarget];
+      const runOpts = { cwd, sessionId };
 
       switch (args.action) {
         case 'list': {
           const res = await executor.run(
             ['pr', 'list', ...repoArgs, '--json', 'number,title,author,headRefName,isDraft,state,updatedAt', '-L', '20'],
-            { cwd }
+            runOpts
           );
           if (!res.ok) throw new Error(res.error);
           return normalizeOutput(res.data || res.rawOutput);
@@ -109,7 +118,7 @@ export function createPrTool(executor: GhExecutor) {
           const target = args.pr_number ? [String(args.pr_number)] : [];
           const res = await executor.run(
             ['pr', 'view', ...target, ...repoArgs, '--json', 'number,title,body,state,author,labels,assignees,reviewDecision,mergeable,statusCheckRollup,url'],
-            { cwd }
+            runOpts
           );
           if (!res.ok) throw new Error(res.error);
           return normalizeOutput(res.data || res.rawOutput);
@@ -119,7 +128,7 @@ export function createPrTool(executor: GhExecutor) {
           const target = args.pr_number ? [String(args.pr_number)] : [];
           const res = await executor.run(
             ['pr', 'checks', ...target, ...repoArgs, '--json', 'name,state,conclusion,detailsUrl'],
-            { cwd }
+            runOpts
           );
           if (!res.ok) throw new Error(res.error);
           return normalizeOutput(res.data || res.rawOutput);
@@ -127,7 +136,7 @@ export function createPrTool(executor: GhExecutor) {
 
         case 'diff': {
           const target = args.pr_number ? [String(args.pr_number)] : [];
-          const res = await executor.run(['pr', 'diff', ...target, ...repoArgs], { cwd });
+          const res = await executor.run(['pr', 'diff', ...target, ...repoArgs], runOpts);
           if (!res.ok) throw new Error(res.error);
           return { result: res.rawOutput || '无差异内容' };
         }
@@ -142,7 +151,7 @@ export function createPrTool(executor: GhExecutor) {
           if (args.draft) createCmd.push('--draft');
           const dryRun = args.dry_run === true;
           if (dryRun) createCmd.push('--dry-run');
-          const res = await executor.run(createCmd, { cwd });
+          const res = await executor.run(createCmd, runOpts);
           if (!res.ok) throw new Error(res.error);
           return dryRun
             ? { message: 'PR 预演完成（未真正创建）', detail: res.rawOutput }
@@ -156,7 +165,7 @@ export function createPrTool(executor: GhExecutor) {
           else if (args.review_decision === 'REQUEST_CHANGES') reviewCmd.push('--request-changes');
           else reviewCmd.push('--comment');
           if (args.body) reviewCmd.push('--body', args.body);
-          const res = await executor.run(reviewCmd, { cwd });
+          const res = await executor.run(reviewCmd, runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: 'Review 提交成功', detail: res.rawOutput };
         }
@@ -168,7 +177,7 @@ export function createPrTool(executor: GhExecutor) {
           // 删分支默认关闭：合并他人仓库的 PR 时删掉源分支是不可撤销的破坏性动作，
           // 而 gh 默认不删。替用户做掉它违背「可撤销的直接做、不可撤销的先问」。
           if (args.delete_branch === true) mergeCmd.push('--delete-branch');
-          const res = await executor.run(mergeCmd, { cwd });
+          const res = await executor.run(mergeCmd, runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: 'PR 合并完成', output: res.rawOutput };
         }

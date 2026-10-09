@@ -52,14 +52,16 @@ export function createRepoTool(executor: GhExecutor) {
     },
     async execute(args: any, execContext: any) {
       const cwd = execContext?.cwd || process.cwd();
+      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
       const limitStr = String(args.limit || 10);
+      const runOpts = { cwd, sessionId };
 
       switch (args.action) {
         case 'view': {
           let repoTarget = args.repo;
           let meta: any = null;
           if (!repoTarget) {
-            meta = await executor.getRepoMetadata(cwd);
+            meta = await executor.getRepoMetadata(cwd, sessionId);
             if (meta?.nameWithOwner) {
               repoTarget = meta.nameWithOwner;
             }
@@ -67,7 +69,7 @@ export function createRepoTool(executor: GhExecutor) {
           const repoArgs = repoTarget ? [repoTarget] : [];
           const res = await executor.run(
             ['repo', 'view', ...repoArgs, '--json', 'nameWithOwner,description,defaultBranchRef,isPrivate,stargazerCount,forkCount,url'],
-            { cwd }
+            runOpts
           );
           if (!res.ok) {
             // 若执行 gh 失败（如离线或环境限制），但本地已成功识别仓库元数据，进行优雅兜底返回
@@ -84,7 +86,7 @@ export function createRepoTool(executor: GhExecutor) {
           const repoArgs = args.repo ? ['--repo', args.repo] : [];
           const res = await executor.run(
             ['search', 'code', args.query, ...repoArgs, '--json', 'path,repository,textMatches', '-L', limitStr],
-            { cwd }
+            runOpts
           );
           if (!res.ok) throw new Error(res.error);
           return normalizeOutput(res.data || res.rawOutput);
@@ -94,7 +96,7 @@ export function createRepoTool(executor: GhExecutor) {
           if (!args.query) throw new Error('search_repos 必须提供 query');
           const res = await executor.run(
             ['search', 'repos', args.query, '--json', 'fullName,description,stargazersCount,updatedAt', '-L', limitStr],
-            { cwd }
+            runOpts
           );
           if (!res.ok) throw new Error(res.error);
           return normalizeOutput(res.data || res.rawOutput);

@@ -52,20 +52,29 @@ export function createRunTool(executor: GhExecutor) {
     },
     async execute(args: any, execContext: any) {
       const cwd = execContext?.cwd || process.cwd();
+      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
       let repoTarget = args.repo;
       if (!repoTarget) {
-        const meta = await executor.getRepoMetadata(cwd);
+        const meta = await executor.getRepoMetadata(cwd, sessionId);
         if (meta?.nameWithOwner) {
           repoTarget = meta.nameWithOwner;
         }
       }
-      const repoArgs = repoTarget ? ['-R', repoTarget] : [];
+
+      if (!repoTarget) {
+        throw new Error(
+          '未能自动识别当前工作区关联的 GitHub 仓库。请通过 `repo` 参数显式指定目标仓库 [owner/repo]（例如: "ItQianChen/dsh-github-flow"），或在当前工作区目录下关联 Git 远程仓库。'
+        );
+      }
+
+      const repoArgs = ['-R', repoTarget];
+      const runOpts = { cwd, sessionId };
 
       switch (args.action) {
         case 'list': {
           const res = await executor.run(
             ['run', 'list', ...repoArgs, '--json', 'databaseId,name,status,conclusion,event,headBranch,createdAt', '-L', String(args.limit || 10)],
-            { cwd }
+            runOpts
           );
           if (!res.ok) throw new Error(res.error);
           return normalizeOutput(res.data || res.rawOutput);
@@ -75,7 +84,7 @@ export function createRunTool(executor: GhExecutor) {
           if (!args.run_id) throw new Error('view 操作必须提供 run_id');
           const res = await executor.run(
             ['run', 'view', String(args.run_id), ...repoArgs, '--json', 'databaseId,name,status,conclusion,jobs,url'],
-            { cwd }
+            runOpts
           );
           if (!res.ok) throw new Error(res.error);
           return normalizeOutput(res.data || res.rawOutput);
@@ -85,7 +94,7 @@ export function createRunTool(executor: GhExecutor) {
           if (!args.run_id) throw new Error('log_failed 操作必须提供 run_id');
           // gh 原生支持仅提取失败的日志！对 Agent 故障诊断价值极高
           const res = await executor.run(['run', 'view', String(args.run_id), ...repoArgs, '--log-failed'], {
-            cwd,
+            ...runOpts,
             timeoutMs: 60_000,
             rawText: true,
           });
@@ -95,14 +104,14 @@ export function createRunTool(executor: GhExecutor) {
 
         case 'rerun': {
           if (!args.run_id) throw new Error('rerun 操作必须提供 run_id');
-          const res = await executor.run(['run', 'rerun', String(args.run_id), ...repoArgs, '--failed'], { cwd });
+          const res = await executor.run(['run', 'rerun', String(args.run_id), ...repoArgs, '--failed'], runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: '已成功重新触发失败任务', output: res.rawOutput };
         }
 
         case 'cancel': {
           if (!args.run_id) throw new Error('cancel 操作必须提供 run_id');
-          const res = await executor.run(['run', 'cancel', String(args.run_id), ...repoArgs], { cwd });
+          const res = await executor.run(['run', 'cancel', String(args.run_id), ...repoArgs], runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: '已取消该工作流任务', output: res.rawOutput };
         }

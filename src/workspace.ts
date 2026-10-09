@@ -102,24 +102,40 @@ export function findWorkspacePathBySession(sessionId: string): string | undefine
 }
 
 /**
- * 匹配最近活跃的工作区路径。
- * 注意 updatedAt 可能缺失或非 ISO 格式，统一用时间戳比较，无效值视为 0 而非 NaN——
- * 后者会让所有比较都返回 false，导致永远选不中任何工作区。
+ * 匹配最近活跃且包含 Git 仓库的工作区路径。
+ *
+ * 为什么必须优先检查 hasGitDir：workspace.json 中可能记录了父级纯文件夹工作区（例如工程聚合根目录，本身非 Git 仓库），
+ * 当它被打开过导致 updatedAt 较新时，若不检查 .git 就会误把该父目录当成当前仓库执行路径，
+ * 进而导致后续 gh 命令报出 "fatal: not a git repository"。
+ * 策略：优先选取最近活跃且明确具备 .git 的工作区；若均无 .git 再优雅回退到任意普通工作区。
  */
 export function findMostRecentWorkspacePath(): string | undefined {
   try {
     const { workspaces } = tryReadWorkspaces();
-    let best: WorkspaceRecord | null = null;
-    let bestAt = -1;
+    let bestGitWs: WorkspaceRecord | null = null;
+    let bestGitAt = -1;
+    let fallbackWs: WorkspaceRecord | null = null;
+    let fallbackAt = -1;
+
     for (const ws of workspaces) {
+      if (!ws.path || !fs.existsSync(ws.path)) continue;
       const at = Date.parse(ws.updatedAt || '');
       const score = Number.isFinite(at) ? at : 0;
-      if (score > bestAt && ws.path && fs.existsSync(ws.path)) {
-        best = ws;
-        bestAt = score;
+
+      if (hasGitDir(ws.path)) {
+        if (score > bestGitAt) {
+          bestGitWs = ws;
+          bestGitAt = score;
+        }
+      } else {
+        if (score > fallbackAt) {
+          fallbackWs = ws;
+          fallbackAt = score;
+        }
       }
     }
-    return best?.path;
+
+    return bestGitWs?.path || fallbackWs?.path;
   } catch {
     return undefined;
   }
