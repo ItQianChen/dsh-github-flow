@@ -814,6 +814,131 @@ body[data-ds-dark-theme] .dsh-github-steps-list {
   margin-top: 10px;
   line-height: 1.4;
 }
+
+/* 16. 数据同步设置弹窗 (Sync Settings Modal) */
+.dsh-github-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  backdrop-filter: blur(2px);
+}
+.dsh-github-modal-dialog {
+  width: 90%;
+  max-width: 480px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  border-radius: 12px;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.18);
+  padding: 24px;
+  box-sizing: border-box;
+  color: var(--dsw-alias-label-primary, #1f2328);
+  font-family: var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+}
+body[data-ds-dark-theme] .dsh-github-modal-dialog {
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+}
+.dsh-github-radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: var(--dsw-alias-bg-layer-1, #f6f8fa);
+}
+.dsh-github-radio-card:hover {
+  border-color: var(--dsw-alias-link, #0969da);
+}
+.dsh-github-radio-card.active {
+  border-color: var(--dsw-alias-link, #0969da);
+  background: rgba(9, 105, 218, 0.08);
+}
+body[data-ds-dark-theme] .dsh-github-radio-card {
+  background: var(--dsw-alias-bg-base, #161b22);
+  border-color: var(--dsw-alias-border-l1, #30363d);
+}
+body[data-ds-dark-theme] .dsh-github-radio-card.active {
+  border-color: #58a6ff;
+  background: rgba(88, 166, 255, 0.12);
+}
+
+/* 下拉菜单及选项在深色/浅色模式下的精准适配 */
+.dsh-github-select {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  background: var(--dsw-alias-bg-base, #ffffff);
+  color: var(--dsw-alias-label-primary, #1f2328);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  box-sizing: border-box;
+  color-scheme: light;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.dsh-github-select:focus {
+  border-color: var(--dsw-alias-link, #0969da);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+}
+.dsh-github-select option {
+  background-color: #ffffff;
+  color: #1f2328;
+  padding: 6px 10px;
+}
+body[data-ds-dark-theme] .dsh-github-select {
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+  color: var(--dsw-alias-label-primary, #f0f6fc);
+  color-scheme: dark;
+}
+body[data-ds-dark-theme] .dsh-github-select:focus {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+}
+body[data-ds-dark-theme] .dsh-github-select option {
+  background-color: #1e1e22;
+  color: #f0f6fc;
+}
+
+/* 缓存信息展示框 */
+.dsh-github-cache-info-box {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1, #f6f8fa);
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  margin-bottom: 20px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #656d76);
+  transition: all 0.15s ease;
+}
+body[data-ds-dark-theme] .dsh-github-cache-info-box {
+  background: var(--dsw-alias-bg-base, #161b22);
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  color: var(--dsw-alias-label-secondary, #8c8c8c);
+}
+
+/* 单选框点强调色 */
+.dsh-github-radio {
+  accent-color: var(--dsw-alias-link, #0969da);
+  cursor: pointer;
+  margin-top: 3px;
+}
+body[data-ds-dark-theme] .dsh-github-radio {
+  accent-color: #58a6ff;
+}
 `;
 
     function injectStyles() {
@@ -1017,7 +1142,24 @@ body[data-ds-dark-theme] .dsh-github-steps-list {
             "button",
             {
               className: "dsh-github-action-btn",
-              onClick: onRefresh,
+              onClick: function () {
+                setToastMsg("正在快速检测登录状态...");
+                fetch("/api/github/auth?force=true")
+                  .then(function (res) { return res.json(); })
+                  .then(function (json) {
+                    if (json && json.ok && json.auth && json.auth.loggedIn) {
+                      setToastMsg("✅ 已识别到 GitHub CLI 登录态，正在拉取数据...");
+                      clearStoredGlobalOverview();
+                      onRefresh();
+                    } else {
+                      setToastMsg("⚠️ 暂未检测到登录凭据，请在终端执行 gh auth login 完成授权");
+                      onRefresh();
+                    }
+                  })
+                  .catch(function () {
+                    onRefresh();
+                  });
+              },
               title: "重新检测登录与安装状态"
             },
             "🔄 刷新状态"
@@ -1648,11 +1790,18 @@ body[data-ds-dark-theme] .dsh-github-steps-list {
         loadData(false);
       }, [loadData]);
 
-      // 窗口切回自动探测自愈
+      // 窗口切回自动探测自愈：优先轻量快速探针，检测到已登录立即自愈
       React.useEffect(() => {
         var onFocus = () => {
           if (!data?.auth?.loggedIn) {
-            loadData(false);
+            fetch("/api/github/auth?force=true")
+              .then(function (res) { return res.json(); })
+              .then(function (json) {
+                if (json && json.ok && json.auth && json.auth.loggedIn) {
+                  loadData(true);
+                }
+              })
+              .catch(function () {});
           }
         };
         window.addEventListener("focus", onFocus);
@@ -1702,16 +1851,328 @@ body[data-ds-dark-theme] .dsh-github-steps-list {
       );
     }
 
+    // 本地持久化缓存与偏好配置键名
+    var GLOBAL_OVERVIEW_CACHE_KEY = "dsh_github_global_overview_snapshot_v1";
+    var SYNC_SETTINGS_STORAGE_KEY = "dsh_github_sync_settings_v1";
+
+    var DEFAULT_SYNC_SETTINGS = {
+      strategy: "swr",     // 'swr' (秒开展示旧数据，后台静默拉取) | 'manual' (仅手动刷新) | 'interval' (定时轮询)
+      intervalMs: 300000,  // 默认 5 分钟 (300,000ms)
+    };
+
+    function getLocalSyncSettings() {
+      try {
+        var raw = localStorage.getItem(SYNC_SETTINGS_STORAGE_KEY);
+        if (!raw) return DEFAULT_SYNC_SETTINGS;
+        var parsed = JSON.parse(raw);
+        return Object.assign({}, DEFAULT_SYNC_SETTINGS, parsed);
+      } catch (e) {
+        return DEFAULT_SYNC_SETTINGS;
+      }
+    }
+
+    function saveLocalSyncSettings(settings: any) {
+      try {
+        localStorage.setItem(SYNC_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      } catch (e) {}
+    }
+
+    function getStoredGlobalOverview() {
+      try {
+        var raw = localStorage.getItem(GLOBAL_OVERVIEW_CACHE_KEY);
+        if (!raw) return null;
+        var parsed = JSON.parse(raw);
+        // 毒丸缓存自愈清洗：如果缓存中的快照显示「未登录」或未就绪，立即将其从 localStorage 彻底抹除！
+        // 杜绝断网或历史偶发异常导致用户后续启动永远被锁死在“未登录”状态
+        if (!parsed || !parsed.data || !parsed.data.auth || !parsed.data.auth.loggedIn) {
+          localStorage.removeItem(GLOBAL_OVERVIEW_CACHE_KEY);
+          return null;
+        }
+        if (typeof parsed.savedAt === "number") {
+          return parsed;
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function saveStoredGlobalOverview(data: any) {
+      // 毒丸拦截守卫：绝不持久化存储未登录状态、空数据或异常快照！
+      if (!data || !data.auth || !data.auth.loggedIn) {
+        return;
+      }
+      try {
+        localStorage.setItem(GLOBAL_OVERVIEW_CACHE_KEY, JSON.stringify({
+          data: data,
+          savedAt: Date.now(),
+        }));
+      } catch (e) {}
+    }
+
+    function clearStoredGlobalOverview() {
+      try {
+        localStorage.removeItem(GLOBAL_OVERVIEW_CACHE_KEY);
+      } catch (e) {}
+    }
+
+    function getCacheStorageMeta() {
+      try {
+        var raw = localStorage.getItem(GLOBAL_OVERVIEW_CACHE_KEY);
+        if (!raw) return { exists: false, sizeKb: 0, savedAt: 0 };
+        var parsed = JSON.parse(raw);
+        var sizeKb = Math.round((raw.length * 2) / 1024 * 10) / 10;
+        return { exists: true, sizeKb: sizeKb, savedAt: parsed?.savedAt || 0 };
+      } catch (e) {
+        return { exists: false, sizeKb: 0, savedAt: 0 };
+      }
+    }
+
+    // 数据新鲜度与同步状态微标组件
+    function SyncStatusBadge(props: { syncStatus: string; lastSyncedAt: number }) {
+      var syncStatus = props.syncStatus;
+      var lastSyncedAt = props.lastSyncedAt;
+      var text = "";
+      var bg = "rgba(101, 109, 118, 0.1)";
+      var color = "var(--dsw-alias-label-secondary, #656d76)";
+
+      var formatTimeAgo = function (ts: number) {
+        if (!ts) return "刚刚";
+        var diffSec = Math.floor((Date.now() - ts) / 1000);
+        if (diffSec < 60) return "刚刚";
+        var diffMin = Math.floor(diffSec / 60);
+        if (diffMin < 60) return diffMin + "分钟前";
+        var diffHour = Math.floor(diffMin / 60);
+        if (diffHour < 24) return diffHour + "小时前";
+        var diffDay = Math.floor(diffHour / 24);
+        return diffDay + "天前";
+      };
+
+      if (syncStatus === "syncing") {
+        text = "⏳ 后台同步中...";
+        bg = "rgba(9, 105, 218, 0.12)";
+        color = "var(--dsw-alias-link, #0969da)";
+      } else if (syncStatus === "fresh") {
+        var timeStr = lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : "";
+        text = "✅ 已是最新" + (timeStr ? " (" + timeStr + ")" : "");
+        bg = "rgba(46, 160, 67, 0.12)";
+        color = "var(--dsw-alias-state-success, #2ea043)";
+      } else if (syncStatus === "cached") {
+        text = "📦 本地快照 (" + formatTimeAgo(lastSyncedAt) + ")";
+        bg = "rgba(101, 109, 118, 0.12)";
+        color = "var(--dsw-alias-label-secondary, #656d76)";
+      } else if (syncStatus === "failed") {
+        text = "⚠️ 同步超时，已保留本地缓存";
+        bg = "rgba(207, 34, 46, 0.1)";
+        color = "var(--dsw-alias-state-error-primary, #cf222e)";
+      }
+
+      if (!text) return null;
+
+      return React.createElement(
+        "span",
+        {
+          className: "dsh-github-sync-badge",
+          style: {
+            fontSize: "11px",
+            padding: "3px 8px",
+            borderRadius: "12px",
+            background: bg,
+            color: color,
+            marginLeft: "10px",
+            fontWeight: 500,
+            display: "inline-flex",
+            alignItems: "center",
+          },
+        },
+        text
+      );
+    }
+
+    // 全景驾驶舱「⚙️ 数据同步与缓存设置」模态弹窗组件
+    function GlobalSyncSettingsModal(props: {
+      isOpen: boolean;
+      onClose: () => void;
+      currentSettings: any;
+      onSave: (newSettings: any) => void;
+      onClearCache: () => void;
+    }) {
+      if (!props.isOpen) return null;
+
+      var [strategy, setStrategy] = React.useState(props.currentSettings.strategy || "swr");
+      var [intervalMs, setIntervalMs] = React.useState(props.currentSettings.intervalMs || 300000);
+      var [cacheMeta, setCacheMeta] = React.useState(getCacheStorageMeta());
+      var [clearTip, setClearTip] = React.useState("");
+
+      // 键盘 Escape 快捷关闭支持
+      React.useEffect(function () {
+        var onKeyDown = function (e: any) {
+          if (e.key === "Escape" || e.keyCode === 27) {
+            props.onClose();
+          }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return function () { window.removeEventListener("keydown", onKeyDown); };
+      }, [props.onClose]);
+
+      var h = React.createElement;
+
+      var handleSave = function () {
+        var updated = {
+          strategy: strategy,
+          intervalMs: Number(intervalMs),
+        };
+        saveLocalSyncSettings(updated);
+        props.onSave(updated);
+        props.onClose();
+      };
+
+      var handleClear = function () {
+        clearStoredGlobalOverview();
+        props.onClearCache();
+        setCacheMeta({ exists: false, sizeKb: 0, savedAt: 0 });
+        setClearTip("本地缓存已彻底清空！");
+        setTimeout(function () { setClearTip(""); }, 2000);
+      };
+
+      return h(
+        "div",
+        { className: "dsh-github-modal-overlay", onClick: props.onClose },
+        h(
+          "div",
+          {
+            className: "dsh-github-modal-dialog",
+            onClick: function (e: any) { e.stopPropagation(); },
+          },
+          h(
+            "div",
+            { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" } },
+            h("h3", { style: { margin: 0, fontSize: "16px", fontWeight: 600 } }, "⚙️ 数据同步与缓存偏好"),
+            h("button", {
+              style: { background: "none", border: "none", cursor: "pointer", fontSize: "18px", color: "var(--dsw-alias-label-secondary, #656d76)" },
+              onClick: props.onClose,
+            }, "✕")
+          ),
+          h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.5" } },
+            "配置 GitHub 全景驾驶舱的数据拉取节奏。启用秒开模式可利用本地持久化缓存消除每次打开时的漫长等待。"
+          ),
+          // 刷新策略选择
+          h("div", { style: { marginBottom: "16px" } },
+            h("div", { style: { fontSize: "13px", fontWeight: 600, marginBottom: "8px" } }, "数据刷新策略"),
+            // 策略 A: SWR 秒开
+            h("div", {
+              className: "dsh-github-radio-card" + (strategy === "swr" ? " active" : ""),
+              onClick: function () { setStrategy("swr"); },
+            },
+              h("input", { type: "radio", className: "dsh-github-radio", checked: strategy === "swr", readOnly: true }),
+              h("div", null,
+                h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "⚡ 秒开展示旧数据 (SWR, 强烈推荐)"),
+                h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
+                  "打开驾驶舱立即展示上次本地缓存（0ms秒开），后台静默同步最新状态。"
+                )
+              )
+            ),
+            // 策略 B: 纯手动刷新
+            h("div", {
+              className: "dsh-github-radio-card" + (strategy === "manual" ? " active" : ""),
+              onClick: function () { setStrategy("manual"); },
+            },
+              h("input", { type: "radio", className: "dsh-github-radio", checked: strategy === "manual", readOnly: true }),
+              h("div", null,
+                h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "📋 仅在手动点击时拉取 (Manual Only)"),
+                h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
+                  "打开只浏览本地缓存，绝不自动触发后台 gh 进程，最省电、最省资源。"
+                )
+              )
+            ),
+            // 策略 C: 定时轮询
+            h("div", {
+              className: "dsh-github-radio-card" + (strategy === "interval" ? " active" : ""),
+              onClick: function () { setStrategy("interval"); },
+            },
+              h("input", { type: "radio", className: "dsh-github-radio", checked: strategy === "interval", readOnly: true }),
+              h("div", null,
+                h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "⏱️ 定时自动轮询 (Auto Poll)"),
+                h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
+                  "驾驶舱打开期间，按照下方设定的时间间隔在后台自动轮询。"
+                )
+              )
+            )
+          ),
+          // 自动拉取间隔下拉
+          h("div", { style: { marginBottom: "18px" } },
+            h("div", { style: { fontSize: "13px", fontWeight: 600, marginBottom: "6px" } }, "后台自动拉取间隔"),
+            h("select", {
+              className: "dsh-github-select",
+              value: intervalMs,
+              onChange: function (e: any) { setIntervalMs(Number(e.target.value)); },
+            },
+              h("option", { value: 60000 }, "1 分钟 (高频刷新)"),
+              h("option", { value: 300000 }, "5 分钟 (默认推荐)"),
+              h("option", { value: 900000 }, "15 分钟"),
+              h("option", { value: 1800000 }, "30 分钟 (推荐节能)"),
+              h("option", { value: 3600000 }, "1 小时"),
+              h("option", { value: 0 }, "从不自动刷新 (仅手动)")
+            )
+          ),
+          // 本地缓存信息与清理
+          h("div", {
+            className: "dsh-github-cache-info-box",
+          },
+            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+              h("span", null, cacheMeta.exists
+                ? `📦 本地缓存: 约 ${cacheMeta.sizeKb} KB (上次保存: ${new Date(cacheMeta.savedAt).toLocaleTimeString()})`
+                : "📦 暂无本地持久化缓存"
+              ),
+              cacheMeta.exists ? h("button", {
+                className: "dsh-github-btn-sm",
+                style: { padding: "3px 8px", fontSize: "11px", color: "var(--dsw-alias-state-error-primary, #cf222e)" },
+                onClick: handleClear,
+              }, "🗑️ 清空缓存") : null
+            ),
+            clearTip ? h("div", { style: { color: "var(--dsw-alias-state-success, #2ea043)", marginTop: "4px", fontWeight: 500 } }, clearTip) : null
+          ),
+          // 操作按钮
+          h("div", { style: { display: "flex", justifyContent: "flex-end", gap: "8px" } },
+            h("button", {
+              className: "dsh-github-btn-sm",
+              style: { padding: "6px 14px" },
+              onClick: props.onClose,
+            }, "取消"),
+            h("button", {
+              className: "dsh-github-btn-sm",
+              style: {
+                padding: "6px 16px",
+                background: "var(--dsw-alias-link, #0969da)",
+                color: "#ffffff",
+                borderColor: "var(--dsw-alias-link, #0969da)",
+                fontWeight: 600,
+              },
+              onClick: handleSave,
+            }, "保存并应用")
+          )
+        )
+      );
+    }
+
     function GithubWorkspacePanel() {
-      var [loading, setLoading] = React.useState(true);
-      var [data, setData] = React.useState(null as any);
+      // 1. 读取本地偏好配置与历史持久化快照 (0ms 纯内存读取)
+      var initialSettings = React.useMemo(() => getLocalSyncSettings(), []);
+      var initialSnapshot = React.useMemo(() => getStoredGlobalOverview(), []);
+
+      var [syncSettings, setSyncSettings] = React.useState(initialSettings);
+      var [data, setData] = React.useState(initialSnapshot?.data || null);
+      var [loading, setLoading] = React.useState(!initialSnapshot);
+      var [syncStatus, setSyncStatus] = React.useState(initialSnapshot ? "cached" : "loading");
+      var [lastSyncedAt, setLastSyncedAt] = React.useState(initialSnapshot?.savedAt || 0);
+      var [isSettingsModalOpen, setIsSettingsModalOpen] = React.useState(false);
       var [error, setError] = React.useState(null as string | null);
       var [updateInfo, setUpdateInfo] = React.useState(null as any);
       var [activeTab, setActiveTab] = React.useState("workspaces"); // 'workspaces' | 'repos' | 'mywork'
       var [searchQuery, setSearchQuery] = React.useState("");
       var [issueFilter, setIssueFilter] = React.useState("all"); // 'all' | 'reported' | 'assigned' | 'created'
 
-      // gh 业务数据完全就绪渲染后，闲时 1.5 秒异步静默检测升级，绝不影响首屏
+      // gh 业务数据就绪后，闲时 1.5 秒异步静默检测升级，绝不影响首屏
       React.useEffect(() => {
         if (!data) return;
         var timer = setTimeout(function () {
@@ -1728,54 +2189,101 @@ body[data-ds-dark-theme] .dsh-github-steps-list {
       }, [data]);
 
       var loadData = React.useCallback(async (forceRefresh = false) => {
+        // 如果是纯手动模式，且非显式强制刷新，且本地已有旧数据，直接跳过后台拉取
+        if (!forceRefresh && syncSettings.strategy === "manual" && data) {
+          return;
+        }
+
         setLoading(true);
+        setSyncStatus(data ? "syncing" : "loading");
         setError(null);
-        // 全局驾驶舱要 spawn 十几次 gh，冷启动可能超过 10 秒。
-        // 不设显式超时的话浏览器会抛一个与真实原因无关的网络错误，
-        // 早先这里会把所有失败都归因成「后端服务未就绪或接口不存在」——归因错误比没有报错更糟。
+
         var controller = new AbortController();
         var timedOut = false;
-        var timer = setTimeout(function () { timedOut = true; controller.abort(); }, 30000);
+        var timer = setTimeout(function () { timedOut = true; controller.abort(); }, 45000);
         try {
           if (forceRefresh) await fetch("/api/github/refresh", { method: "POST" }).catch(() => {});
           var res = await fetch("/api/github/global-overview", { signal: controller.signal });
           if (!res.ok) {
             var errText = await res.text().catch(() => "");
-            setError(`获取全局数据失败（HTTP ${res.status}）${errText ? ": " + errText : ""}`);
+            var failMsg = `获取全局数据失败（HTTP ${res.status}）${errText ? ": " + errText : ""}`;
+            if (data) {
+              // 容灾保障：有本地旧数据时绝不红屏崩溃，平滑降级展示离线快照
+              setSyncStatus("failed");
+            } else {
+              setError(failMsg);
+            }
             return;
           }
           var json = await res.json();
           if (json.ok && json.data) {
             setData(json.data);
+            saveStoredGlobalOverview(json.data); // 写入持久化快照
+            setLastSyncedAt(Date.now());
+            setSyncStatus("fresh");
+
             if (json.data.updateInfo) {
               setUpdateInfo(json.data.updateInfo);
             }
-            // 工作区矩阵单独失败时不能静默：否则界面显示「暂无工作区」，把故障伪装成空状态
             if (json.data.workspaceError) {
               setError("工作区列表读取失败：" + json.data.workspaceError);
             }
           } else {
-            setError(json.error || "获取全局数据失败");
+            if (data) {
+              setSyncStatus("failed");
+            } else {
+              setError(json.error || "获取全局数据失败");
+            }
           }
         } catch (err: any) {
-          if (timedOut || err.name === "AbortError") {
-            setError("获取超时（30 秒）：本机 gh 命令响应过慢，通常是网络或工作区数量较多所致。可稍后重试，或减少同时打开的工作区。");
+          if (data) {
+            // 后台网络故障时，旧数据依然完整可用
+            setSyncStatus("failed");
           } else {
-            setError("无法连接后端服务：" + (err.message || err));
+            if (timedOut || err.name === "AbortError") {
+              setError("获取超时（30 秒）：本机 gh 命令响应过慢，通常是网络或工作区数量较多所致。可稍后重试，或减少同时打开的工作区。");
+            } else {
+              setError("无法连接后端服务：" + (err.message || err));
+            }
           }
         } finally {
           clearTimeout(timer);
           setLoading(false);
         }
-      }, []);
+      }, [data, syncSettings]);
 
-      React.useEffect(() => { loadData(false); }, [loadData]);
+      // 挂载加载调度：SWR 模式下初次延迟 300ms 后台平滑发起静默同步
+      React.useEffect(() => {
+        if (syncSettings.strategy === "swr") {
+          var timer = setTimeout(function () { loadData(false); }, 300);
+          return function () { clearTimeout(timer); };
+        } else if (!data) {
+          loadData(false);
+        }
+      }, [syncSettings.strategy]);
 
-      // 窗口切回自动探测自愈
+      // 定时轮询调度
+      React.useEffect(() => {
+        if (syncSettings.strategy !== "interval" || !syncSettings.intervalMs || syncSettings.intervalMs <= 0) return;
+        var timer = setInterval(function () {
+          loadData(false);
+        }, syncSettings.intervalMs);
+        return function () { clearInterval(timer); };
+      }, [syncSettings.strategy, syncSettings.intervalMs, loadData]);
+
+      // 窗口切回自动探测自愈：优先轻量快速探针，检测到已登录立即自愈
       React.useEffect(() => {
         var onFocus = () => {
           if (!data?.auth?.loggedIn) {
-            loadData(false);
+            fetch("/api/github/auth?force=true")
+              .then(function (res) { return res.json(); })
+              .then(function (json) {
+                if (json && json.ok && json.auth && json.auth.loggedIn) {
+                  clearStoredGlobalOverview();
+                  loadData(true);
+                }
+              })
+              .catch(function () {});
           }
         };
         window.addEventListener("focus", onFocus);
@@ -1791,21 +2299,90 @@ body[data-ds-dark-theme] .dsh-github-steps-list {
           "div",
           { className: "dsh-github-title" },
           renderOctocatBadge(32),
-          h("h2", null, "GitHub 全景驾驶舱")
+          h("h2", null, "GitHub 全景驾驶舱"),
+          h(SyncStatusBadge, { syncStatus, lastSyncedAt })
         ),
         h(
-          "button",
-          {
-            className: "dsh-github-refresh-btn",
-            onClick: () => loadData(true),
-            disabled: loading,
-          },
-          loading ? "刷新中..." : "🔄 刷新全局数据"
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: "8px" } },
+          h(
+            "button",
+            {
+              className: "dsh-github-refresh-btn",
+              onClick: () => loadData(true),
+              disabled: loading,
+            },
+            loading ? "同步中..." : "🔄 刷新全局数据"
+          ),
+          h(
+            "button",
+            {
+              className: "dsh-github-btn-sm",
+              onClick: () => setIsSettingsModalOpen(true),
+              title: "配置数据拉取节奏与本地缓存偏好",
+              style: { padding: "6px 12px" },
+            },
+            "⚙️ 同步设置"
+          )
         )
       );
 
       if (loading && !data) {
         return h("div", { className: "dsh-github-panel" }, headerEl, h("div", { className: "dsh-github-empty" }, "正在加载全局 GitHub 账号与工作区数据..."));
+      }
+
+      var effectiveUpdateInfo = updateInfo || data?.updateInfo;
+      var upgradeBannerEl = effectiveUpdateInfo && effectiveUpdateInfo.hasUpdate
+        ? h(UpgradeNotificationCard, { updateInfo: effectiveUpdateInfo, isRightbar: false })
+        : null;
+
+      var settingsModalEl = h(GlobalSyncSettingsModal, {
+        isOpen: isSettingsModalOpen,
+        onClose: () => setIsSettingsModalOpen(false),
+        currentSettings: syncSettings,
+        onSave: (newSettings: any) => {
+          setSyncSettings(newSettings);
+        },
+        onClearCache: () => {
+          setSyncStatus("loading");
+          setData(null);
+          setLastSyncedAt(0);
+        },
+      });
+
+      // 错误拦截阻断：若无本地数据且请求失败，直接呈现错误卡片，杜绝把接口异常伪装成「未安装 CLI」
+      if (!data && error) {
+        return h(
+          "div",
+          { className: "dsh-github-panel" },
+          headerEl,
+          upgradeBannerEl,
+          h(
+            "div",
+            {
+              style: {
+                padding: "24px",
+                borderRadius: "8px",
+                background: "rgba(248, 81, 73, 0.08)",
+                border: "1px solid rgba(248, 81, 73, 0.3)",
+                margin: "16px 0",
+                textAlign: "center",
+              },
+            },
+            h("div", { style: { fontSize: "16px", fontWeight: 600, color: "#f85149", marginBottom: "8px" } }, "⚠️ 后端服务加载异常"),
+            h("div", { style: { fontSize: "13px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "16px" } }, error),
+            h(
+              "button",
+              {
+                className: "dsh-github-btn-sm",
+                onClick: () => loadData(true),
+                style: { padding: "6px 18px", background: "var(--dsw-alias-link, #0969da)", color: "#ffffff", borderColor: "var(--dsw-alias-link, #0969da)" },
+              },
+              "🔄 重新请求"
+            )
+          ),
+          settingsModalEl
+        );
       }
 
       var auth = data ? data.auth : null;
@@ -2050,12 +2627,18 @@ body[data-ds-dark-theme] .dsh-github-steps-list {
         }
       }
 
-      var effectiveUpdateInfo = updateInfo || data?.updateInfo;
-      var upgradeBannerEl = effectiveUpdateInfo && effectiveUpdateInfo.hasUpdate
-        ? h(UpgradeNotificationCard, { updateInfo: effectiveUpdateInfo, isRightbar: false })
-        : null;
-
-      return h("div", { className: "dsh-github-panel" }, headerEl, upgradeBannerEl, errorEl, statsCardsEl, authGuideEl, tabsEl, contentEl);
+      return h(
+        "div",
+        { className: "dsh-github-panel" },
+        headerEl,
+        upgradeBannerEl,
+        errorEl,
+        statsCardsEl,
+        authGuideEl,
+        tabsEl,
+        contentEl,
+        settingsModalEl
+      );
     }
 
     var inject = ["slots", "sidebarRightTabs", "sessions", "layout", "theme"];

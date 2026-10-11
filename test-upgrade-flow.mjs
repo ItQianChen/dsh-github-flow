@@ -76,11 +76,13 @@ async function runTests() {
   const checkUpdateRoute = registeredRoutes.find((r) => r.path === '/api/github/check-update');
   const upgradeRoute = registeredRoutes.find((r) => r.path === '/api/github/upgrade');
   const upgradeStatusRoute = registeredRoutes.find((r) => r.path === '/api/github/upgrade-status');
+  const authRoute = registeredRoutes.find((r) => r.path === '/api/github/auth');
 
   assert.ok(checkUpdateRoute, '必须注册 /api/github/check-update 路由');
   assert.ok(upgradeRoute, '必须注册 /api/github/upgrade 路由');
   assert.ok(upgradeStatusRoute, '必须注册 /api/github/upgrade-status 路由');
-  console.log(`✅ WebServer 成功注册全套升级端点 (共 ${registeredRoutes.length} 个路由)`);
+  assert.ok(authRoute, '必须注册 /api/github/auth 快速认证探针路由');
+  console.log(`✅ WebServer 成功注册全套升级与快速认证端点 (共 ${registeredRoutes.length} 个路由)`);
 
   // 模拟调用 /api/github/check-update 接口
   let checkResJson = null;
