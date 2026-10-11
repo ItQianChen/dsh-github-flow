@@ -56,6 +56,34 @@ jobs:
           test -f lib/client.js || { echo "❌ 缺少 lib/client.js"; exit 1; }
           echo "✅ 核心产物文件校验通过"
 
+      - name: 提取版本号与 Release 标签
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ -n "${{ github.ref_name }}" ]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="v$VERSION"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: 自动生成 Release 更新日志 (参照 cogninote 规范)
+        id: changelog
+        run: |
+          NOTES_PATH="$RUNNER_TEMP/release-notes.md"
+          node scripts/generate-release-notes.mjs \
+            --version "${{ steps.meta.outputs.version }}" \
+            --releaseTag "${{ steps.meta.outputs.tag }}" \
+            --output "$NOTES_PATH"
+          echo "notes_path=$NOTES_PATH" >> $GITHUB_OUTPUT
+
+      - name: 打印 Release Notes 预览
+        run: |
+          echo "==================== RELEASE NOTES PREVIEW ===================="
+          cat "${{ steps.changelog.outputs.notes_path }}"
+          echo "==============================================================="
+
       - name: 预演发布 (Dry Run)
         if: ${{ inputs.dry_run == true }}
         run: npm publish --access public --dry-run
@@ -72,9 +100,9 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.dry_run != true }}
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
+          name: dsh-github-flow ${{ steps.meta.outputs.tag }}
+          tag_name: ${{ steps.meta.outputs.tag }}
+          body_path: ${{ steps.changelog.outputs.notes_path }}
           draft: false
           prerelease: false
         env:
