@@ -108,18 +108,14 @@ Consolidates scattered GitHub endpoints into **5 core domain tools**, featuring 
 
 ---
 
-## 🖥️ Dual Native Web UI Views
+## 🖥️ Native Web UI Workspace & Sync Preferences
 
-No more window switching! Seamlessly built into DSH using DSW design tokens with instant light/dark theme adaptation.
+No more window switching! Seamlessly integrated into DSH with DSW design tokens and instant light/dark theme adaptation.
 
 ### 1. Global Cockpit (Main Navigation Slot)
 Access via the GitHub icon in the main left navigation:
 * **⚡ 0ms Instant Render (SWR Persistent Cache)**: Powered by local snapshot persistence; say goodbye to full-screen 8~15s spinner freezes and enjoy instant dashboard loading;
-* **📦 Live Freshness Status Pill**: Transparently communicates data freshness right next to the title (`[📦 Local Snapshot (5m ago)]` ➔ `[⏳ Syncing in background...]` ➔ `[✅ Up to date (15:30)]` ➔ `[⚠️ Timeout, cached data preserved]`);
-* **⚙️ Autonomous Sync Preference Panel**: Click `[⚙️ Sync Settings]` in the top right to customize your rhythm:
-  * **Flexible Modes**: Choose between `⚡ Instant Render (SWR, Recommended)`, `📋 Manual Only (Energy Saver)`, and `⏱️ Periodic Auto Poll`;
-  * **Custom Intervals**: Select from 1 min / 5 mins (Default) / 15 mins / 30 mins / 1 hour / Never;
-  * **Storage Management**: Real-time snapshot size and timestamp visibility with one-click `[🗑️ Clear Cache]`;
+* **📦 Live Freshness Status Pill**: Transparently communicates data freshness right next to the title (`[📦 Local Snapshot (21m ago)]` ➔ `[⏳ Syncing in background...]` ➔ `[✅ Up to date (15:30)]` ➔ `[⚠️ Timeout, cached data preserved]`);
 * **Account-Wide Overview**: Live view of all cloud repositories, default branches, and star counts;
 * **Local Workspace Matrix**: Automatically detects open projects and bridges local directories with remote repos;
 * **3D Issue Governance Matrix**: Categorizes issues into *"📥 User Reported"*, *"🎯 Assigned to Me"*, and *"✍️ Created by Me"* with responsive pill filters;
@@ -132,6 +128,7 @@ Access via the GitHub icon in the main left navigation:
 ### 2. Session Right Sidebar Panel (Workspace Drawer)
 Located in the right drawer of every chat workspace:
 * **Context Auto-Binding**: Automatically locks onto the active Git repository;
+* **Freshness Pill Alignment**: Compact indicator `[📦 Local Snapshot (2m ago)]` with live `[🔄 Refresh]` button, 100% aligned with global rules;
 * **PR Status Pills**: Live PR inspection with CI checks and review badges;
 * **Workspace Open Issues List**: Direct issue task review with author badges and external links;
 * **Latest Actions Pipeline**: Real-time CI workflow status tracking;
@@ -139,6 +136,19 @@ Located in the right drawer of every chat workspace:
 
 <p align="center">
   <img src="./docs/images/2.png" alt="Session Right Sidebar Panel" width="100%" />
+</p>
+
+### 3. Data Sync & Cache Settings (Sync Preferences Modal)
+Click **`[⚙️ Sync Settings]`** in the top right of the Cockpit to adjust synchronization:
+* **Three Flexible Sync Strategies**:
+  * **⚡ Instant Render (SWR, Recommended)**: Instantly displays local cache (0ms), silently syncing latest state in background;
+  * **📋 Manual Only (Energy Saver)**: Browse local cache only; zero background `gh` processes triggered;
+  * **⏱️ Periodic Auto Poll**: Background polling according to custom intervals while cockpit is open.
+* **Custom Polling Intervals**: Choose from 1 min / 5 mins (Default) / 15 mins / 30 mins (Energy Saver) / 1 hour / Never;
+* **Visual Cache Management**: Real-time snapshot size and timestamp visibility with one-click `[🗑️ Clear Cache]`.
+
+<p align="center">
+  <img src="./docs/images/3.png" alt="Data Sync Settings Modal" width="85%" />
 </p>
 
 ---

@@ -1440,6 +1440,69 @@ body[data-ds-dark-theme] .dsh-github-radio {
       );
     }
 
+    // 数据新鲜度与同步状态微标组件 (自适应全景大面板与右侧栏紧凑模式)
+    function SyncStatusBadge(props: { syncStatus: string; lastSyncedAt: number; isRightbar?: boolean }) {
+      var syncStatus = props.syncStatus;
+      var lastSyncedAt = props.lastSyncedAt;
+      var isRightbar = Boolean(props.isRightbar);
+      var text = "";
+      var bg = "rgba(101, 109, 118, 0.1)";
+      var color = "var(--dsw-alias-label-secondary, #656d76)";
+
+      var formatTimeAgo = function (ts: number) {
+        if (!ts) return "刚刚";
+        var diffSec = Math.floor((Date.now() - ts) / 1000);
+        if (diffSec < 60) return "刚刚";
+        var diffMin = Math.floor(diffSec / 60);
+        if (diffMin < 60) return diffMin + "分钟前";
+        var diffHour = Math.floor(diffMin / 60);
+        if (diffHour < 24) return diffHour + "小时前";
+        var diffDay = Math.floor(diffHour / 24);
+        return diffDay + "天前";
+      };
+
+      if (syncStatus === "syncing") {
+        text = isRightbar ? "⏳ 同步中..." : "⏳ 后台同步中...";
+        bg = "rgba(9, 105, 218, 0.12)";
+        color = "var(--dsw-alias-link, #0969da)";
+      } else if (syncStatus === "fresh") {
+        var timeStr = lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : "";
+        text = "✅ " + (isRightbar ? "最新" : "已是最新") + (timeStr ? " (" + timeStr + ")" : "");
+        bg = "rgba(46, 160, 67, 0.12)";
+        color = "var(--dsw-alias-state-success, #2ea043)";
+      } else if (syncStatus === "cached") {
+        text = "📦 本地快照 (" + formatTimeAgo(lastSyncedAt) + ")";
+        bg = "rgba(101, 109, 118, 0.12)";
+        color = "var(--dsw-alias-label-secondary, #656d76)";
+      } else if (syncStatus === "failed") {
+        text = isRightbar ? "⚠️ 同步超时" : "⚠️ 同步超时，已保留本地缓存";
+        bg = "rgba(207, 34, 46, 0.1)";
+        color = "var(--dsw-alias-state-error-primary, #cf222e)";
+      }
+
+      if (!text) return null;
+
+      return React.createElement(
+        "span",
+        {
+          className: "dsh-github-sync-badge",
+          style: {
+            fontSize: isRightbar ? "10px" : "11px",
+            padding: isRightbar ? "2px 6px" : "3px 8px",
+            borderRadius: "12px",
+            background: bg,
+            color: color,
+            marginLeft: isRightbar ? "6px" : "10px",
+            fontWeight: 500,
+            display: "inline-flex",
+            alignItems: "center",
+            whiteSpace: "nowrap",
+          },
+        },
+        text
+      );
+    }
+
     // 渲染 GitHub 仓库信息与操作视图的核心函数
     function renderGithubRepoView(
       h: any,
@@ -1448,7 +1511,9 @@ body[data-ds-dark-theme] .dsh-github-radio {
       error: string | null,
       onRefresh: () => void,
       isRightbar: boolean = false,
-      updateInfo: any = null
+      updateInfo: any = null,
+      syncStatus: string = "",
+      lastSyncedAt: number = 0
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -1468,7 +1533,8 @@ body[data-ds-dark-theme] .dsh-github-radio {
           "div",
           { className: "dsh-github-title" },
           renderOctocatBadge(isRightbar ? 26 : 30),
-          h("h2", null, isRightbar ? "GitHub 仓库" : "GitHub 工作台")
+          h("h2", null, isRightbar ? "GitHub 仓库" : "GitHub 工作台"),
+          syncStatus ? h(SyncStatusBadge, { syncStatus, lastSyncedAt, isRightbar }) : null
         ),
         h(
           "button",
@@ -1715,12 +1781,174 @@ body[data-ds-dark-theme] .dsh-github-radio {
       return [headerEl, upgradeBannerEl, authGuideEl, repoCardEl, actionsBarEl, prSectionEl, issueSectionEl, runSectionEl].filter(Boolean);
     }
 
+    // 全局持久化缓存与偏好配置键名
+    var GLOBAL_OVERVIEW_CACHE_KEY = "dsh_github_global_overview_snapshot_v1";
+    var SYNC_SETTINGS_STORAGE_KEY = "dsh_github_sync_settings_v1";
+
+    var DEFAULT_SYNC_SETTINGS = {
+      strategy: "swr",     // 'swr' (秒开展示旧数据，后台静默拉取) | 'manual' (仅手动刷新) | 'interval' (定时轮询)
+      intervalMs: 300000,  // 默认 5 分钟 (300,000ms)
+    };
+
+    function getLocalSyncSettings() {
+      try {
+        var raw = localStorage.getItem(SYNC_SETTINGS_STORAGE_KEY);
+        if (!raw) return DEFAULT_SYNC_SETTINGS;
+        var parsed = JSON.parse(raw);
+        return Object.assign({}, DEFAULT_SYNC_SETTINGS, parsed);
+      } catch (e) {
+        return DEFAULT_SYNC_SETTINGS;
+      }
+    }
+
+    function saveLocalSyncSettings(settings: any) {
+      try {
+        localStorage.setItem(SYNC_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+        // 跨组件事件通知：确保主页设置被修改后，右侧栏及所有实例即时同步新规则
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("dsh-github-sync-settings-change", { detail: settings }));
+        }
+      } catch (e) {}
+    }
+
+    function getStoredGlobalOverview() {
+      try {
+        var raw = localStorage.getItem(GLOBAL_OVERVIEW_CACHE_KEY);
+        if (!raw) return null;
+        var parsed = JSON.parse(raw);
+        // 毒丸缓存自愈清洗：如果缓存中的快照显示「未登录」或未就绪，立即将其从 localStorage 彻底抹除！
+        if (!parsed || !parsed.data || !parsed.data.auth || !parsed.data.auth.loggedIn) {
+          localStorage.removeItem(GLOBAL_OVERVIEW_CACHE_KEY);
+          return null;
+        }
+        if (typeof parsed.savedAt === "number") {
+          return parsed;
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function saveStoredGlobalOverview(data: any) {
+      // 毒丸拦截守卫：绝不持久化存储未登录状态、空数据或异常快照！
+      if (!data || !data.auth || !data.auth.loggedIn) {
+        return;
+      }
+      try {
+        localStorage.setItem(GLOBAL_OVERVIEW_CACHE_KEY, JSON.stringify({
+          data: data,
+          savedAt: Date.now(),
+        }));
+      } catch (e) {}
+    }
+
+    function clearStoredGlobalOverview() {
+      try {
+        localStorage.removeItem(GLOBAL_OVERVIEW_CACHE_KEY);
+        // 彻底清空所有右侧栏工作区历史快照，确保全局一致
+        if (typeof localStorage !== "undefined") {
+          for (var i = localStorage.length - 1; i >= 0; i--) {
+            var k = localStorage.key(i);
+            if (k && k.indexOf("dsh_github_rightbar_snapshot_") === 0) {
+              localStorage.removeItem(k);
+            }
+          }
+        }
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("dsh-github-cache-cleared"));
+        }
+      } catch (e) {}
+    }
+
+    function getCacheStorageMeta() {
+      try {
+        var raw = localStorage.getItem(GLOBAL_OVERVIEW_CACHE_KEY);
+        if (!raw) return { exists: false, sizeKb: 0, savedAt: 0 };
+        var parsed = JSON.parse(raw);
+        var sizeKb = Math.round((raw.length * 2) / 1024 * 10) / 10;
+        return { exists: true, sizeKb: sizeKb, savedAt: parsed?.savedAt || 0 };
+      } catch (e) {
+        return { exists: false, sizeKb: 0, savedAt: 0 };
+      }
+    }
+
+    // 右侧栏专属本地持久化快照工具
+    function getRightbarStorageKey(cwd: string | null) {
+      var safe = (cwd || "default").replace(/[^a-zA-Z0-9_-]/g, "_");
+      return "dsh_github_rightbar_snapshot_" + safe;
+    }
+
+    function getStoredRightbarSnapshot(cwd: string | null) {
+      try {
+        var key = getRightbarStorageKey(cwd);
+        var raw = localStorage.getItem(key);
+        if (!raw) return null;
+        var parsed = JSON.parse(raw);
+        // 毒丸拦截：若快照未登录，物理删除
+        if (!parsed || !parsed.data || !parsed.data.auth || !parsed.data.auth.loggedIn) {
+          localStorage.removeItem(key);
+          return null;
+        }
+        return { data: parsed.data, savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : 0 };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function saveStoredRightbarData(cwd: string | null, data: any) {
+      if (!data || !data.auth || !data.auth.loggedIn) return;
+      try {
+        var key = getRightbarStorageKey(cwd);
+        localStorage.setItem(key, JSON.stringify({
+          data: data,
+          savedAt: Date.now(),
+        }));
+      } catch (e) {}
+    }
+
     // 1. 右侧栏专属视图 (Right Sidebar Tab Body)
     function GithubRightbarBody(props: any) {
-      var [loading, setLoading] = React.useState(true);
-      var [data, setData] = React.useState(null as any);
+      var sessionId = props ? props.sessionId : null;
+      var cwd: string | null = null;
+      if (props && typeof props.useSessions === "function" && sessionId) {
+        try {
+          cwd = props.useSessions((sessions: any) => sessions?.byId?.[sessionId]?.cwd) || null;
+        } catch (e) {}
+      }
+
+      // 核心原则：右侧栏与全景主页使用同一套在“主页-设置”中配置的缓存与刷新规则事实源
+      var initialSettings = React.useMemo(() => getLocalSyncSettings(), []);
+      var [syncSettings, setSyncSettings] = React.useState(initialSettings);
+
+      // SWR 秒开机制：初始数据直接从本地快照读取，0ms 瞬间展示！
+      var initialSnapshot = React.useMemo(() => getStoredRightbarSnapshot(cwd), [cwd]);
+      var [data, setData] = React.useState(initialSnapshot?.data || null);
+      var [syncStatus, setSyncStatus] = React.useState(initialSnapshot ? "cached" : "loading");
+      var [lastSyncedAt, setLastSyncedAt] = React.useState(initialSnapshot?.savedAt || 0);
+      var [loading, setLoading] = React.useState(false);
       var [error, setError] = React.useState(null as string | null);
       var [updateInfo, setUpdateInfo] = React.useState(null as any);
+
+      // 跨组件事件监听：当主页修改了同步设置或清空缓存时，右侧栏即时无感对齐
+      React.useEffect(function () {
+        var onSettingsChange = function (e: any) {
+          if (e && e.detail) {
+            setSyncSettings(e.detail);
+          }
+        };
+        var onCacheCleared = function () {
+          setData(null);
+          setLastSyncedAt(0);
+          setSyncStatus("loading");
+        };
+        window.addEventListener("dsh-github-sync-settings-change", onSettingsChange);
+        window.addEventListener("dsh-github-cache-cleared", onCacheCleared);
+        return function () {
+          window.removeEventListener("dsh-github-sync-settings-change", onSettingsChange);
+          window.removeEventListener("dsh-github-cache-cleared", onCacheCleared);
+        };
+      }, []);
 
       // gh 数据拉取完毕后，闲时 1.5 秒异步检测升级，绝对不抢占主业务首屏资源
       React.useEffect(() => {
@@ -1738,25 +1966,27 @@ body[data-ds-dark-theme] .dsh-github-radio {
         return function () { clearTimeout(timer); };
       }, [data]);
 
-      // 核心：直接从会话 Props 拿到真实物理工作区路径！
-      var cwd: string | null = null;
-      if (props && props.useSessions && props.sessionId) {
-        try {
-          cwd = props.useSessions((sessions: any) => sessions?.byId?.[props.sessionId]?.cwd);
-        } catch (e) {}
-      }
-
+      // 遵循全局规则的数据拉取核心函数 (仅依赖标量 cwd 与 sessionId，坚决去除 props 引用依赖，彻底终结死循环)
       var loadData = React.useCallback(async (forceRefresh = false) => {
-        setLoading(true);
+        // 规则执行：若主页设置为「纯手动模式 (manual)」，且非用户点击强制刷新，且本地已有数据，坚决不打后台网络！
+        if (!forceRefresh && syncSettings.strategy === "manual" && data) {
+          return;
+        }
+
+        if (forceRefresh || !data) {
+          setLoading(true);
+        }
+        setSyncStatus(data ? "syncing" : "loading");
         setError(null);
+
         try {
           if (forceRefresh) {
             await fetch("/api/github/refresh", { method: "POST" }).catch(() => {});
           }
           var url = "/api/github/overview";
           var params: string[] = [];
-          if (props && props.sessionId) {
-            params.push("sessionId=" + encodeURIComponent(props.sessionId));
+          if (sessionId) {
+            params.push("sessionId=" + encodeURIComponent(sessionId));
           }
           if (cwd) {
             params.push("cwd=" + encodeURIComponent(cwd));
@@ -1767,28 +1997,57 @@ body[data-ds-dark-theme] .dsh-github-radio {
           var res = await fetch(url);
           if (!res.ok) {
             var errText = await res.text().catch(() => "");
-            setError(`后端服务未就绪 (${res.status}): ${errText || res.statusText}`);
+            var msg = `后端服务未就绪 (${res.status}): ${errText || res.statusText}`;
+            if (data) {
+              setSyncStatus("failed");
+            } else {
+              setError(msg);
+            }
             return;
           }
           var json = await res.json();
           if (json.ok && json.data) {
             setData(json.data);
+            saveStoredRightbarData(cwd, json.data); // 写入持久化快照
+            setLastSyncedAt(Date.now());
+            setSyncStatus("fresh");
             if (json.data.updateInfo) {
               setUpdateInfo(json.data.updateInfo);
             }
+          } else if (data) {
+            setSyncStatus("failed");
           } else {
             setError(json.error || "获取状态失败");
           }
         } catch (err: any) {
-          setError(err.message || "网络异常");
+          if (data) {
+            setSyncStatus("failed");
+          } else {
+            setError(err.message || "网络异常");
+          }
         } finally {
           setLoading(false);
         }
-      }, [cwd, props]);
+      }, [cwd, sessionId, data, syncSettings.strategy]);
 
+      // 挂载与策略调度：与主页规则 100% 保持一致
       React.useEffect(() => {
-        loadData(false);
-      }, [loadData]);
+        if (syncSettings.strategy === "swr") {
+          var timer = setTimeout(function () { loadData(false); }, 300);
+          return function () { clearTimeout(timer); };
+        } else if (!data) {
+          loadData(false);
+        }
+      }, [cwd, sessionId, syncSettings.strategy]);
+
+      // 定时轮询调度：与主页完全一致
+      React.useEffect(() => {
+        if (syncSettings.strategy !== "interval" || !syncSettings.intervalMs || syncSettings.intervalMs <= 0) return;
+        var timer = setInterval(function () {
+          loadData(false);
+        }, syncSettings.intervalMs);
+        return function () { clearInterval(timer); };
+      }, [syncSettings.strategy, syncSettings.intervalMs, loadData]);
 
       // 窗口切回自动探测自愈：优先轻量快速探针，检测到已登录立即自愈
       React.useEffect(() => {
@@ -1812,7 +2071,7 @@ body[data-ds-dark-theme] .dsh-github-radio {
       return h(
         "div",
         { className: "dsh-github-rightbar-container" },
-        ...renderGithubRepoView(h, data, loading, error, () => loadData(true), true, updateInfo)
+        ...renderGithubRepoView(h, data, loading, error, () => loadData(true), true, updateInfo, syncStatus, lastSyncedAt)
       );
     }
 
@@ -1848,144 +2107,6 @@ body[data-ds-dark-theme] .dsh-github-radio {
           },
           renderOctocat(18, "currentColor")
         )
-      );
-    }
-
-    // 本地持久化缓存与偏好配置键名
-    var GLOBAL_OVERVIEW_CACHE_KEY = "dsh_github_global_overview_snapshot_v1";
-    var SYNC_SETTINGS_STORAGE_KEY = "dsh_github_sync_settings_v1";
-
-    var DEFAULT_SYNC_SETTINGS = {
-      strategy: "swr",     // 'swr' (秒开展示旧数据，后台静默拉取) | 'manual' (仅手动刷新) | 'interval' (定时轮询)
-      intervalMs: 300000,  // 默认 5 分钟 (300,000ms)
-    };
-
-    function getLocalSyncSettings() {
-      try {
-        var raw = localStorage.getItem(SYNC_SETTINGS_STORAGE_KEY);
-        if (!raw) return DEFAULT_SYNC_SETTINGS;
-        var parsed = JSON.parse(raw);
-        return Object.assign({}, DEFAULT_SYNC_SETTINGS, parsed);
-      } catch (e) {
-        return DEFAULT_SYNC_SETTINGS;
-      }
-    }
-
-    function saveLocalSyncSettings(settings: any) {
-      try {
-        localStorage.setItem(SYNC_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-      } catch (e) {}
-    }
-
-    function getStoredGlobalOverview() {
-      try {
-        var raw = localStorage.getItem(GLOBAL_OVERVIEW_CACHE_KEY);
-        if (!raw) return null;
-        var parsed = JSON.parse(raw);
-        // 毒丸缓存自愈清洗：如果缓存中的快照显示「未登录」或未就绪，立即将其从 localStorage 彻底抹除！
-        // 杜绝断网或历史偶发异常导致用户后续启动永远被锁死在“未登录”状态
-        if (!parsed || !parsed.data || !parsed.data.auth || !parsed.data.auth.loggedIn) {
-          localStorage.removeItem(GLOBAL_OVERVIEW_CACHE_KEY);
-          return null;
-        }
-        if (typeof parsed.savedAt === "number") {
-          return parsed;
-        }
-        return null;
-      } catch (e) {
-        return null;
-      }
-    }
-
-    function saveStoredGlobalOverview(data: any) {
-      // 毒丸拦截守卫：绝不持久化存储未登录状态、空数据或异常快照！
-      if (!data || !data.auth || !data.auth.loggedIn) {
-        return;
-      }
-      try {
-        localStorage.setItem(GLOBAL_OVERVIEW_CACHE_KEY, JSON.stringify({
-          data: data,
-          savedAt: Date.now(),
-        }));
-      } catch (e) {}
-    }
-
-    function clearStoredGlobalOverview() {
-      try {
-        localStorage.removeItem(GLOBAL_OVERVIEW_CACHE_KEY);
-      } catch (e) {}
-    }
-
-    function getCacheStorageMeta() {
-      try {
-        var raw = localStorage.getItem(GLOBAL_OVERVIEW_CACHE_KEY);
-        if (!raw) return { exists: false, sizeKb: 0, savedAt: 0 };
-        var parsed = JSON.parse(raw);
-        var sizeKb = Math.round((raw.length * 2) / 1024 * 10) / 10;
-        return { exists: true, sizeKb: sizeKb, savedAt: parsed?.savedAt || 0 };
-      } catch (e) {
-        return { exists: false, sizeKb: 0, savedAt: 0 };
-      }
-    }
-
-    // 数据新鲜度与同步状态微标组件
-    function SyncStatusBadge(props: { syncStatus: string; lastSyncedAt: number }) {
-      var syncStatus = props.syncStatus;
-      var lastSyncedAt = props.lastSyncedAt;
-      var text = "";
-      var bg = "rgba(101, 109, 118, 0.1)";
-      var color = "var(--dsw-alias-label-secondary, #656d76)";
-
-      var formatTimeAgo = function (ts: number) {
-        if (!ts) return "刚刚";
-        var diffSec = Math.floor((Date.now() - ts) / 1000);
-        if (diffSec < 60) return "刚刚";
-        var diffMin = Math.floor(diffSec / 60);
-        if (diffMin < 60) return diffMin + "分钟前";
-        var diffHour = Math.floor(diffMin / 60);
-        if (diffHour < 24) return diffHour + "小时前";
-        var diffDay = Math.floor(diffHour / 24);
-        return diffDay + "天前";
-      };
-
-      if (syncStatus === "syncing") {
-        text = "⏳ 后台同步中...";
-        bg = "rgba(9, 105, 218, 0.12)";
-        color = "var(--dsw-alias-link, #0969da)";
-      } else if (syncStatus === "fresh") {
-        var timeStr = lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : "";
-        text = "✅ 已是最新" + (timeStr ? " (" + timeStr + ")" : "");
-        bg = "rgba(46, 160, 67, 0.12)";
-        color = "var(--dsw-alias-state-success, #2ea043)";
-      } else if (syncStatus === "cached") {
-        text = "📦 本地快照 (" + formatTimeAgo(lastSyncedAt) + ")";
-        bg = "rgba(101, 109, 118, 0.12)";
-        color = "var(--dsw-alias-label-secondary, #656d76)";
-      } else if (syncStatus === "failed") {
-        text = "⚠️ 同步超时，已保留本地缓存";
-        bg = "rgba(207, 34, 46, 0.1)";
-        color = "var(--dsw-alias-state-error-primary, #cf222e)";
-      }
-
-      if (!text) return null;
-
-      return React.createElement(
-        "span",
-        {
-          className: "dsh-github-sync-badge",
-          style: {
-            fontSize: "11px",
-            padding: "3px 8px",
-            borderRadius: "12px",
-            background: bg,
-            color: color,
-            marginLeft: "10px",
-            fontWeight: 500,
-            display: "inline-flex",
-            alignItems: "center",
-          },
-        },
-        text
       );
     }
 
