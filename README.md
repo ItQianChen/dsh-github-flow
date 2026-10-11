@@ -277,6 +277,12 @@ export function apply(ctx: Context) {
 - [npm 发布与自动化 CI 发版指南](./docs/npm-publish-guide.md)
 - [架构设计与技术规范](./docs/architecture.md)
 
+
+---
+## 友情链接
+
+- [LINUX DO - 新的理想型社区](https://linux.do/)
+
 ---
 
 ## 📄 开源协议 (License)

@@ -279,6 +279,9 @@ export function apply(ctx: Context) {
 
 ---
 
+## Friendship links
+- [LINUX DO - A new ideal community](https://linux.do/)
+
 ## 📄 License
 
 Open-sourced under the [MIT License](./LICENSE). Contributions, PRs, and Issues are welcome!
