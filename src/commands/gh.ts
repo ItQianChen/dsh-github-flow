@@ -1,6 +1,8 @@
 import type { GhExecutor } from '../executor.js';
+import type { UpdateChecker } from '../updater.js';
+import { CURRENT_PLUGIN_VERSION, PLUGIN_PACKAGE_NAME, NPM_PACKAGE_URL } from '../version.js';
 
-export function registerGhCommand(commandsService: any, executor: GhExecutor) {
+export function registerGhCommand(commandsService: any, executor: GhExecutor, updateChecker?: UpdateChecker) {
   if (!commandsService || typeof commandsService.register !== 'function') return;
 
   commandsService.register({
@@ -14,8 +16,18 @@ export function registerGhCommand(commandsService: any, executor: GhExecutor) {
         // 「我刚 gh auth login 到底成没成」，给他 30 秒前的缓存等于答非所问。
         const auth = await executor.checkAuth(undefined, true);
         const repo = await executor.getRepoMetadata();
+        const updateInfo = updateChecker?.getQuickStatus();
 
         let md = `### GitHub 集成状态\n\n`;
+
+        // 若检测到新版本，在最上方展示醒目的升级指引横幅
+        if (updateInfo?.hasUpdate) {
+          md += `> 🚀 **发现新版本 v${updateInfo.latestVersion}**（当前为 \`v${updateInfo.currentVersion}\`）\n`;
+          md += `> 输入 \`/gh upgrade\` 查看升级指引，或在终端执行：\`${updateInfo.upgradeCommand}\`\n\n`;
+        }
+
+        md += `- **插件版本**: \`v${updateInfo?.currentVersion || CURRENT_PLUGIN_VERSION}\`\n`;
+
         if (auth.loggedIn) {
           md += `- **登录账号**: \`${auth.user || '已登录'}\`\n`;
           md += `- **授权作用域**: ${auth.scopes?.map((s) => `\`${s}\``).join(', ') || '标准权限'}\n`;
@@ -39,16 +51,48 @@ export function registerGhCommand(commandsService: any, executor: GhExecutor) {
         };
       }
 
+      if (trimmed === 'upgrade') {
+        const info = updateChecker ? await updateChecker.check(true) : null;
+        const curVer = info?.currentVersion || CURRENT_PLUGIN_VERSION;
+        const latestVer = info?.latestVersion || curVer;
+        const hasUpdate = info?.hasUpdate ?? false;
+        const isMac = process.platform === 'darwin';
+        const isWin = process.platform === 'win32';
+        const platformName = isMac ? 'macOS' : isWin ? 'Windows' : 'Linux';
+
+        let md = `### 🚀 ${PLUGIN_PACKAGE_NAME} 插件升级指南\n\n`;
+        md += `- **当前运行版本**: \`v${curVer}\`\n`;
+        md += `- **官方最新版本**: \`v${latestVer}\` ${hasUpdate ? '🔥 (有可用更新)' : '✅ (已是最新)'}\n`;
+        md += `- **操作系统环境**: \`${platformName} (${process.platform})\`\n`;
+        md += `- **npm 仓库地址**: [${NPM_PACKAGE_URL}](${NPM_PACKAGE_URL})\n\n`;
+
+        md += `#### 请根据你的 DSH 安装环境选择适用的升级方式：\n\n`;
+        md += `1. **DSH 官方标准工程升级（推荐）**:\n\`\`\`bash\npnpm dsh plugin add ${PLUGIN_PACKAGE_NAME}@latest\n\`\`\`\n\n`;
+        md += `2. **DSH 桌面版 Profile 环境升级**:\n\`\`\`bash\ndsh plugin --profile desktop add ${PLUGIN_PACKAGE_NAME}@latest\n\`\`\`\n`;
+        if (isMac) {
+          md += `> 💡 *macOS 提示*：若在终端找不到 \`dsh\` 命令，可直接在桌面端目录更新：\n\`\`\`bash\ncd ~/.dsh/profiles/desktop && npm install ${PLUGIN_PACKAGE_NAME}@latest --save\n\`\`\`\n\n`;
+        } else {
+          md += `\n`;
+        }
+        md += `3. **Node 全局环境升级**:\n\`\`\`bash\nnpm install -g ${PLUGIN_PACKAGE_NAME}@latest\n\`\`\`\n\n`;
+        md += `> 💡 **升级后提示**：Node.js 运行时对已载入模块存在强缓存，升级后**请重启 DSH 服务以完全加载最新后端工具**。`;
+
+        return {
+          kind: 'success',
+          text: md,
+        };
+      }
+
       if (trimmed === 'help') {
         return {
           kind: 'success',
-          text: `### DSH GitHub Flow 帮助\n\n- \`/gh status\`: 检查当前 GitHub CLI 账号与仓库连接\n- \`/gh help\`: 显示此帮助信息\n\n可以在对话中直接让 Agent 操作 GitHub，如：\n- *"查看当前仓库有哪些开放的 PR"* \n- *"查看最近一次 CI 失败的原因"* \n- *"帮我给当前分支创建 PR"*`,
+          text: `### DSH GitHub Flow 帮助\n\n- \`/gh status\`: 检查当前 GitHub CLI 账号、仓库连接与插件版本\n- \`/gh upgrade\`: 检查新版本并显示全场景升级命令指引\n- \`/gh help\`: 显示此帮助信息\n\n可以在对话中直接让 Agent 操作 GitHub，如：\n- *"查看当前仓库有哪些开放的 PR"* \n- *"查看最近一次 CI 失败的原因"* \n- *"帮我给当前分支创建 PR"*`,
         };
       }
 
       return {
         kind: 'error',
-        text: `未知命令选项: /gh ${trimmed}。可用用法: /gh status, /gh help`,
+        text: `未知命令选项: /gh ${trimmed}。可用用法: /gh status, /gh upgrade, /gh help`,
       };
     },
   });

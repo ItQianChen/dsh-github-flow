@@ -5,11 +5,12 @@
   <a href="https://www.npmjs.com/package/dsh-github-flow"><img src="https://img.shields.io/npm/dm/dsh-github-flow.svg?style=flat-square&color=2ea043" alt="npm downloads" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="license" /></a>
   <a href="https://deepseek-harness.github.io/deepseek-harness/"><img src="https://img.shields.io/badge/Cordis-Compatible-8957e5.svg?style=flat-square" alt="Cordis" /></a>
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-informational.svg?style=flat-square" alt="Platform" />
 </p>
 
 <p align="center">
-  <b>基于 GitHub CLI (<code>gh</code>) 为 DeepSeek Harness (DSH) 打造的现代化原生工作流集成插件。</b><br>
-  深度打通本地 Git 仓库开发与远程 GitHub 协作（PR、Issue、Actions CI 诊断与代码审查），兼备 Agent 模型工具、人类 Slash 指令以及原生 Web UI 双重视图。
+  <b>让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手和脚，为人机协作打造沉浸式 GitHub 工作台。</b><br>
+  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>5 大领域 Agent 核心工具</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
 </p>
 
 <p align="center">
@@ -18,43 +19,116 @@
 
 ---
 
-## 🌟 核心特性
+## 🎯 为什么需要 `dsh-github-flow`？
 
-1. **零鉴权配置，开箱即用**：
-   - 自动复用宿主机已通过 `gh auth login` 认证的登录凭据（OAuth Token / 系统 Keyring），无需在 DSH 中存储任何明文 GitHub PAT。
-2. **工作区目录深度亲和与零参数探测 (CWD & Git Auto-Binding)**：
-   - 自动绑定当前会话所在的物理工作区目录，原生直读本地 `.git/config` 并映射 `workspace.json`；具备 Git 强校验、父子级目录智能穿透与会话 ID 上下文透传机制，杜绝非 Git 目录误选，无需 Agent 或人类手动传参 `owner/repo`，零参数直接识别关联仓库。
-3. **高信噪比与 Token 防溢出治理**：
-   - 拒绝 70+ 个碎片化微型工具撑爆上下文，收敛聚合为 **5 大领域核心 Tool**。
-   - 所有查询原生采用 `--json <fields>` 按需返回；对 `diff`、`log_failed` 设置安全截断保护（默认 24KB），防止模型上下文窗口溢出崩溃。
-   - 工具层已通过防御性输出包装，列表与标量 100% 契合 DSH 工具网关模式约束。
-4. **原生 Web UI 双重视图与多维任务治理**：
-   - **全局驾驶舱**（主导航栏 `sidebar.panellist`，Order 20）：透视账号全局仓库、本地工作区矩阵联动状态；重构并支持**三维 Issue 智能聚合**（「📥 用户提单」/「🎯 分配待办」/「✍️ 我发起的」），提供四态响应式药丸过滤与身份徽章；
-   - **右侧栏工作区面板**（`sidebarRightTabs`，Order 40）：自动绑定当前工程，常驻呈现 PR 门禁状态、**当前仓库 Open Issues 任务列表**（带提出人、分类徽章、标签与直达链接）、CI 构建流水线，以及快捷黄金网格（浏览器打开、查看所有 Issues、查看所有 PRs、快速创建 PR、新建 Issue），零弹窗依赖；
-   - **全场景双模式原生自适应**：深度契合 DSH 官方 DSW（DeepSeek Web）设计变量规范，通过 `body[data-ds-dark-theme]` 驱动浅色与深色主题实时零延迟平滑切换。
-5. **健全的环境诊断与三态就绪引导 (Three-State Setup Engine)**：
-   - 告别空状态困惑：精准建立「未安装 CLI (`Missing`)」➜「已安装未登录 (`Required`)」➜「已认证就绪 (`Active`)」三态状态机；
-   - 自动识别宿主机操作系统（Windows/macOS/Linux），按平台提供包管理器安装命令（Windows 下 `winget install --id GitHub.cli`、macOS 下 `brew install gh`）与官方安装包直达；
-   - 支持一键复制命令与安全白名单系统终端一键唤起；
-   - 具备**窗口焦点自愈（Focus Auto-Recovery）**机制：切到外部终端或浏览器授权完毕后，切回 DSH 界面自动探测刷新，无感恢复。
-6. **符合 Cordis 官方微内核架构**：
-   - 暴露原生 `GitHubService`（`ctx.github`），允许生态其他插件复用；
-   - 具备符合 Standard Schema 规范的运行时配置校验（`Config`）；
-   - 支持领域事件系统（`github/pr:create`, `github/issue:create`）。
+在日常使用 AI Agent 辅助编程与工程研发时，开发者经常遭遇以下断层痛点：
+
+| 研发协作场景 | 传统方式（痛点重重） | `dsh-github-flow`（原生体验） |
+| :--- | :--- | :--- |
+| **Agent 提 PR & 代码评审** | 用户必须手动在网页复制分支、点开 GitHub 网页点鼠标提交 PR，无法实现自主研发闭环。 | **Agent 原生提单与评审**：对 Agent 说“帮我把当前分支提个 PR”，Agent 调用 `github_pr` 自动完成提交与代码 diff 审查。 |
+| **CI / Actions 构建报错修复** | 构建挂了后，开发者在网页翻几十页 Actions 日志，复制报错贴给 Agent 调试。 | **精准抓取报错**：对 Agent 说“看下 CI 为什么失败”，Agent 调 `github_run(log_failed)` 秒级定位失败步骤并自动修复代码。 |
+| **安全性与鉴权维护** | 必须在插件配置文件里贴明文 GitHub Token（PAT），面临权限失控与密钥泄漏风险。 | **0 密钥泄露风险**：直接复用机器本地已认证的 `gh auth login` 凭据，使用系统安全 Keyring。 |
+| **多任务切屏困扰** | 必须在 VS Code、浏览器 GitHub 标签页和 DSH 聊天窗之间反复切屏，上下文频繁丢失。 | **内置沉浸式全景工作台**：DSH 内部常驻 PR 门禁、CI 流水线、三维待办 Issue 矩阵，一目了然。 |
+| **插件维护与升级** | 插件更新全靠开发者去 npm 碰运气看版本号，命令复杂不敢升。 | **闲时静默探测 + Web 一键自动升级**：双源极速探测，自动适配 Mac/Windows 跨平台命令，界面点击即升。 |
 
 ---
 
-## 📸 界面预览
+## 🤖 核心工具集 (Agent Tools)：给 Agent 装上 GitHub 的手和脚
 
-### 全局全景驾驶舱 (Global Cockpit)
-透视账号云端所有 GitHub 仓库、本地工作区矩阵联动状态，以及待办 PR 和多维分类 Issues（支持用户提单、指派待办、我发起的多维药丸切换与状态徽章）：
+本插件精选聚合为 **5 大领域核心工具**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）** 与 **零参数 CWD 智能绑定**。
+
+### 1. `github_pr`：PR 全生命周期管理与自动化代码审查
+> **典型对话指令**：
+> - *"帮我检查当前仓库有没有需要我审查的 PR？"*
+> - *"帮我把当前特性分支创建一个 PR，标题叫 'feat: add dark mode'，附带简明改动说明"*
+> - *"审查 PR #12 的代码差异并给出安全重构建议"*
+> - *"检查 PR #8 的 CI 检查通过了吗？通过的话帮我 Squash 合并并删除源分支"*
+
+* **支持操作 (`action`)**：
+  * `list`：列出当前仓库开放的 PR（带作者、审查判定、CI 门禁状态）；
+  * `view`：查看指定 PR 详情、描述与元数据；
+  * `diff`：获取 PR 的完整代码差异（内置智能防溢出截断保护）；
+  * `checks`：审查指定 PR 的 CI 门禁状态与检查套件结果；
+  * `create`：一键自动创建 PR（支持 draft 草稿模式与 `--dry-run` 预演）；
+  * `review`：提交代码审查意见（`APPROVE`, `REQUEST_CHANGES`, `COMMENT`）；
+  * `merge`：自动执行合并（支持 `squash` / `merge` / `rebase`，可指定 `delete_branch`）。
+
+---
+
+### 2. `github_run`：CI 流水线排查与失败定位神器（Agent 自动修 Bug 核心）
+> **典型对话指令**：
+> - *"最近一次 Actions 工作流为什么挂了？提取失败步骤日志并帮我修复"*
+> - *"看一下当前仓库最近 5 次 CI 构建的状态"*
+> - *"重新运行刚才失败的工作流"*
+
+* **支持操作 (`action`)**：
+  * `log_failed`（🔥 **核心杀手锏**）：**专供 Agent 快速诊断**，自动抓取并剥离无关日志，精准提取失败 Step 的关键错误堆栈，供 Agent 直击问题修复代码；
+  * `list`：查看当前仓库的 Workflow 运行历史与结论；
+  * `view`：查看指定 run_id 的详细阶段（Jobs & Steps）；
+  * `rerun`：重新触发失败的 CI 运行；
+  * `cancel`：取消在途的工作流。
+
+---
+
+### 3. `github_issue`：缺陷跟踪与待办任务闭环
+> **典型对话指令**：
+> - *"把刚才复现的内存泄漏 Bug 提一个 Issue，打上 'bug' 和 'backend' 标签"*
+> - *"查看指派给我的所有待办 Issue"*
+> - *"给 Issue #45 追加评论：'已经在 master 分支修复，等待发版验证'"*
+> - *"把 Issue #45 关闭"*
+
+* **支持操作 (`action`)**：
+  * `list`：多条件检索 Issue 列表；
+  * `view`：查看 Issue 正文与评论历史；
+  * `create`：创建新 Issue（支持标题、正文、标签、指派人）；
+  * `comment`：在指定 Issue 中追加排查进展或评论；
+  * `close` / `reopen`：开启或关闭 Issue。
+
+---
+
+### 4. `github_repo`：仓库探索与跨代码库检索
+> **典型对话指令**：
+> - *"在当前关联的 GitHub 仓库里搜索使用到 'createPrTool' 的代码行"*
+> - *"在 GitHub 上检索关于 'dsh-plugin' 的优秀开源项目"*
+> - *"查看仓库 cli/cli 的基本信息与星标数"*
+
+* **支持操作 (`action`)**：
+  * `view`：查看当前或目标仓库的元数据（默认分支、星标、描述、Visibility）；
+  * `search_code`：跨仓库或当前仓库检索特定代码符号；
+  * `search_repos`：跨全站检索 GitHub 开源仓库。
+
+---
+
+### 5. `github_api`：底层的灵活“逃生门”
+> **典型对话指令**：
+> - *"调用 GitHub API 获取当前仓库最新的 Release 列表，用 jq 提取 tag 名称"*
+
+* **核心优势**：直接复用本地认证环境调用任意 REST / GraphQL API，支持 `--jq` 预过滤与 `raw` 原始响应模式，绝不因插件未封装特定接口而受限。
+
+---
+
+## 🖥️ 原生 Web UI 沉浸式双重视图
+
+告别切屏！插件向 DSH 贡献了双重视图，遵循 DSW 设计规范，完美自适应深色/浅色主题。
+
+### 1. 全局全景驾驶舱 (Global Cockpit)
+点击 DSH 左侧主导航的 GitHub 图标进入：
+* **账号全景概览**：实时透视名下所有 GitHub 仓库、默认分支与 Star 状态；
+* **本地工作区联动矩阵**：自动探测本机所有打开的项目，显示当前工作区与远程 GitHub 仓库的关联状态；
+* **三维待办 Issue 矩阵**：智能划分「📥 用户提单（反馈到我名下仓库）」、「🎯 指派待办（分配给我）」与「✍️ 我发起的」，支持一键药丸过滤；
+* **升级提示横幅**：检测到新版本时在顶部优雅滑出，提供一键自动升级与更新日志直达。
 
 <p align="center">
   <img src="./docs/images/1.png" alt="GitHub 全景驾驶舱" width="100%" />
 </p>
 
-### 会话右侧栏工作区面板 (Session Workspace Panel)
-自动绑定当前工程关联仓库，常驻呈现 PR 状态药丸、当前仓库 Open Issues 任务列表、Actions 构建流水线与快捷操作网格：
+### 2. 会话右侧栏工作区面板 (Session Workspace Panel)
+位于每个对话工作区的右侧抽屉栏：
+* **当前仓库上下文绑定**：自动锁定当前会话的 Git 仓库，无需选择；
+* **PR 门禁状态药丸**：展示当前开放 PR，悬停查看 Checks 结果与审核意见；
+* **当前仓库 Open Issues 列表**：直接在侧边栏审查待办任务并提供直达链接；
+* **最新 Actions 构建流水线**：实时关注 CI 状态；
+* **快捷操作网格**：一键在浏览器打开仓库、直达 Issues/PRs、一键创建 PR。
 
 <p align="center">
   <img src="./docs/images/2.png" alt="右侧栏工作区面板" width="100%" />
@@ -64,87 +138,107 @@
 
 ## 🚀 安装指南
 
-在 DSH 终端执行以下命令直接从 npm 安装：
+### 步骤 1：前置准备（若已安装可跳过）
+确保你的机器上已安装 GitHub CLI (`gh`) 并已登录：
+```bash
+# Windows 安装
+winget install --id GitHub.cli
+
+# macOS 安装
+brew install gh
+
+# 登录认证（仅需执行一次）
+gh auth login
+```
+
+### 步骤 2：安装插件到 DSH
+
+在 DSH 终端根据你的使用环境执行对应命令：
 
 ```bash
-# 安装到桌面端 Profile
+# 场景 A：DSH 桌面版 (Desktop Profile)
 dsh plugin --profile desktop add dsh-github-flow
 
-# 或者安装到 Web Profile
-dsh plugin --profile web add dsh-github-flow
+# 场景 B：DSH Web / CLI 工程环境
+pnpm dsh plugin add dsh-github-flow
 ```
 
 ---
 
-## 🛠️ Agent 工具集速查
+## ⚡ 智能升级与版本检查机制
 
-| 工具名称 | 核心操作 (`action`) | 典型场景 |
-|---|---|---|
-| `github_pr` | `list`, `view`, `create`, `diff`, `checks`, `review`, `merge` | 让 Agent 查看 PR 详情、检查 CI 状态、执行代码评审、合并 PR |
-| `github_issue` | `list`, `view`, `create`, `comment`, `close`, `reopen` | 查看与搜索 Issue、创建 Issue、追加排查进展评论 |
-| `github_run` | `list`, `view`, `log_failed`, `rerun`, `cancel` | 查看 CI 构建流水线，特别是 `log_failed` 可直接提取报错日志供 Agent 修复 |
-| `github_repo` | `view`, `search_code`, `search_repos` | 查看仓库元数据、跨仓库代码搜索 |
-| `github_api` | 任意端点（如 `repos/{owner}/{repo}/releases`） | 底层直接调用 REST / GraphQL API（支持 `--jq` 预过滤、`raw` 原始响应体模式） |
+再也不用担心错过新功能！`dsh-github-flow` 内置了工业级的版本管理机制：
 
----
-
-## 💬 人类 Slash 命令
-
-在 DSH 对话输入框直接使用：
-- `/gh status`：检查当前 GitHub CLI 账号登录状态、授权作用域与当前本地目录关联仓库；
-- `/gh help`：查看使用帮助与常见语法示例。
+1. **业务优先，闲时静默后置**：
+   - 打开 Web 界面时，**核心 PR / Issue 数据 100% 毫秒级优先拉取渲染**；
+   - 在所有业务数据渲染就绪后，前端延迟 1.5 秒利用空闲时间发起后台探针，**对主业务 0 阻塞、0 抢占**。
+2. **国内双源智能加速**：
+   - 默认第一顺位走 **阿里云/淘宝 npm 镜像**（国内延迟仅 50~150ms），超时自动无缝回退官方 npmjs 兜底。
+3. **跨平台一键自动升级**：
+   - **界面直升**：在全景驾驶舱或右侧栏点击 **`[⚡ 一键自动升级]`**，插件在后台安全执行拉取；
+   - **智能适配**：自动识别 macOS、Windows 与桌面版 Profile，Mac 环境下自动补全 Homebrew 环境变量；
+   - **源码保护防线**：检测到本地 Git 源码软链接模式（`link:`）时自动阻止覆盖，防止破坏开发工作区；
+   - **成功自愈提示**：升级成功后明确提醒重启 DSH 服务以激活后端新工具，也可点击按钮立即刷新页面预览新界面。
 
 ---
 
-## ⚙️ 插件配置项 (Config)
+## 💬 人类 Slash 指令速查
 
-在 `cordis.patch.yml` 或 Profile 配置中自由覆盖如下字段：
+在 DSH 任意聊天窗口输入：
+
+* `/gh status`：一键诊断当前 GitHub CLI 账号认证状态、作用域、当前工作区关联仓库及插件版本；
+* `/gh upgrade`：主动检测 npm 最新版本，自适应输出当前操作系统（macOS / Windows / Linux）的最佳升级指引；
+* `/gh help`：查看帮助说明与 Agent 典型对话范例。
+
+---
+
+## ⚙️ 配置项说明 (`cordis.patch.yml`)
+
+插件具备开箱即用的默认行为，也可在 `cordis.patch.yml` 或 Profile 中按需调优：
 
 ```yaml
 - insert:
     - id: github-flow
       name: dsh-github-flow
       config:
-        ghPath: 'gh'              # GitHub CLI 程序路径（内网或特定环境可指定绝对路径）
-        defaultTimeoutMs: 30000   # 命令执行超时时间（毫秒）
-        maxOutputChars: 24000     # 单次命令最大返回字符数（防 Token 溢出保护）
-        maxOutputBytes: 96000     # 单次命令最大返回字节数硬上限，默认 maxOutputChars × 4
-        cacheTtlMs: 15000         # 单仓库概览缓存时长（毫秒）；全局驾驶舱按此值的 20 倍缓存，下限 5 分钟
-        defaultListLimit: 20      # 默认查询列表返回条数
+        ghPath: 'gh'              # GitHub CLI 可执行程序路径（内网特定环境可指定绝对路径）
+        defaultTimeoutMs: 30000   # 命令执行超时时间（毫秒，默认 30 秒）
+        maxOutputChars: 24000     # 单次命令安全返回字符数上限（Token 防溢出保护）
+        maxOutputBytes: 96000     # 单次命令 UTF-8 字节数硬上限，默认 maxOutputChars × 4
+        cacheTtlMs: 15000         # 单仓库概览缓存时长（毫秒，默认 15 秒）
+        checkUpdate: true         # 是否开启新版本自动检查提示（默认开启）
+        updateCheckIntervalMs: 86400000 # 检查更新间隔（毫秒，默认 24 小时）
+        registryUrl: ''           # 自定义私有 npm 镜像地址（留空则自动选用 npmmirror 与 npmjs）
 ```
-
-> 关于 Web 面板的刷新节奏：全局驾驶舱每次刷新要执行十余次 `gh`（本机实测 8-13 秒），
-> 因此它按 5 分钟缓存，并在你点击「🔄 刷新全局数据」时强制重取。
-> 工作区矩阵只读取本地 `.git/config` 识别仓库归属，不发起网络请求。
-> `/gh status` 命令始终绕过认证缓存，保证你 `gh auth login` 后立刻能看到真实状态。
 
 ---
 
 ## 🔌 生态服务扩展 (Cordis Service)
 
-其他 DSH 插件可通过依赖注入复用本插件的能力：
+本插件提供标准 Cordis 原生服务 `ctx.github`。其他 DSH 插件只需声明依赖即可复用：
 
-```ts
+```typescript
 import type { Context } from '@deepseek-ai/cordis';
 
 export const inject = ['github'];
 
 export function apply(ctx: Context) {
-  // 通过 ctx.github 直接调用底层安全执行引擎
+  // 直接调用经过安全包装的底层执行引擎
   const auth = await ctx.github.checkAuth();
   const repo = await ctx.github.getRepoMetadata();
+  const prs = await ctx.github.run(['pr', 'list', '--json', 'number,title']);
 }
 ```
 
 ---
 
-## 📚 开发与维护文档
+## 📚 相关开发文档
 
-- [npm 发布与版本维护指南](./docs/npm-publish-guide.md)
+- [npm 发布与自动化 CI 发版指南](./docs/npm-publish-guide.md)
 - [架构设计与技术规范](./docs/architecture.md)
 
 ---
 
 ## 📄 开源协议 (License)
 
-本项目基于 [MIT License](./LICENSE) 协议开源。
+本项目基于 [MIT License](./LICENSE) 协议完全开源。欢迎提交 PR 与 Issue！

@@ -5,11 +5,12 @@
   <a href="https://www.npmjs.com/package/dsh-github-flow"><img src="https://img.shields.io/npm/dm/dsh-github-flow.svg?style=flat-square&color=2ea043" alt="npm downloads" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="license" /></a>
   <a href="https://deepseek-harness.github.io/deepseek-harness/"><img src="https://img.shields.io/badge/Cordis-Compatible-8957e5.svg?style=flat-square" alt="Cordis" /></a>
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-informational.svg?style=flat-square" alt="Platform" />
 </p>
 
 <p align="center">
-  <b>Modern, native GitHub workflow integration plugin for DeepSeek Harness (DSH) powered by GitHub CLI (<code>gh</code>).</b><br>
-  Deeply connects local Git repository development with remote GitHub collaboration (PRs, Issues, Actions CI diagnosis, and code reviews), featuring Agent model tools, human slash commands, and dual native Web UI views.
+  <b>Give DeepSeek Harness Agents native hands and feet to operate GitHub, crafting an immersive collaboration cockpit for developers.</b><br>
+  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>5 core domain Agent tools</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
 </p>
 
 <p align="center">
@@ -18,43 +19,116 @@
 
 ---
 
-## 🌟 Key Features
+## 🎯 Why `dsh-github-flow`?
 
-1. **Zero-Configuration Authentication**:
-   - Seamlessly reuses existing host credentials from `gh auth login` (OAuth tokens / system Keyrings) without exposing plain-text Personal Access Tokens (PATs) in DSH.
-2. **Deep Workspace Affinity & Zero-Config Detection**:
-   - Automatically scopes commands to the active session workspace by natively reading local `.git/config` and mapping DSH `workspace.json`. Enhanced with Git repository validation, parent-child directory auto-penetration, and session ID propagation to eliminate misidentification, so neither models nor humans need to supply redundant `owner/repo` arguments.
-3. **High Signal-to-Noise Ratio & Token Budget Protection**:
-   - Consolidates over 70+ scattered micro-tools into **5 focused domain tools**.
-   - Queries use `--json <fields>` projections by default; long diffs and failed CI logs are safely truncated (default 24KB) to protect the model's context window.
-   - All tool outputs are defensively normalized into root objects to strictly comply with DSH Tool Gateway schema validation.
-4. **Dual Native Web UI Views & Multi-Dimensional Task Governance**:
-   - **Global Cockpit** (`sidebar.panellist`, Order 20): Account-wide repository overview, local workspace matrix mapping, and a reconstructed **3-dimensional Issue aggregation engine** ("User Reported" / "Assigned to Me" / "Created by Me") featuring 4-state filter pills and role badges.
-   - **Right Sidebar Panel** (`sidebarRightTabs`, Order 40): Shows current repository status, PR list with CI check pills, **active workspace issues list** (with author attribution, role badges, labels, and external links), Actions pipelines, and quick action shortcuts (Open Repo, View All Issues, View All PRs, Create PR, New Issue) with zero popup dependencies.
-   - **Native Light/Dark Dual-Theme Adaptation**: Deeply aligned with DSH official DSW (DeepSeek Web) design tokens, seamlessly reacting to `body[data-ds-dark-theme]` without lag or flickering.
-5. **Robust Environment Diagnosis & Three-State Setup Engine**:
-   - Zero-guesswork onboarding: Accurately differentiates `NOT_INSTALLED` (`Missing`), `NOT_LOGGED_IN` (`Required`), and `AUTHENTICATED` (`Active`).
-   - OS-aware installation guides: Auto-detects platform (Windows/macOS/Linux) and suggests native package manager commands (`winget install --id GitHub.cli`, `brew install gh`) with official installer links.
-   - Interactive helpers: One-click command copying and security-whitelisted terminal launcher.
-   - **Focus Auto-Recovery**: Automatically detects authorization completion when returning to the DSH window, transitioning to full workspace view without manual page reloads.
-6. **Standard Cordis Microkernel Compliance**:
-   - Exposes native `GitHubService` (`ctx.github`) for ecosystem extensibility;
-   - Strongly typed runtime validation via Standard Schema (`Config`);
-   - Domain event broadcasting (`github/pr:create`, `github/issue:create`).
+When using AI Agents for collaborative coding, developers frequently hit these fragmentation friction points:
+
+| Collaborative Scenario | Traditional Approach (Friction-Heavy) | `dsh-github-flow` (Native Experience) |
+| :--- | :--- | :--- |
+| **Agent PRs & Code Review** | Manually push branch in browser, click through GitHub web pages to open PRs, breaking autonomous loops. | **Autonomous PRs & Reviews**: Just tell the Agent *"Create a PR for this branch"*; Agent calls `github_pr` to publish and review diffs automatically. |
+| **CI / Actions Failure Debugging** | Sifting through pages of Actions logs in a browser, copying stack traces to chat for debugging. | **Pinpoint Error Extraction**: Tell the Agent *"Why did CI fail?"*; Agent calls `github_run(log_failed)` to grab failed step logs and patch code instantly. |
+| **Security & Token Management** | Pasting plain-text Personal Access Tokens (PATs) in plugin configs, risking token leaks and permission sprawl. | **Zero Token Exposure**: Directly reuses local `gh auth login` credentials via native OS Keychains/Keyrings securely. |
+| **Context Switching Overhead** | Jumping back and forth between VS Code, browser GitHub tabs, and DSH chat windows. | **Immersive Dual Cockpit**: Live PR status, Actions pipelines, and 3D issue matrices right inside DSH. |
+| **Plugin Upgrades & Maintenance** | Manually checking npm registry versions, complicated commands, fear of breaking configs. | **Idle Silent Detection + One-Click Upgrade**: Dual-registry acceleration, auto macOS/Windows adaptation, upgrade with one click. |
 
 ---
 
-## 📸 UI Previews
+## 🤖 Core Agent Tools: Equipping Agents with Native GitHub Powers
 
-### Global Cockpit (Main Navigation)
-Overview of account-wide repositories, local workspace matrix mapping, and multi-dimensional categorized issues (supports filter pills across All, User Reported, Assigned, and Created with status badges):
+Consolidates scattered GitHub endpoints into **5 core domain tools**, featuring **Token Budget Protection (default 24KB intelligent truncation)** and **Zero-argument CWD auto-binding**.
+
+### 1. `github_pr`: Pull Request Lifecycle & Automated Code Review
+> **Example Agent Prompts**:
+> - *"Check if there are any open PRs awaiting my review in this repository."*
+> - *"Create a PR for the current branch titled 'feat: add dark mode' with a brief summary of changes."*
+> - *"Review code diffs in PR #12 and provide security and refactoring suggestions."*
+> - *"Did CI checks pass for PR #8? If so, squash merge it and delete the source branch."*
+
+* **Supported Actions**:
+  * `list`: List open PRs with author, review decisions, and CI status;
+  * `view`: Inspect PR description, metadata, and mergeability;
+  * `diff`: Retrieve complete code diffs (safely truncated against token limits);
+  * `checks`: Audit CI status check rollups and test suites;
+  * `create`: Auto-create PRs (supports draft mode & `--dry-run`);
+  * `review`: Submit code reviews (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`);
+  * `merge`: Merge pull requests (`squash` / `merge` / `rebase`, optional `delete_branch`).
+
+---
+
+### 2. `github_run`: Actions CI Pipeline & Failure Diagnostics (Agent Auto-Fix Core)
+> **Example Agent Prompts**:
+> - *"Why did the latest Actions workflow fail? Extract failed step logs and fix the code."*
+> - *"Show me the status of the last 5 CI runs in this repository."*
+> - *"Rerun the failed workflow from earlier."*
+
+* **Supported Actions**:
+  * `log_failed` (🔥 **Killer Feature**): **Optimized for Agents**; automatically extracts isolated error logs from failed steps for instant root-cause analysis;
+  * `list`: View recent workflow runs and conclusions;
+  * `view`: Inspect jobs and steps for a specific run ID;
+  * `rerun`: Re-trigger failed CI runs;
+  * `cancel`: Cancel in-progress workflows.
+
+---
+
+### 3. `github_issue`: Issue Tracking & Closed-Loop Tasks
+> **Example Agent Prompts**:
+> - *"File an issue for the memory leak we just reproduced, labeled 'bug' and 'backend'."*
+> - *"List all open issues assigned to me."*
+> - *"Comment on Issue #45: 'Fixed on master branch, awaiting verification'."*
+> - *"Close Issue #45."*
+
+* **Supported Actions**:
+  * `list`: Query issues with flexible filters;
+  * `view`: Read issue body and discussion history;
+  * `create`: Create new issues (title, body, labels, assignees);
+  * `comment`: Append debugging updates or notes;
+  * `close` / `reopen`: Manage issue lifecycle states.
+
+---
+
+### 4. `github_repo`: Repository Exploration & Cross-Repo Code Search
+> **Example Agent Prompts**:
+> - *"Search for usages of 'createPrTool' across this repository."*
+> - *"Search GitHub for popular open-source repositories related to 'dsh-plugin'."*
+> - *"Show repository metadata and star count for cli/cli."*
+
+* **Supported Actions**:
+  * `view`: View repository metadata (default branch, stars, description, visibility);
+  * `search_code`: Search code symbols in current or specified repositories;
+  * `search_repos`: Search open-source GitHub repositories globally.
+
+---
+
+### 5. `github_api`: Low-Level Escape Hatch
+> **Example Agent Prompts**:
+> - *"Call GitHub API to fetch latest releases of current repository and parse tag names with jq."*
+
+* **Core Strength**: Call any GitHub REST or GraphQL API using local credentials with `--jq` filtering and `raw` text mode.
+
+---
+
+## 🖥️ Dual Native Web UI Views
+
+No more window switching! Seamlessly built into DSH using DSW design tokens with instant light/dark theme adaptation.
+
+### 1. Global Cockpit (Main Navigation Slot)
+Access via the GitHub icon in the main left navigation:
+* **Account-Wide Overview**: Live view of all cloud repositories, default branches, and star counts;
+* **Local Workspace Matrix**: Automatically detects open projects and bridges local directories with remote repos;
+* **3D Issue Governance Matrix**: Categorizes issues into *"📥 User Reported"*, *"🎯 Assigned to Me"*, and *"✍️ Created by Me"* with responsive pill filters;
+* **Update Notification Banner**: Smoothly glides down when an update is available with one-click automated upgrade.
 
 <p align="center">
   <img src="./docs/images/1.png" alt="GitHub Global Cockpit" width="100%" />
 </p>
 
-### Session Right Sidebar Panel (In-Session Collaboration)
-Automatically detects current workspace repository, displaying live PR checks, workspace open issues list, Actions pipelines, and quick action shortcuts:
+### 2. Session Right Sidebar Panel (Workspace Drawer)
+Located in the right drawer of every chat workspace:
+* **Context Auto-Binding**: Automatically locks onto the active Git repository;
+* **PR Status Pills**: Live PR inspection with CI checks and review badges;
+* **Workspace Open Issues List**: Direct issue task review with author badges and external links;
+* **Latest Actions Pipeline**: Real-time CI workflow status tracking;
+* **Quick Action Grid**: Open repo in browser, jump to Issues/PRs, create PRs with one click.
 
 <p align="center">
   <img src="./docs/images/2.png" alt="Session Right Sidebar Panel" width="100%" />
@@ -62,78 +136,96 @@ Automatically detects current workspace repository, displaying live PR checks, w
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation Guide
 
-Run in your DSH terminal to install directly from npm:
+### Step 1: Prerequisites
+Ensure GitHub CLI (`gh`) is installed and authenticated:
+```bash
+# Windows
+winget install --id GitHub.cli
+
+# macOS
+brew install gh
+
+# Login (one-time setup)
+gh auth login
+```
+
+### Step 2: Install into DSH
+
+Run in your DSH environment:
 
 ```bash
-# Install to desktop profile
+# Scenario A: DSH Desktop Edition (Desktop Profile)
 dsh plugin --profile desktop add dsh-github-flow
 
-# Or install to web profile
-dsh plugin --profile web add dsh-github-flow
+# Scenario B: DSH Web / CLI Environment
+pnpm dsh plugin add dsh-github-flow
 ```
 
 ---
 
-## 🛠️ Agent Tools Reference
+## ⚡ Smart Upgrades & Cross-Platform Engine
 
-| Tool Name | Actions | Typical Use Cases |
-|---|---|---|
-| `github_pr` | `list`, `view`, `create`, `diff`, `checks`, `review`, `merge` | Inspect PR details, verify CI checks, conduct code reviews, merge pull requests |
-| `github_issue` | `list`, `view`, `create`, `comment`, `close`, `reopen` | Search and view issues, create issues, add comments |
-| `github_run` | `list`, `view`, `log_failed`, `rerun`, `cancel` | Monitor Actions workflows; `log_failed` extracts failure logs for automatic fixes |
-| `github_repo` | `view`, `search_code`, `search_repos` | Query repository metadata, search cross-repo code |
-| `github_api` | Any GitHub REST / GraphQL endpoint | Universal escape hatch for custom queries (supports `--jq`, plus a `raw` response-body mode) |
+Never miss an update! Built-in industrial-grade update management:
+
+1. **Business-First, Idle Background Detection**:
+   - Primary PR/Issue data loads and renders **instantly in milliseconds**;
+   - Update checks run **1.5 seconds later during idle periods**, ensuring zero impact on user workflows.
+2. **Dual-Registry Acceleration**:
+   - Prioritizes npmmirror for ultra-fast checks (50~150ms in mainland regions) with seamless fallback to official npmjs.
+3. **Cross-Platform One-Click Upgrade**:
+   - **Click to Upgrade**: Click **`[⚡ Upgrade]`** in the UI to update in the background;
+   - **Auto OS Adaptation**: Differentiates macOS and Windows; auto-injects Homebrew PATH variables on macOS GUI launches;
+   - **Source Protection**: Automatically aborts npm overwrites when running in local Git linked development mode (`link:`);
+   - **Restart Guidance**: Clearly notifies users to restart DSH service to reload backend tools, with instant web refresh options.
 
 ---
 
 ## 💬 Human Slash Commands
 
-In any DSH chat prompt:
-- `/gh status`: Check current GitHub CLI authentication status, granted scopes, and active repository;
-- `/gh help`: Display quick reference and help information.
+Type directly into the DSH chat box:
+
+* `/gh status`: Diagnostics for GitHub account authentication, scopes, repository binding, and plugin version;
+* `/gh upgrade`: Check latest npm version with platform-adapted upgrade commands;
+* `/gh help`: View command usage and Agent prompt examples.
 
 ---
 
-## ⚙️ Configuration
+## ⚙️ Configuration (`cordis.patch.yml`)
 
-Customize options in your `cordis.patch.yml` or profile:
+Works out of the box, with optional tweaks in `cordis.patch.yml` or your profile:
 
 ```yaml
 - insert:
     - id: github-flow
       name: dsh-github-flow
       config:
-        ghPath: 'gh'              # Custom path to gh binary
-        defaultTimeoutMs: 30000   # Timeout in milliseconds
-        maxOutputChars: 24000     # Maximum characters per output (Token guard)
-        maxOutputBytes: 96000     # Hard UTF-8 byte ceiling per output, defaults to maxOutputChars * 4
-        cacheTtlMs: 15000         # Single-repo overview cache TTL (ms); the global cockpit caches for 20x this, floor 5 minutes
-        defaultListLimit: 20      # Default page size
+        ghPath: 'gh'              # GitHub CLI executable path
+        defaultTimeoutMs: 30000   # Command timeout in milliseconds (default 30s)
+        maxOutputChars: 24000     # Safe output character ceiling (Token protection)
+        maxOutputBytes: 96000     # Safe UTF-8 byte ceiling (default maxOutputChars * 4)
+        cacheTtlMs: 15000         # Repository overview cache TTL (default 15s)
+        checkUpdate: true         # Enable automatic update checks (default true)
+        updateCheckIntervalMs: 86400000 # Check interval in ms (default 24h)
+        registryUrl: ''           # Custom private npm registry URL
 ```
-
-> On Web panel refresh cadence: a global cockpit refresh runs a dozen or so `gh` calls
-> (measured 8-13 s on a local machine), so it caches for 5 minutes and re-fetches when you
-> click "🔄 Refresh global data". The workspace matrix only reads local `.git/config` to
-> identify repository ownership and makes no network requests. The `/gh status` command
-> always bypasses the auth cache, so you see the real state immediately after `gh auth login`.
 
 ---
 
-## 🔌 Ecosystem Service Extension (Cordis Service)
+## 🔌 Ecosystem Extensibility (Cordis Service)
 
-Other DSH plugins can consume GitHub CLI capabilities via dependency injection:
+Provides standard Cordis service `ctx.github`. Other plugins can reuse it directly:
 
-```ts
+```typescript
 import type { Context } from '@deepseek-ai/cordis';
 
 export const inject = ['github'];
 
 export function apply(ctx: Context) {
-  // Directly invoke the underlying secure execution engine via ctx.github
   const auth = await ctx.github.checkAuth();
   const repo = await ctx.github.getRepoMetadata();
+  const prs = await ctx.github.run(['pr', 'list', '--json', 'number,title']);
 }
 ```
 
@@ -141,11 +233,11 @@ export function apply(ctx: Context) {
 
 ## 📚 Documentation
 
-- [npm Publishing & Maintenance Guide](./docs/npm-publish-guide.md)
-- [Architecture & Design Specifications](./docs/architecture.md)
+- [npm Publishing & Automated CI Guide](./docs/npm-publish-guide.md)
+- [Architecture & Technical Specifications](./docs/architecture.md)
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](./LICENSE).
+Open-sourced under the [MIT License](./LICENSE). Contributions, PRs, and Issues are welcome!

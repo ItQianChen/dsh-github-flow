@@ -14,6 +14,12 @@ export interface PluginConfig {
     cacheTtlMs?: number;
     /** 查询列表默认限制条数，默认 20 */
     defaultListLimit?: number;
+    /** 是否开启新版本自动检查提示，默认 true */
+    checkUpdate?: boolean;
+    /** 检查更新间隔毫秒数，默认 86,400,000 (24小时) */
+    updateCheckIntervalMs?: number;
+    /** 自定义 npm Registry 镜像地址，留空则自动选用 npmmirror 与 npmjs */
+    registryUrl?: string;
 }
 export interface GhExecutionOptions {
     /** 命令执行的工作目录，优先使用当前 Agent 会话所在的 Workspace 物理路径 */
@@ -139,6 +145,8 @@ export interface GitHubOverviewData {
     runs: WorkflowRunItem[];
     lastUpdated: string;
     error?: string;
+    /** 插件版本与升级信息（由内存缓存快速读取，不阻塞首屏业务） */
+    updateInfo?: UpdateInfo;
 }
 export interface UserRepoItem {
     name: string;
@@ -199,4 +207,41 @@ export interface GlobalOverviewData {
     error?: string;
     /** 工作区矩阵读取失败的原因。区分「没有工作区」与「读不到工作区」，避免把故障显示成空状态 */
     workspaceError?: string;
+    /** 插件版本与升级信息（由内存缓存快速读取，不阻塞首屏业务） */
+    updateInfo?: UpdateInfo;
+}
+/**
+ * 插件版本检查信息
+ */
+export interface UpdateInfo {
+    currentVersion: string;
+    latestVersion?: string;
+    hasUpdate: boolean;
+    upgradeCommand: string;
+    allCommands: {
+        dshCli: string;
+        profile: string;
+        pnpm: string;
+        npm: string;
+    };
+    releaseNotesUrl: string;
+    checkedAt: number;
+}
+export type UpgradeState = 'idle' | 'upgrading' | 'success' | 'failed';
+export interface UpgradeStatusResult {
+    state: UpgradeState;
+    targetVersion?: string;
+    message?: string;
+    log?: string;
+    startedAt?: number;
+    completedAt?: number;
+    /** 识别到的宿主环境类型：desktop 为桌面版，web 为网页/CLI版 */
+    environment?: 'desktop' | 'web';
+}
+export interface UpgradeExecutionResult {
+    ok: boolean;
+    message: string;
+    needRestart: boolean;
+    log?: string;
+    environment?: 'desktop' | 'web';
 }
