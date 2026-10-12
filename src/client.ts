@@ -815,7 +815,7 @@ body[data-ds-dark-theme] .dsh-github-steps-list {
   line-height: 1.4;
 }
 
-/* 16. 数据同步设置弹窗 (Sync Settings Modal) */
+/* 16. 设置弹窗 (Settings Modal)：左侧分区导航 + 右侧内容区 */
 .dsh-github-modal-overlay {
   position: fixed;
   top: 0;
@@ -830,14 +830,18 @@ body[data-ds-dark-theme] .dsh-github-steps-list {
   backdrop-filter: blur(2px);
 }
 .dsh-github-modal-dialog {
-  width: 90%;
-  max-width: 480px;
+  width: 92%;
+  max-width: 640px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
   background: var(--dsw-alias-bg-base, #ffffff);
   border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
   border-radius: 12px;
   box-shadow: 0 16px 32px rgba(0, 0, 0, 0.18);
-  padding: 24px;
+  padding: 0;
   box-sizing: border-box;
+  overflow: hidden;
   color: var(--dsw-alias-label-primary, #1f2328);
   font-family: var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
 }
@@ -845,6 +849,105 @@ body[data-ds-dark-theme] .dsh-github-modal-dialog {
   background: var(--dsw-alias-bg-layer-2, #1e1e22);
   border-color: var(--dsw-alias-border-l1, #30363d);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+}
+/* 弹窗头部（标题 + 关闭） */
+.dsh-github-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  flex-shrink: 0;
+}
+body[data-ds-dark-theme] .dsh-github-modal-header {
+  border-bottom-color: var(--dsw-alias-border-l1, #30363d);
+}
+/* 分区导航 + 内容 双栏骨架：窄屏（<560px）自动折叠为顶部横向页签 */
+.dsh-github-modal-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.dsh-github-settings-nav {
+  flex-shrink: 0;
+  width: 148px;
+  padding: 14px 10px;
+  border-right: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+}
+body[data-ds-dark-theme] .dsh-github-settings-nav {
+  border-right-color: var(--dsw-alias-border-l1, #30363d);
+}
+.dsh-github-settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  color: var(--dsw-alias-label-secondary, #656d76);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.dsh-github-settings-nav-item:hover {
+  background: var(--dsw-alias-bg-layer-1, #f6f8fa);
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+.dsh-github-settings-nav-item.active {
+  background: rgba(9, 105, 218, 0.1);
+  color: var(--dsw-alias-link, #0969da);
+  font-weight: 600;
+}
+body[data-ds-dark-theme] .dsh-github-settings-nav-item:hover {
+  background: rgba(240, 246, 252, 0.06);
+  color: var(--dsw-alias-label-primary, #f0f6fc);
+}
+body[data-ds-dark-theme] .dsh-github-settings-nav-item.active {
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
+}
+.dsh-github-settings-content {
+  flex: 1;
+  min-width: 0;
+  padding: 18px 22px 20px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+@media (max-width: 560px) {
+  .dsh-github-modal-body {
+    flex-direction: column;
+  }
+  .dsh-github-settings-nav {
+    width: 100%;
+    flex-direction: row;
+    border-right: none;
+    border-bottom: 1px solid var(--dsw-alias-border-l2, #d0d7e0);
+    overflow-x: auto;
+  }
+  body[data-ds-dark-theme] .dsh-github-settings-nav {
+    border-bottom-color: var(--dsw-alias-border-l1, #30363d);
+  }
+  .dsh-github-settings-nav-item {
+    white-space: nowrap;
+  }
+}
+/* 弹窗底部操作条 */
+.dsh-github-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  flex-shrink: 0;
+}
+body[data-ds-dark-theme] .dsh-github-modal-footer {
+  border-top-color: var(--dsw-alias-border-l1, #30363d);
 }
 .dsh-github-radio-card {
   display: flex;
@@ -911,6 +1014,37 @@ body[data-ds-dark-theme] .dsh-github-select:focus {
 body[data-ds-dark-theme] .dsh-github-select option {
   background-color: #1e1e22;
   color: #f0f6fc;
+}
+
+/* 代理设置弹窗的文本输入框（浅色/深色双模式，设计变量对齐 select 保持视觉一致） */
+.dsh-github-input {
+  padding: 7px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  background: var(--dsw-alias-bg-base, #ffffff);
+  color: var(--dsw-alias-label-primary, #1f2328);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+  color-scheme: light;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.dsh-github-input:focus {
+  border-color: var(--dsw-alias-link, #0969da);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+}
+.dsh-github-input::placeholder {
+  color: var(--dsw-alias-label-tertiary, #8c959f);
+}
+body[data-ds-dark-theme] .dsh-github-input {
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+  color: var(--dsw-alias-label-primary, #f0f6fc);
+  color-scheme: dark;
+}
+body[data-ds-dark-theme] .dsh-github-input:focus {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
 }
 
 /* 缓存信息展示框 */
@@ -2110,7 +2244,9 @@ body[data-ds-dark-theme] .dsh-github-radio {
       );
     }
 
-    // 全景驾驶舱「⚙️ 数据同步与缓存设置」模态弹窗组件
+    // 全景驾驶舱「⚙️ 设置」模态弹窗组件：左侧分区导航（数据同步 / 网络代理）+ 右侧内容区。
+    // 为什么改多分区：弹窗承载能力从单一「同步偏好」扩展为多项插件设置（后续可继续加），
+    // 单页滚动堆叠会让用户找不到入口；分区导航让每项设置拥有独立心智空间与保存动作。
     function GlobalSyncSettingsModal(props: {
       isOpen: boolean;
       onClose: () => void;
@@ -2120,10 +2256,39 @@ body[data-ds-dark-theme] .dsh-github-radio {
     }) {
       if (!props.isOpen) return null;
 
+      // ---- 当前激活分区：sync（数据同步）/ proxy（网络代理）----
+      var [activeSection, setActiveSection] = React.useState("sync");
       var [strategy, setStrategy] = React.useState(props.currentSettings.strategy || "swr");
       var [intervalMs, setIntervalMs] = React.useState(props.currentSettings.intervalMs || 300000);
       var [cacheMeta, setCacheMeta] = React.useState(getCacheStorageMeta());
       var [clearTip, setClearTip] = React.useState("");
+
+      // ---- 网络代理分区状态 ----
+      // 打开弹窗时从后端拉取真实代理状态（权威源是 proxy.json 而非 localStorage），
+      // 避免多窗口/外部手改文件导致的 UI 与实际生效配置漂移。
+      var [proxyEnabled, setProxyEnabled] = React.useState(false);
+      var [proxyUrl, setProxyUrl] = React.useState("");
+      var [proxyNoProxy, setProxyNoProxy] = React.useState("localhost,127.0.0.1");
+      var [proxyApplyNpm, setProxyApplyNpm] = React.useState(true);
+      var [proxyBusy, setProxyBusy] = React.useState(false);
+      var [proxyMsg, setProxyMsg] = React.useState(null as { kind: "ok" | "err" | "info"; text: string } | null);
+      var [proxyProbe, setProxyProbe] = React.useState(null as { ok: boolean; latencyMs?: number; error?: string } | null);
+
+      React.useEffect(function () {
+        if (!props.isOpen) return;
+        fetch("/api/github/proxy")
+          .then(function (r: any) { return r.json(); })
+          .then(function (j: any) {
+            if (j && j.ok && j.state) {
+              setProxyEnabled(Boolean(j.state.config && j.state.config.url));
+              setProxyUrl((j.state.config && j.state.config.url) || "");
+              setProxyNoProxy((j.state.config && j.state.config.noProxy) || "localhost,127.0.0.1");
+              setProxyApplyNpm(j.state.config ? j.state.config.applyToPackageManager !== false : true);
+              if (j.state.lastProbe) setProxyProbe(j.state.lastProbe);
+            }
+          })
+          .catch(function () { /* 后端不可达时保持默认值，保存时会得到明确报错 */ });
+      }, [props.isOpen]);
 
       // 键盘 Escape 快捷关闭支持
       React.useEffect(function () {
@@ -2156,6 +2321,64 @@ body[data-ds-dark-theme] .dsh-github-radio {
         setTimeout(function () { setClearTip(""); }, 2000);
       };
 
+      // 代理保存：POST 后端后立即全局生效（gh 子进程/升级链路 env + npm 探测 dispatcher）。
+      // 保存成功即提示「无需重启」，与「设置完成之后全局生效」的语义对齐。
+      var handleProxySave = function () {
+        setProxyBusy(true);
+        setProxyMsg(null);
+        fetch("/api/github/proxy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: proxyEnabled ? proxyUrl.trim() : "",
+            noProxy: proxyNoProxy,
+            applyToPackageManager: proxyApplyNpm,
+          }),
+        })
+          .then(function (r: any) { return r.json(); })
+          .then(function (j: any) {
+            setProxyBusy(false);
+            if (j && j.ok) {
+              setProxyMsg({
+                kind: "ok",
+                text: j.state && j.state.config && j.state.config.url
+                  ? "🌐 代理已保存并全局生效（驾驶舱 / 右侧栏 / Agent 工具 / 升级链路），无需重启"
+                  : "已切换为系统默认网络（直连或系统环境代理），无需重启",
+              });
+              if (j.state && j.state.lastProbe) setProxyProbe(j.state.lastProbe);
+            } else {
+              setProxyMsg({ kind: "err", text: (j && j.message) || "保存失败" });
+            }
+          })
+          .catch(function (e: any) {
+            setProxyBusy(false);
+            setProxyMsg({ kind: "err", text: "网络请求失败: " + (e && e.message ? e.message : e) });
+          });
+      };
+
+      // 连通性探测：验证经当前配置访问 GitHub API 的可达性（2.5s 超时由后端控制）
+      var handleProxyProbe = function () {
+        setProxyBusy(true);
+        setProxyMsg(null);
+        fetch("/api/github/proxy/probe", { method: "POST" })
+          .then(function (r: any) { return r.json(); })
+          .then(function (j: any) {
+            setProxyBusy(false);
+            if (j && j.ok && j.probe) {
+              setProxyProbe(j.probe);
+              setProxyMsg(j.probe.ok
+                ? { kind: "ok", text: "✅ GitHub API 可达 (" + j.probe.latencyMs + "ms)" }
+                : { kind: "err", text: "❌ " + (j.probe.error || "探测失败") });
+            } else {
+              setProxyMsg({ kind: "err", text: (j && j.message) || "探测失败" });
+            }
+          })
+          .catch(function (e: any) {
+            setProxyBusy(false);
+            setProxyMsg({ kind: "err", text: "探测请求失败: " + (e && e.message ? e.message : e) });
+          });
+      };
+
       return h(
         "div",
         { className: "dsh-github-modal-overlay", onClick: props.onClose },
@@ -2165,102 +2388,196 @@ body[data-ds-dark-theme] .dsh-github-radio {
             className: "dsh-github-modal-dialog",
             onClick: function (e: any) { e.stopPropagation(); },
           },
-          h(
-            "div",
-            { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" } },
-            h("h3", { style: { margin: 0, fontSize: "16px", fontWeight: 600 } }, "⚙️ 数据同步与缓存偏好"),
+          // 弹窗头部：标题 + 关闭按钮
+          h("div", { className: "dsh-github-modal-header" },
+            h("h3", { style: { margin: 0, fontSize: "16px", fontWeight: 600 } }, "⚙️ 设置"),
             h("button", {
               style: { background: "none", border: "none", cursor: "pointer", fontSize: "18px", color: "var(--dsw-alias-label-secondary, #656d76)" },
               onClick: props.onClose,
             }, "✕")
           ),
-          h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.5" } },
-            "配置 GitHub 全景驾驶舱的数据拉取节奏。启用秒开模式可利用本地持久化缓存消除每次打开时的漫长等待。"
-          ),
-          // 刷新策略选择
-          h("div", { style: { marginBottom: "16px" } },
-            h("div", { style: { fontSize: "13px", fontWeight: 600, marginBottom: "8px" } }, "数据刷新策略"),
-            // 策略 A: SWR 秒开
-            h("div", {
-              className: "dsh-github-radio-card" + (strategy === "swr" ? " active" : ""),
-              onClick: function () { setStrategy("swr"); },
-            },
-              h("input", { type: "radio", className: "dsh-github-radio", checked: strategy === "swr", readOnly: true }),
-              h("div", null,
-                h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "⚡ 秒开展示旧数据 (SWR, 强烈推荐)"),
-                h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
-                  "打开驾驶舱立即展示上次本地缓存（0ms秒开），后台静默同步最新状态。"
-                )
-              )
+          // 双栏骨架：左侧分区导航 + 右侧内容区（窄屏自动折叠为横向页签）
+          h("div", { className: "dsh-github-modal-body" },
+            h("div", { className: "dsh-github-settings-nav" },
+              h("button", {
+                className: "dsh-github-settings-nav-item" + (activeSection === "sync" ? " active" : ""),
+                onClick: function () { setActiveSection("sync"); },
+              }, "🔄 数据同步"),
+              h("button", {
+                className: "dsh-github-settings-nav-item" + (activeSection === "proxy" ? " active" : ""),
+                onClick: function () { setActiveSection("proxy"); },
+              }, "🌐 网络代理")
             ),
-            // 策略 B: 纯手动刷新
-            h("div", {
-              className: "dsh-github-radio-card" + (strategy === "manual" ? " active" : ""),
-              onClick: function () { setStrategy("manual"); },
-            },
-              h("input", { type: "radio", className: "dsh-github-radio", checked: strategy === "manual", readOnly: true }),
-              h("div", null,
-                h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "📋 仅在手动点击时拉取 (Manual Only)"),
-                h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
-                  "打开只浏览本地缓存，绝不自动触发后台 gh 进程，最省电、最省资源。"
+            h("div", { className: "dsh-github-settings-content" },
+              activeSection === "sync" ? h("div", null,
+                h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.5" } },
+                  "配置 GitHub 全景驾驶舱的数据拉取节奏。启用秒开模式可利用本地持久化缓存消除每次打开时的漫长等待。"
+                ),
+                // 刷新策略选择
+                h("div", { style: { marginBottom: "16px" } },
+                  h("div", { style: { fontSize: "13px", fontWeight: 600, marginBottom: "8px" } }, "数据刷新策略"),
+                  // 策略 A: SWR 秒开
+                  h("div", {
+                    className: "dsh-github-radio-card" + (strategy === "swr" ? " active" : ""),
+                    onClick: function () { setStrategy("swr"); },
+                  },
+                    h("input", { type: "radio", className: "dsh-github-radio", checked: strategy === "swr", readOnly: true }),
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "⚡ 秒开展示旧数据 (SWR, 强烈推荐)"),
+                      h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
+                        "打开驾驶舱立即展示上次本地缓存（0ms秒开），后台静默同步最新状态。"
+                      )
+                    )
+                  ),
+                  // 策略 B: 纯手动刷新
+                  h("div", {
+                    className: "dsh-github-radio-card" + (strategy === "manual" ? " active" : ""),
+                    onClick: function () { setStrategy("manual"); },
+                  },
+                    h("input", { type: "radio", className: "dsh-github-radio", checked: strategy === "manual", readOnly: true }),
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "📋 仅在手动点击时拉取 (Manual Only)"),
+                      h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
+                        "打开只浏览本地缓存，绝不自动触发后台 gh 进程，最省电、最省资源。"
+                      )
+                    )
+                  ),
+                  // 策略 C: 定时轮询
+                  h("div", {
+                    className: "dsh-github-radio-card" + (strategy === "interval" ? " active" : ""),
+                    onClick: function () { setStrategy("interval"); },
+                  },
+                    h("input", { type: "radio", className: "dsh-github-radio", checked: strategy === "interval", readOnly: true }),
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "⏱️ 定时自动轮询 (Auto Poll)"),
+                      h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
+                        "驾驶舱打开期间，按照下方设定的时间间隔在后台自动轮询。"
+                      )
+                    )
+                  )
+                ),
+                // 自动拉取间隔下拉
+                h("div", { style: { marginBottom: "18px" } },
+                  h("div", { style: { fontSize: "13px", fontWeight: 600, marginBottom: "6px" } }, "后台自动拉取间隔"),
+                  h("select", {
+                    className: "dsh-github-select",
+                    value: intervalMs,
+                    onChange: function (e: any) { setIntervalMs(Number(e.target.value)); },
+                  },
+                    h("option", { value: 60000 }, "1 分钟 (高频刷新)"),
+                    h("option", { value: 300000 }, "5 分钟 (默认推荐)"),
+                    h("option", { value: 900000 }, "15 分钟"),
+                    h("option", { value: 1800000 }, "30 分钟 (推荐节能)"),
+                    h("option", { value: 3600000 }, "1 小时"),
+                    h("option", { value: 0 }, "从不自动刷新 (仅手动)")
+                  )
+                ),
+                // 本地缓存信息与清理
+                h("div", {
+                  className: "dsh-github-cache-info-box",
+                },
+                  h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                    h("span", null, cacheMeta.exists
+                      ? `📦 本地缓存: 约 ${cacheMeta.sizeKb} KB (上次保存: ${new Date(cacheMeta.savedAt).toLocaleTimeString()})`
+                      : "📦 暂无本地持久化缓存"
+                    ),
+                    cacheMeta.exists ? h("button", {
+                      className: "dsh-github-btn-sm",
+                      style: { padding: "3px 8px", fontSize: "11px", color: "var(--dsw-alias-state-error-primary, #cf222e)" },
+                      onClick: handleClear,
+                    }, "🗑️ 清空缓存") : null
+                  ),
+                  clearTip ? h("div", { style: { color: "var(--dsw-alias-state-success, #2ea043)", marginTop: "4px", fontWeight: 500 } }, clearTip) : null
                 )
-              )
+              ) : h("div", null,
+                // 🌐 网络代理分区：设置保存即全局生效（驾驶舱/右侧栏/Agent 工具/升级链路），
+                // 未启用时回落系统环境代理或直连（「默认走系统设置」语义）。
+                h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.5" } },
+                  "设置后插件的 GitHub 数据链路（本页面、右侧栏、Agent 工具调用、版本升级）全部经代理访问；未启用时默认使用系统环境代理或直连。保存后立即生效，无需重启。"
+                ),
+            h("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px", cursor: "pointer", fontSize: "13px" } },
+              h("input", {
+                type: "checkbox",
+                checked: proxyEnabled,
+                onChange: function (e: any) { setProxyEnabled(Boolean(e.target.checked)); },
+              }),
+              "启用代理"
             ),
-            // 策略 C: 定时轮询
-            h("div", {
-              className: "dsh-github-radio-card" + (strategy === "interval" ? " active" : ""),
-              onClick: function () { setStrategy("interval"); },
-            },
-              h("input", { type: "radio", className: "dsh-github-radio", checked: strategy === "interval", readOnly: true }),
-              h("div", null,
-                h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "⏱️ 定时自动轮询 (Auto Poll)"),
-                h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
-                  "驾驶舱打开期间，按照下方设定的时间间隔在后台自动轮询。"
-                )
+            proxyEnabled ? h("div", null,
+              h("div", { style: { fontSize: "12px", marginBottom: "4px" } }, "代理地址"),
+              h("input", {
+                className: "dsh-github-input",
+                style: { width: "100%", boxSizing: "border-box", padding: "6px 10px", fontSize: "13px", marginBottom: "10px" },
+                placeholder: "http://127.0.0.1:7890 或 socks5h://127.0.0.1:1080（DNS 由代理解析）",
+                value: proxyUrl,
+                onChange: function (e: any) { setProxyUrl(e.target.value); },
+              }),
+              h("div", { style: { fontSize: "12px", marginBottom: "4px" } }, "NO_PROXY 排除列表（逗号分隔，localhost 与 127.0.0.1 强制包含）"),
+              h("input", {
+                className: "dsh-github-input",
+                style: { width: "100%", boxSizing: "border-box", padding: "6px 10px", fontSize: "12px", marginBottom: "10px" },
+                value: proxyNoProxy,
+                onChange: function (e: any) { setProxyNoProxy(e.target.value); },
+              }),
+              h("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", cursor: "pointer", fontSize: "12px" } },
+                h("input", {
+                  type: "checkbox",
+                  checked: proxyApplyNpm,
+                  onChange: function (e: any) { setProxyApplyNpm(Boolean(e.target.checked)); },
+                }),
+                "同时应用于 npm 版本探测与一键升级"
               )
-            )
-          ),
-          // 自动拉取间隔下拉
-          h("div", { style: { marginBottom: "18px" } },
-            h("div", { style: { fontSize: "13px", fontWeight: 600, marginBottom: "6px" } }, "后台自动拉取间隔"),
-            h("select", {
-              className: "dsh-github-select",
-              value: intervalMs,
-              onChange: function (e: any) { setIntervalMs(Number(e.target.value)); },
-            },
-              h("option", { value: 60000 }, "1 分钟 (高频刷新)"),
-              h("option", { value: 300000 }, "5 分钟 (默认推荐)"),
-              h("option", { value: 900000 }, "15 分钟"),
-              h("option", { value: 1800000 }, "30 分钟 (推荐节能)"),
-              h("option", { value: 3600000 }, "1 小时"),
-              h("option", { value: 0 }, "从不自动刷新 (仅手动)")
-            )
-          ),
-          // 本地缓存信息与清理
-          h("div", {
-            className: "dsh-github-cache-info-box",
-          },
-            h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
-              h("span", null, cacheMeta.exists
-                ? `📦 本地缓存: 约 ${cacheMeta.sizeKb} KB (上次保存: ${new Date(cacheMeta.savedAt).toLocaleTimeString()})`
-                : "📦 暂无本地持久化缓存"
-              ),
-              cacheMeta.exists ? h("button", {
+            ) : null,
+            // 操作与反馈行：探测/保存按钮 + 结果胶囊
+            h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+              h("button", {
                 className: "dsh-github-btn-sm",
-                style: { padding: "3px 8px", fontSize: "11px", color: "var(--dsw-alias-state-error-primary, #cf222e)" },
-                onClick: handleClear,
-              }, "🗑️ 清空缓存") : null
+                style: { padding: "5px 12px", fontSize: "12px" },
+                disabled: proxyBusy || !proxyEnabled,
+                onClick: handleProxyProbe,
+                title: "经当前配置探测 GitHub API 连通性（约 2.5 秒）",
+              }, "🧪 测试连通性"),
+              h("button", {
+                className: "dsh-github-btn-sm",
+                style: {
+                  padding: "5px 14px",
+                  fontSize: "12px",
+                  background: "var(--dsw-alias-link, #0969da)",
+                  color: "#ffffff",
+                  borderColor: "var(--dsw-alias-link, #0969da)",
+                  fontWeight: 600,
+                },
+                disabled: proxyBusy,
+                onClick: handleProxySave,
+              }, proxyBusy ? "处理中..." : "💾 保存并全局应用"),
+              proxyProbe ? h("span", {
+                style: {
+                  fontSize: "12px",
+                  fontWeight: 500,
+                  color: proxyProbe.ok ? "var(--dsw-alias-state-success, #2ea043)" : "var(--dsw-alias-state-error-primary, #cf222e)",
+                },
+                title: proxyProbe.error || "",
+              }, proxyProbe.ok ? "✅ " + proxyProbe.latencyMs + "ms" : "❌ 探测失败") : null
             ),
-            clearTip ? h("div", { style: { color: "var(--dsw-alias-state-success, #2ea043)", marginTop: "4px", fontWeight: 500 } }, clearTip) : null
+            proxyMsg ? h("div", {
+              style: {
+                marginTop: "8px",
+                fontSize: "12px",
+                lineHeight: "1.5",
+                color: proxyMsg.kind === "ok"
+                  ? "var(--dsw-alias-state-success, #2ea043)"
+                  : proxyMsg.kind === "err"
+                    ? "var(--dsw-alias-state-error-primary, #cf222e)"
+                    : "var(--dsw-alias-label-secondary, #656d76)",
+              },
+            }, proxyMsg.text) : null
+              )
+            )
           ),
-          // 操作按钮
-          h("div", { style: { display: "flex", justifyContent: "flex-end", gap: "8px" } },
-            h("button", {
-              className: "dsh-github-btn-sm",
-              style: { padding: "6px 14px" },
-              onClick: props.onClose,
-            }, "取消"),
-            h("button", {
+          // 底部操作条：sync 分区提供主保存动作；proxy 分区有自己的「保存并全局应用」，
+          // 底部统一为「完成」关闭弹窗，避免两个保存按钮的语义冲突。
+          h("div", { className: "dsh-github-modal-footer" },
+            activeSection === "sync" ? h("button", {
               className: "dsh-github-btn-sm",
               style: {
                 padding: "6px 16px",
@@ -2270,7 +2587,12 @@ body[data-ds-dark-theme] .dsh-github-radio {
                 fontWeight: 600,
               },
               onClick: handleSave,
-            }, "保存并应用")
+            }, "保存同步设置") : null,
+            h("button", {
+              className: "dsh-github-btn-sm",
+              style: { padding: "6px 14px" },
+              onClick: props.onClose,
+            }, activeSection === "sync" ? "取消" : "完成")
           )
         )
       );
@@ -2292,6 +2614,24 @@ body[data-ds-dark-theme] .dsh-github-radio {
       var [activeTab, setActiveTab] = React.useState("workspaces"); // 'workspaces' | 'repos' | 'mywork'
       var [searchQuery, setSearchQuery] = React.useState("");
       var [issueFilter, setIssueFilter] = React.useState("all"); // 'all' | 'reported' | 'assigned' | 'created'
+      // 代理生效状态（标题栏 🌐 徽章数据源）：挂载时读一次 + 弹窗关闭时刷新
+      //（保存发生在弹窗内，关闭时机足以让徽章与最新配置对齐，无需轮询）
+      var [proxyActive, setProxyActive] = React.useState(null as { enabled: boolean; url: string } | null);
+
+      var refreshProxyBadge = React.useCallback(function () {
+        fetch("/api/github/proxy")
+          .then(function (r: any) { return r.json(); })
+          .then(function (j: any) {
+            if (j && j.ok && j.state && j.state.config) {
+              setProxyActive({ enabled: Boolean(j.state.config.url), url: j.state.config.url || "" });
+            } else {
+              setProxyActive({ enabled: false, url: "" });
+            }
+          })
+          .catch(function () {});
+      }, []);
+
+      React.useEffect(function () { refreshProxyBadge(); }, [refreshProxyBadge]);
 
       // gh 业务数据就绪后，闲时 1.5 秒异步静默检测升级，绝不影响首屏
       React.useEffect(() => {
@@ -2421,7 +2761,26 @@ body[data-ds-dark-theme] .dsh-github-radio {
           { className: "dsh-github-title" },
           renderOctocatBadge(32),
           h("h2", null, "GitHub 全景驾驶舱"),
-          h(SyncStatusBadge, { syncStatus, lastSyncedAt })
+          h(SyncStatusBadge, { syncStatus, lastSyncedAt }),
+          // 代理生效徽章：启用时可见，hover 展示代理地址，让用户随时确认「当前确实在走代理」
+          proxyActive && proxyActive.enabled
+            ? h("span", {
+                style: {
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  fontSize: "11px",
+                  fontWeight: 500,
+                  padding: "2px 8px",
+                  borderRadius: "999px",
+                  background: "rgba(9, 105, 218, 0.1)",
+                  border: "1px solid rgba(9, 105, 218, 0.35)",
+                  color: "var(--dsw-alias-link, #0969da)",
+                  cursor: "default",
+                },
+                title: "插件网络代理已启用: " + proxyActive.url + "（GitHub 数据链路与工具调用经此代理；点击 ⚙️ 可修改）",
+              }, "🌐 代理")
+            : null
         ),
         h(
           "div",
@@ -2440,10 +2799,10 @@ body[data-ds-dark-theme] .dsh-github-radio {
             {
               className: "dsh-github-btn-sm",
               onClick: () => setIsSettingsModalOpen(true),
-              title: "配置数据拉取节奏与本地缓存偏好",
+              title: "配置数据同步节奏、本地缓存与网络代理",
               style: { padding: "6px 12px" },
             },
-            "⚙️ 同步设置"
+            "⚙️ 设置"
           )
         )
       );
@@ -2459,7 +2818,11 @@ body[data-ds-dark-theme] .dsh-github-radio {
 
       var settingsModalEl = h(GlobalSyncSettingsModal, {
         isOpen: isSettingsModalOpen,
-        onClose: () => setIsSettingsModalOpen(false),
+        onClose: () => {
+          setIsSettingsModalOpen(false);
+          // 弹窗内可能刚保存过代理配置，关闭时同步刷新标题栏徽章
+          refreshProxyBadge();
+        },
         currentSettings: syncSettings,
         onSave: (newSettings: any) => {
           setSyncSettings(newSettings);

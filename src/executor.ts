@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findMostRecentWorkspacePath, findWorkspacePathBySession, hasGitDir } from './workspace.js';
 import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig } from './types.js';
+import type { ProxyManager } from './proxy.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -112,6 +113,13 @@ export class GhExecutor {
    * 且热更新路径 updateConfig 能同步刷新。工具内以 `?? 20` 兜底保证旧配置兼容。
    */
   public defaultListLimit: number;
+  /**
+   * 代理管理器引用（可选依赖）。
+   * 注入后每次 gh 子进程拉起都会合并代理环境变量——这是「工具调用 + Web 页面数据
+   * 全部走代理」的唯一咽喉（两条链路共用本 executor）。未注入时零干预，
+   * gh 自然继承宿主系统环境变量（系统级代理或直连），即「默认走系统设置」语义。
+   */
+  private proxyManager?: ProxyManager;
   /** 认证状态缓存。`gh auth status` 实测 5.4 秒，而它位于全局驾驶舱关键路径的最前面 */
   private authCache: { at: number; value: AuthStatus } | null = null;
 
@@ -132,6 +140,11 @@ export class GhExecutor {
       if (!config.maxOutputBytes) this.maxOutputBytes = config.maxOutputChars * 4;
     }
     if (config.maxOutputBytes) this.maxOutputBytes = config.maxOutputBytes;
+  }
+
+  /** 注入代理管理器（main.ts 装配时调用一次；测试可注入 mock） */
+  attachProxyManager(manager: ProxyManager): void {
+    this.proxyManager = manager;
   }
 
   /**
@@ -194,6 +207,9 @@ export class GhExecutor {
           ...process.env,
           GH_NO_UPDATE_NOTIFIER: '1', // 禁用 CLI 版本更新检查，避免污染 stdout
           NO_COLOR: '1',              // 禁用 ANSI 颜色转义字符
+          // 代理环境变量注入在 options.env 之前：调用方显式传入的 env 仍可覆盖
+          // 代理（保持 options.env 的既有语义优先级），正常调用方不传则代理生效。
+          ...(this.proxyManager?.getEnv('gh') || {}),
           ...options.env,
         },
         // 仅在显式传入 stdin 时附加 input 键：promisified execFile 会把 input

@@ -6,4 +6,8 @@ import { UpgradeManager } from '../upgrade-manager.js';
  * 抽成导出的纯函数：TTL 的推导规则是测试断言的对象，埋在闭包里就只能靠猜。
  */
 export declare function globalCacheTtlMs(cacheTtlMs: number): number;
-export declare function registerApiRoutes(ctxOrWebServer: any, executor: GhExecutor, workspaceRegistry?: any, cacheTtlMs?: number, updateChecker?: UpdateChecker, upgradeManager?: UpgradeManager): void;
+export declare function registerApiRoutes(ctxOrWebServer: any, executor: GhExecutor, workspaceRegistry?: any, cacheTtlMs?: number, updateChecker?: UpdateChecker, upgradeManager?: UpgradeManager, proxyManager?: {
+    save: (input: any) => any;
+    probe: () => Promise<any>;
+    snapshot: () => any;
+}): void;

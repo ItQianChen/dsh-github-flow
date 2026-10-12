@@ -12,6 +12,7 @@ import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
 import { UpdateChecker } from './updater.js';
 import { UpgradeManager } from './upgrade-manager.js';
+import { ProxyManager } from './proxy.js';
 import { NPM_PACKAGE_URL } from './version.js';
 // 引用即生效：加载本模块以挂上 declare module '@deepseek-ai/cordis' 的 ctx.github 类型声明，
 // 并随下面 `export * from './github-service.js'` 一起传给消费方。
@@ -51,6 +52,7 @@ export const Config = {
           checkUpdate: typeof cfg.checkUpdate === 'boolean' ? cfg.checkUpdate : true,
           updateCheckIntervalMs: typeof cfg.updateCheckIntervalMs === 'number' ? cfg.updateCheckIntervalMs : 86_400_000,
           registryUrl: typeof cfg.registryUrl === 'string' ? cfg.registryUrl : undefined,
+          proxyUrl: typeof cfg.proxyUrl === 'string' ? cfg.proxyUrl : undefined,
         } as PluginConfig
       };
     }
@@ -59,11 +61,18 @@ export const Config = {
 
 export function apply(ctx: any, config: PluginConfig = {}) {
   const executor = new GhExecutor(config);
+  // 代理管理器：优先读取用户在驾驶舱保存的 proxy.json，回落 cordis.patch.yml 的
+  // proxyUrl 预置值；两者皆无时保持直连（gh 自然继承宿主系统环境变量）。
+  // 装配后 executor/upgradeManager/updater 三条外联链路全部经它路由。
+  const proxyManager = new ProxyManager(config.proxyUrl);
+  executor.attachProxyManager(proxyManager);
   const updateChecker = new UpdateChecker({
     intervalMs: config.updateCheckIntervalMs,
     customRegistry: config.registryUrl,
   });
+  updateChecker.applyProxy(proxyManager);
   const upgradeManager = new UpgradeManager();
+  upgradeManager.attachProxyManager(proxyManager);
 
   // 1. 兑现生态服务契约：将 GitHub 执行引擎作为服务暴露给其他 DSH 插件 (ctx.github)
   if (ctx.provide && typeof ctx.provide === 'function') {
@@ -94,13 +103,15 @@ export function apply(ctx: any, config: PluginConfig = {}) {
   if (ctx.webServer) {
     // 传入 ctx 作用域对象，使 routes 能够通过 ctx.effect 绑定生命周期并在插件卸载/重载时自动注销；
     // cacheTtlMs 传给路由层以尊重用户的缓存 TTL 配置。
+    // proxyManager 传入以挂载 /api/github/proxy* 设置路由（驾驶舱代理设置入口）。
     registerApiRoutes(
       ctx,
       executor,
       ctx.workspaceRegistry,
       config.cacheTtlMs || 15_000,
       updateChecker,
-      upgradeManager
+      upgradeManager,
+      proxyManager
     );
   }
 
@@ -140,6 +151,7 @@ export * from './version.js';
 export * from './updater.js';
 export * from './upgrade-manager.js';
 export * from './executor.js';
+export * from './proxy.js';
 // 让 `ctx.github` 的类型声明随包一起被消费方加载（声明合并在 './github-service.js' 内）
 export * from './github-service.js';
 

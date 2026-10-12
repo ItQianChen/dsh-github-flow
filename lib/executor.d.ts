@@ -1,4 +1,5 @@
 import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig } from './types.js';
+import type { ProxyManager } from './proxy.js';
 /**
  * 按「字符数 + UTF-8 字节数」双口径截断输出。
  * 抽成纯函数是刻意的：截断逻辑是崩溃高发区（切碎多字节字符、误伤 JSON、把二进制流截成垃圾），
@@ -21,10 +22,19 @@ export declare class GhExecutor {
      * 且热更新路径 updateConfig 能同步刷新。工具内以 `?? 20` 兜底保证旧配置兼容。
      */
     defaultListLimit: number;
+    /**
+     * 代理管理器引用（可选依赖）。
+     * 注入后每次 gh 子进程拉起都会合并代理环境变量——这是「工具调用 + Web 页面数据
+     * 全部走代理」的唯一咽喉（两条链路共用本 executor）。未注入时零干预，
+     * gh 自然继承宿主系统环境变量（系统级代理或直连），即「默认走系统设置」语义。
+     */
+    private proxyManager?;
     /** 认证状态缓存。`gh auth status` 实测 5.4 秒，而它位于全局驾驶舱关键路径的最前面 */
     private authCache;
     constructor(config?: PluginConfig);
     updateConfig(config?: PluginConfig): void;
+    /** 注入代理管理器（main.ts 装配时调用一次；测试可注入 mock） */
+    attachProxyManager(manager: ProxyManager): void;
     /**
      * 智能解析最可靠的工作区物理路径：
      * 1. 优先使用显式指定的有效 cwd（若包含 .git 目录）

@@ -1,4 +1,5 @@
 import type { UpgradeExecutionResult, UpgradeStatusResult } from './types.js';
+import type { ProxyManager } from './proxy.js';
 /**
  * 构建跨平台环境自愈增强的 ProcessEnv (重点解决 macOS GUI 应用丢失 PATH 的痛点)
  *
@@ -24,6 +25,9 @@ export declare class UpgradeManager {
     private isUpgrading;
     private lastResult;
     private logBuffer;
+    /** 代理管理器（可选）：注入后一键升级的 npm/pnpm 子进程走用户代理 */
+    private proxyManager?;
+    attachProxyManager(manager: ProxyManager): void;
     /**
      * 探测当前插件是否是以本地 Git 源码软链接方式运行
      */

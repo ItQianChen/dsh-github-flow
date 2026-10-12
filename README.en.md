@@ -175,7 +175,7 @@ Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring 
 
 ---
 
-## 🖥️ Native Web UI Workspace & Sync Preferences
+## 🖥️ Native Web UI Workspace & Settings Center
 
 No more window switching! Seamlessly integrated into DSH with DSW design tokens and instant light/dark theme adaptation.
 
@@ -205,8 +205,10 @@ Located in the right drawer of every chat workspace:
   <img src="./docs/images/2.png" alt="Session Right Sidebar Panel" width="100%" />
 </p>
 
-### 3. Data Sync & Cache Settings (Sync Preferences Modal)
-Click **`[⚙️ Sync Settings]`** in the top right of the Cockpit to adjust synchronization:
+### 3. Settings Center (Settings Modal)
+Click **`[⚙️ Settings]`** in the top right of the Cockpit to open the sectioned settings modal (left-side navigation, independently scrolling content; collapses to horizontal tabs on narrow screens):
+
+**🔄 Data Sync Section** — tune data fetching rhythm:
 * **Three Flexible Sync Strategies**:
   * **⚡ Instant Render (SWR, Recommended)**: Instantly displays local cache (0ms), silently syncing latest state in background;
   * **📋 Manual Only (Energy Saver)**: Browse local cache only; zero background `gh` processes triggered;
@@ -214,8 +216,16 @@ Click **`[⚙️ Sync Settings]`** in the top right of the Cockpit to adjust syn
 * **Custom Polling Intervals**: Choose from 1 min / 5 mins (Default) / 15 mins / 30 mins (Energy Saver) / 1 hour / Never;
 * **Visual Cache Management**: Real-time snapshot size and timestamp visibility with one-click `[🗑️ Clear Cache]`.
 
+**🌐 Network Proxy Section** — route all plugin traffic through your proxy:
+* **Global Scope**: Once configured, the cockpit, right-sidebar panel, all 9 Agent tool invocations, and one-click upgrades route through the proxy; when disabled, system environment proxies (`HTTPS_PROXY` etc.) or direct connections apply;
+* **Protocol Support**: `http://` / `https://` / `socks5://` / `socks5h://` (gh and npm chains natively support SOCKS5; `socks5h` delegates DNS resolution to the proxy for stronger pollution resistance; the npm version probe uses Node fetch which does not support SOCKS — it stays direct and the UI states this honestly);
+* **`[🧪 Test Connectivity]`**: One-click latency probe against the GitHub API through the current proxy;
+* **Instant Effect**: Persisted to `~/.dsh/data/dsh-github-flow/proxy.json` (auto-restored on DSH restart) — no restart, no plugin reload;
+* **Visibility**: A `🌐 Proxy` badge appears in the cockpit title bar while active; hover to inspect the current proxy URL;
+* **NO_PROXY Exclusions**: `localhost` and `127.0.0.1` are forcibly included — loopback Web API requests are never hijacked by the proxy.
+
 <p align="center">
-  <img src="./docs/images/3.png" alt="Data Sync Settings Modal" width="85%" />
+  <img src="./docs/images/3.png" alt="Settings Modal" width="85%" />
 </p>
 
 ---

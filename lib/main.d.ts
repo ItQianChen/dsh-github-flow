@@ -30,4 +30,5 @@ export * from './version.js';
 export * from './updater.js';
 export * from './upgrade-manager.js';
 export * from './executor.js';
+export * from './proxy.js';
 export * from './github-service.js';

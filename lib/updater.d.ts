@@ -26,6 +26,14 @@ export declare class UpdateChecker {
         customRegistry?: string;
     });
     /**
+     * 应用代理到 npm 探测的 fetch 链路。
+     * 由 main.ts 在 ProxyManager 初始化/变更后调用：undici dispatcher 是进程级全局，
+     * 这里只做一次转发，真正的缓存/重建逻辑在 ProxyManager.applyFetchDispatcher 内。
+     */
+    applyProxy(manager: {
+        applyFetchDispatcher(): boolean;
+    } | null): void;
+    /**
      * 同步获取当前已知的版本状态（0ms 纯内存读取，绝不发外网请求）
      */
     getQuickStatus(): UpdateInfo;

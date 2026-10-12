@@ -5,6 +5,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { PLUGIN_PACKAGE_NAME } from './version.js';
 import type { UpgradeExecutionResult, UpgradeStatusResult } from './types.js';
+import type { ProxyManager } from './proxy.js';
 
 /**
  * 构建跨平台环境自愈增强的 ProcessEnv (重点解决 macOS GUI 应用丢失 PATH 的痛点)
@@ -75,6 +76,12 @@ export class UpgradeManager {
     state: 'idle',
   };
   private logBuffer: string[] = [];
+  /** 代理管理器（可选）：注入后一键升级的 npm/pnpm 子进程走用户代理 */
+  private proxyManager?: ProxyManager;
+
+  attachProxyManager(manager: ProxyManager): void {
+    this.proxyManager = manager;
+  }
 
   /**
    * 探测当前插件是否是以本地 Git 源码软链接方式运行
@@ -224,7 +231,12 @@ export class UpgradeManager {
       };
 
       // 注入跨平台增强环境（尤其治愈 macOS GUI 启动丢失 PATH 的痛点）
-      const childEnv = buildCrossPlatformEnv();
+      // 代理环境变量按 applyToPackageManager 开关合并：npm/pnpm 遵循 HTTPS_PROXY，
+      // 与 gh 链路同一管理器，保证「设置代理后升级也走代理」的体验一致性。
+      const childEnv = {
+        ...buildCrossPlatformEnv(),
+        ...(this.proxyManager?.getEnv('package-manager') || {}),
+      };
 
       const child = spawn(shell, args, {
         cwd: executionCwd,

@@ -21,6 +21,12 @@ export interface PluginConfig {
   updateCheckIntervalMs?: number;
   /** 自定义 npm Registry 镜像地址，留空则自动选用 npmmirror 与 npmjs */
   registryUrl?: string;
+  /**
+   * 代理地址预置默认值（如 "http://127.0.0.1:7890"）。
+   * 仅在用户未在驾驶舱保存过代理设置时生效；运行时 UI 保存的值优先级更高。
+   * 注意：放在 Cordis Config 意味着修改此项会触发插件 reload（静态默认值，可接受）。
+   */
+  proxyUrl?: string;
 }
 
 export interface GhExecutionOptions {
