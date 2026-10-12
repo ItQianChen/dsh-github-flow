@@ -34,6 +34,42 @@
 
 ---
 
+## 🚀 安装指南
+
+### 步骤 1：前置准备（若已安装可跳过）
+确保你的机器上已安装 GitHub CLI (`gh`) 并已登录：
+```bash
+# Windows 安装
+winget install --id GitHub.cli
+
+# macOS 安装
+brew install gh
+
+# 登录认证（仅需执行一次）
+gh auth login
+```
+
+### 步骤 2：安装插件到 DSH
+
+在 DSH 终端根据你的使用环境执行对应命令：
+
+```bash
+# 场景 A：DSH 桌面版 (Desktop Profile)
+dsh plugin --profile desktop add dsh-github-flow
+
+# 场景 B：DSH Web / CLI 工程环境
+pnpm dsh plugin add dsh-github-flow
+```
+
+> 💡 **提示（新版本发布后 24 小时内的安全锁定期说明）**：  
+> DSH 内置包管理器默认启用了防投毒的供应链安全策略（`minimum-release-age = 24h`）。新版本发布后的 **24 小时内**，若执行不带版本号的裸名安装命令，底层会自动回退为发布满 24 小时的上一稳定版本。如需**立即尝鲜刚发布的新版本**，请在命令末尾显式追加 `@版本号`（替换为 npm 页面显示的最新版本）：
+> ```bash
+> dsh plugin --profile desktop add dsh-github-flow@<最新版本号>
+> ```
+> 版本发布满 24 小时后，执行原本的裸名命令即可默认解析安装最新版。
+
+---
+
 ## 🤖 核心工具集 (Agent Tools)：给 Agent 装上 GitHub 的手和脚
 
 本插件精选聚合为 **9 大领域核心工具**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）**、**高密度 Markdown 原生渲染（列表输出压缩 70%+ Token）** 与 **零参数 CWD 智能绑定**。
@@ -223,45 +259,9 @@
 * **生效可视化**：代理启用时驾驶舱标题栏显示 `🌐 代理` 徽章，悬停查看当前代理地址；
 * **NO_PROXY 排除列表**：`localhost` 与 `127.0.0.1` 强制包含，本机 Web API 回环请求永不被代理劫持。
 
-<p align="center">
-  <img src="./docs/images/3.png" alt="设置弹窗" width="85%" />
-</p>
-
----
-
-## 🚀 安装指南
-
-### 步骤 1：前置准备（若已安装可跳过）
-确保你的机器上已安装 GitHub CLI (`gh`) 并已登录：
-```bash
-# Windows 安装
-winget install --id GitHub.cli
-
-# macOS 安装
-brew install gh
-
-# 登录认证（仅需执行一次）
-gh auth login
-```
-
-### 步骤 2：安装插件到 DSH
-
-在 DSH 终端根据你的使用环境执行对应命令：
-
-```bash
-# 场景 A：DSH 桌面版 (Desktop Profile)
-dsh plugin --profile desktop add dsh-github-flow
-
-# 场景 B：DSH Web / CLI 工程环境
-pnpm dsh plugin add dsh-github-flow
-```
-
-> 💡 **提示（新版本发布后 24 小时内的安全锁定期说明）**：  
-> DSH 内置包管理器默认启用了防投毒的供应链安全策略（`minimum-release-age = 24h`）。新版本发布后的 **24 小时内**，若执行不带版本号的裸名安装命令，底层会自动回退为发布满 24 小时的上一稳定版本。如需**立即尝鲜刚发布的新版本**，请在命令末尾显式指定版本号：
-> ```bash
-> dsh plugin --profile desktop add dsh-github-flow@0.1.8
-> ```
-> 版本发布满 24 小时后，执行原本的裸名命令即可默认解析安装最新版。
+| 🔄 数据同步分区 | 🌐 网络代理分区 |
+| :---: | :---: |
+| ![设置中心·数据同步分区](./docs/images/3.png) | ![设置中心·网络代理分区](./docs/images/4.png) |
 
 ---
 
@@ -334,6 +334,7 @@ pnpm dsh plugin add dsh-github-flow
         checkUpdate: true         # 是否开启新版本自动检查提示（默认开启）
         updateCheckIntervalMs: 86400000 # 检查更新间隔（毫秒，默认 24 小时）
         registryUrl: ''           # 自定义私有 npm 镜像地址（留空则自动选用 npmmirror 与 npmjs）
+        proxyUrl: ''              # 代理地址预置默认值（如 'http://127.0.0.1:7890'；仅未在驾驶舱设置过时生效，界面设置优先）
 ```
 
 ---

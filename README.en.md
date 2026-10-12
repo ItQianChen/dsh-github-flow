@@ -34,6 +34,42 @@ When using AI Agents for collaborative coding, developers frequently hit these f
 
 ---
 
+## 🚀 Installation Guide
+
+### Step 1: Prerequisites
+Ensure GitHub CLI (`gh`) is installed and authenticated:
+```bash
+# Windows
+winget install --id GitHub.cli
+
+# macOS
+brew install gh
+
+# Login (one-time setup)
+gh auth login
+```
+
+### Step 2: Install into DSH
+
+Run in your DSH environment:
+
+```bash
+# Scenario A: DSH Desktop Edition (Desktop Profile)
+dsh plugin --profile desktop add dsh-github-flow
+
+# Scenario B: DSH Web / CLI Environment
+pnpm dsh plugin add dsh-github-flow
+```
+
+> 💡 **Notice (24-Hour Supply-Chain Security Lock Window)**:  
+> DSH's bundled package manager enforces a supply-chain safety policy (`minimum-release-age = 24h`) by default to mitigate malicious package takeovers. Within **24 hours** of a new version release, running bare-name install commands without a version suffix will automatically fall back to the preceding stable version that has matured past 24 hours. To **install a newly released version immediately**, append the explicit version tag:
+> ```bash
+> dsh plugin --profile desktop add dsh-github-flow@<latest-version>
+> ```
+> Once 24 hours have passed since release, the standard bare-name command will resolve to the latest version automatically.
+
+---
+
 ## 🤖 Core Agent Tools: Equipping Agents with Native GitHub Powers
 
 Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)** and **Zero-argument CWD auto-binding**.
@@ -224,45 +260,9 @@ Click **`[⚙️ Settings]`** in the top right of the Cockpit to open the sectio
 * **Visibility**: A `🌐 Proxy` badge appears in the cockpit title bar while active; hover to inspect the current proxy URL;
 * **NO_PROXY Exclusions**: `localhost` and `127.0.0.1` are forcibly included — loopback Web API requests are never hijacked by the proxy.
 
-<p align="center">
-  <img src="./docs/images/3.png" alt="Settings Modal" width="85%" />
-</p>
-
----
-
-## 🚀 Installation Guide
-
-### Step 1: Prerequisites
-Ensure GitHub CLI (`gh`) is installed and authenticated:
-```bash
-# Windows
-winget install --id GitHub.cli
-
-# macOS
-brew install gh
-
-# Login (one-time setup)
-gh auth login
-```
-
-### Step 2: Install into DSH
-
-Run in your DSH environment:
-
-```bash
-# Scenario A: DSH Desktop Edition (Desktop Profile)
-dsh plugin --profile desktop add dsh-github-flow
-
-# Scenario B: DSH Web / CLI Environment
-pnpm dsh plugin add dsh-github-flow
-```
-
-> 💡 **Notice (24-Hour Supply-Chain Security Lock Window)**:  
-> DSH's bundled package manager enforces a supply-chain safety policy (`minimum-release-age = 24h`) by default to mitigate malicious package takeovers. Within **24 hours** of a new version release, running bare-name install commands without a version suffix will automatically fall back to the preceding stable version that has matured past 24 hours. To **install a newly released version immediately**, append the explicit version tag:
-> ```bash
-> dsh plugin --profile desktop add dsh-github-flow@0.1.8
-> ```
-> Once 24 hours have passed since release, the standard bare-name command will resolve to the latest version automatically.
+| 🔄 Data Sync Section | 🌐 Network Proxy Section |
+| :---: | :---: |
+| ![Settings Center · Data Sync](./docs/images/3.png) | ![Settings Center · Network Proxy](./docs/images/4.png) |
 
 ---
 
@@ -335,6 +335,7 @@ Works out of the box, with optional tweaks in `cordis.patch.yml` or your profile
         checkUpdate: true         # Enable automatic update checks (default true)
         updateCheckIntervalMs: 86400000 # Check interval in ms (default 24h)
         registryUrl: ''           # Custom private npm registry URL
+        proxyUrl: ''              # Preset proxy default (e.g. 'http://127.0.0.1:7890'; only applies before the cockpit setting is saved — UI setting takes precedence)
 ```
 
 ---
