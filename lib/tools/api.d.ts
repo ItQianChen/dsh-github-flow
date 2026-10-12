@@ -26,6 +26,10 @@ export declare function createApiTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            paginate: {
+                type: string;
+                description: string;
+            };
         };
         required: string[];
     };

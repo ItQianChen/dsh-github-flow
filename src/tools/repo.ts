@@ -13,14 +13,14 @@ function normalizeOutput(data: any): Record<string, any> {
 export function createRepoTool(executor: GhExecutor) {
   return {
     name: 'github_repo',
-    description: '查看 GitHub 仓库元数据与跨仓库检索代码、Issue。默认查询当前工作区关联的仓库。',
+    description: '查看 GitHub 仓库元数据、同步 Fork 仓库主干 (sync) 与跨仓库检索代码。默认查询当前工作区关联的仓库。',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['view', 'search_code', 'search_repos'],
-          description: '仓库操作类型。',
+          enum: ['view', 'search_code', 'search_repos', 'sync'],
+          description: '仓库操作类型。新增 sync (一键拉平 Fork 仓库与上游主干)。',
         },
         repo: {
           type: 'string',
@@ -33,6 +33,18 @@ export function createRepoTool(executor: GhExecutor) {
         limit: {
           type: 'number',
           description: '返回条数，默认 10。',
+        },
+        branch: {
+          type: 'string',
+          description: '要同步的分支名（sync 动作使用，默认主分支如 main）。',
+        },
+        source: {
+          type: 'string',
+          description: '上游源仓库 [owner/repo]（sync 动作使用，留空自动匹配 upstream 远程配置）。',
+        },
+        force: {
+          type: 'boolean',
+          description: '是否强制硬重置同步（sync 动作使用，映射为 --force，解决分叉冲突）。默认 false。',
         },
       },
       required: ['action'],
@@ -68,7 +80,7 @@ export function createRepoTool(executor: GhExecutor) {
           }
           const repoArgs = repoTarget ? [repoTarget] : [];
           const res = await executor.run(
-            ['repo', 'view', ...repoArgs, '--json', 'nameWithOwner,description,defaultBranchRef,isPrivate,stargazerCount,forkCount,url'],
+            ['repo', 'view', ...repoArgs, '--json', 'nameWithOwner,description,defaultBranchRef,isPrivate,stargazerCount,forkCount,url,repositoryTopics,licenseInfo'],
             runOpts
           );
           if (!res.ok) {
@@ -100,6 +112,32 @@ export function createRepoTool(executor: GhExecutor) {
           );
           if (!res.ok) throw new Error(res.error);
           return normalizeOutput(res.data || res.rawOutput);
+        }
+
+        case 'sync': {
+          let repoTarget = args.repo;
+          if (!repoTarget) {
+            const meta = await executor.getRepoMetadata(cwd, sessionId);
+            if (meta?.nameWithOwner) {
+              repoTarget = meta.nameWithOwner;
+            }
+          }
+          const syncCmd = ['repo', 'sync'];
+          if (repoTarget) {
+            syncCmd.push(repoTarget);
+          }
+          if (args.branch) {
+            syncCmd.push('--branch', args.branch);
+          }
+          if (args.source) {
+            syncCmd.push('--source', args.source);
+          }
+          if (args.force === true) {
+            syncCmd.push('--force');
+          }
+          const res = await executor.run(syncCmd, runOpts);
+          if (!res.ok) throw new Error(res.error);
+          return { message: 'Fork 仓库同步成功，已与上游主干对齐', output: res.rawOutput || 'Synced' };
         }
 
         default:

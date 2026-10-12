@@ -22,6 +22,18 @@ export declare function createRepoTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            branch: {
+                type: string;
+                description: string;
+            };
+            source: {
+                type: string;
+                description: string;
+            };
+            force: {
+                type: string;
+                description: string;
+            };
         };
         required: string[];
     };

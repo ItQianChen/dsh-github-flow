@@ -61,6 +61,18 @@ export declare function createPrTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            author: {
+                type: string;
+                description: string;
+            };
+            stat_only: {
+                type: string;
+                description: string;
+            };
+            confirm: {
+                type: string;
+                description: string;
+            };
             dry_run: {
                 type: string;
                 description: string;

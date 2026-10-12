@@ -22,6 +22,27 @@ export declare function createRunTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            branch: {
+                type: string;
+                description: string;
+            };
+            status: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            workflow: {
+                type: string;
+                description: string;
+            };
+            ref: {
+                type: string;
+                description: string;
+            };
+            inputs: {
+                type: string;
+                description: string;
+            };
         };
         required: string[];
     };

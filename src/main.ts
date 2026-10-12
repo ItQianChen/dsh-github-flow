@@ -4,6 +4,7 @@ import { createIssueTool } from './tools/issue.js';
 import { createRunTool } from './tools/run.js';
 import { createRepoTool } from './tools/repo.js';
 import { createApiTool } from './tools/api.js';
+import { createHelpTool } from './tools/help.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
 import { UpdateChecker } from './updater.js';
@@ -73,13 +74,14 @@ export function apply(ctx: any, config: PluginConfig = {}) {
     registerGhCommand(ctx.commands, executor, updateChecker);
   }
 
-  // 3. 注册 Agent 模型工具集（5 大核心领域工具）
+  // 3. 注册 Agent 模型工具集（核心领域工具 + 元指南）
   if (ctx.tools) {
     ctx.tools.register(createPrTool(executor));
     ctx.tools.register(createIssueTool(executor));
     ctx.tools.register(createRunTool(executor));
     ctx.tools.register(createRepoTool(executor));
     ctx.tools.register(createApiTool(executor));
+    ctx.tools.register(createHelpTool(executor));
   }
 
   // 4. 注册面向 Client 端的 WebServer HTTP 路由（如果当前环境启用了 Web UI 服务）

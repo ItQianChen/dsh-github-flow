@@ -40,6 +40,37 @@ export declare function createIssueTool(executor: GhExecutor): {
                 };
                 description: string;
             };
+            state: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            limit: {
+                type: string;
+                description: string;
+            };
+            branch_name: {
+                type: string;
+                description: string;
+            };
+            add_labels: {
+                type: string;
+                items: {
+                    type: string;
+                };
+                description: string;
+            };
+            remove_labels: {
+                type: string;
+                items: {
+                    type: string;
+                };
+                description: string;
+            };
+            confirm: {
+                type: string;
+                description: string;
+            };
         };
         required: string[];
     };
