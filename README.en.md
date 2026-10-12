@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>Give DeepSeek Harness Agents native hands and feet to operate GitHub, crafting an immersive collaboration cockpit for developers.</b><br>
-  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>5 core domain Agent tools</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
+  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>9 core domain Agent tools</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
 </p>
 
 <p align="center">
@@ -36,7 +36,7 @@ When using AI Agents for collaborative coding, developers frequently hit these f
 
 ## 🤖 Core Agent Tools: Equipping Agents with Native GitHub Powers
 
-Consolidates scattered GitHub endpoints into **5 core domain tools**, featuring **Token Budget Protection (default 24KB intelligent truncation)** and **Zero-argument CWD auto-binding**.
+Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)** and **Zero-argument CWD auto-binding**.
 
 ### 1. `github_pr`: Pull Request Lifecycle & Automated Code Review
 > **Example Agent Prompts**:
@@ -46,13 +46,15 @@ Consolidates scattered GitHub endpoints into **5 core domain tools**, featuring 
 > - *"Did CI checks pass for PR #8? If so, squash merge it and delete the source branch."*
 
 * **Supported Actions**:
-  * `list`: List open PRs with author, review decisions, and CI status;
+  * `list`: List open PRs with author, review decisions, and CI status (`state` / `author` / `limit` filters);
   * `view`: Inspect PR description, metadata, and mergeability;
-  * `diff`: Retrieve complete code diffs (safely truncated against token limits);
+  * `diff`: Retrieve complete code diffs (`stat_only` for file-change overview, safely truncated against token limits);
   * `checks`: Audit CI status check rollups and test suites;
   * `create`: Auto-create PRs (supports draft mode & `--dry-run`);
+  * `checkout`: 🆕 Check out PR code to a local branch for sandboxed testing;
+  * `status`: 🆕 Inspect merge conflict status (`CLEAN` / `CONFLICT`) for the current branch's PR;
   * `review`: Submit code reviews (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`);
-  * `merge`: Merge pull requests (`squash` / `merge` / `rebase`, optional `delete_branch`).
+  * `merge`: Merge pull requests (`squash` / `merge` / `rebase`, optional `delete_branch`; requires `confirm: true`).
 
 ---
 
@@ -64,8 +66,9 @@ Consolidates scattered GitHub endpoints into **5 core domain tools**, featuring 
 
 * **Supported Actions**:
   * `log_failed` (🔥 **Killer Feature**): **Optimized for Agents**; automatically extracts isolated error logs from failed steps for instant root-cause analysis;
-  * `list`: View recent workflow runs and conclusions;
+  * `list`: View recent workflow runs and conclusions (`branch` / `status: failure` filters to pin down broken builds);
   * `view`: Inspect jobs and steps for a specific run ID;
+  * `trigger`: 🆕 Manually dispatch `workflow_dispatch` workflows to verify fixes immediately;
   * `rerun`: Re-trigger failed CI runs;
   * `cancel`: Cancel in-progress workflows.
 
@@ -79,11 +82,13 @@ Consolidates scattered GitHub endpoints into **5 core domain tools**, featuring 
 > - *"Close Issue #45."*
 
 * **Supported Actions**:
-  * `list`: Query issues with flexible filters;
+  * `list`: Query issues with flexible filters (`state` / `labels` / `assignees` / `limit`);
   * `view`: Read issue body and discussion history;
   * `create`: Create new issues (title, body, labels, assignees);
+  * `edit`: 🆕 Update title, body, and add/remove labels;
+  * `develop`: 🆕 Create a linked development branch from an issue and check it out locally;
   * `comment`: Append debugging updates or notes;
-  * `close` / `reopen`: Manage issue lifecycle states.
+  * `close` (requires `confirm: true`) / `reopen`: Manage issue lifecycle states.
 
 ---
 
@@ -94,7 +99,8 @@ Consolidates scattered GitHub endpoints into **5 core domain tools**, featuring 
 > - *"Show repository metadata and star count for cli/cli."*
 
 * **Supported Actions**:
-  * `view`: View repository metadata (default branch, stars, description, visibility);
+  * `view`: View repository metadata (default branch, stars, description, topics & license);
+  * `sync`: 🆕 One-click fork sync with upstream to fix stale-fork CI gate failures;
   * `search_code`: Search code symbols in current or specified repositories;
   * `search_repos`: Search open-source GitHub repositories globally.
 
@@ -104,7 +110,68 @@ Consolidates scattered GitHub endpoints into **5 core domain tools**, featuring 
 > **Example Agent Prompts**:
 > - *"Call GitHub API to fetch latest releases of current repository and parse tag names with jq."*
 
-* **Core Strength**: Call any GitHub REST or GraphQL API using local credentials with `--jq` filtering and `raw` text mode.
+* **Core Strength**: Call any GitHub REST or GraphQL API using local credentials with `--jq` filtering, `raw` text mode, and `paginate` auto-aggregation.
+
+---
+
+### 6. `github_release`: Version Releases & Build Asset Delivery 🆕
+> **Example Agent Prompts**:
+> - *"Publish v0.2.0 for this repository with auto-generated release notes."*
+> - *"Upload dsh-github-flow-0.2.0.tgz to the v0.2.0 release."*
+
+* **Supported Actions**:
+  * `list` / `view`: Browse release history and per-version details (assets, notes);
+  * `create`: Create releases (`generate_notes` auto-notes, `draft` / `prerelease` flags, attach assets directly);
+  * `upload` / `download`: Upload `.tgz` build artifacts or download assets by glob pattern;
+  * `delete` (requires `confirm: true`): Delete a release, optionally cleaning up its tag.
+
+---
+
+### 7. `github_secret`: CI/CD Secrets Management 🆕
+> **Example Agent Prompts**:
+> - *"Update the NPM_TOKEN secret for this repository."*
+> - *"Show which secrets are configured for this repo."*
+
+* **Supported Actions**:
+  * `list`: Show secret names and update times (the GitHub API never exposes secret values);
+  * `set`: Set/update secret values — **passed via subprocess stdin, never on the command line (ps-safe), never echoed in output**;
+  * `delete` (requires `confirm: true`): Remove a secret.
+  * Supports repository / organization (`org`) / environment (`env`) scopes across `actions` / `codespaces` / `dependabot` / `agents` apps.
+
+---
+
+### 8. `github_skill`: Cross-Agent Open-Source Skills Discovery 🆕
+> **Example Agent Prompts**:
+> - *"Search GitHub for an Agent Skill about code review."*
+> - *"Preview that skill's content, then install it to this project if it looks good."*
+
+* **Supported Actions**:
+  * `search`: Search open-source `SKILL.md` skills across GitHub (Code Search based, ranked by stars);
+  * `preview`: Read-only preview of skill content before installing — nothing touches disk;
+  * `install` (requires `confirm: true`): Install to local agent hosts (Claude Code / Cursor / Copilot and 50+ others), `project` or `user` scope;
+  * `list`: List all skills installed on this machine.
+  * Requires the official `gh skill` preview feature in GitHub CLI 2.9x+.
+
+---
+
+### 9. `github_help`: Meta Guide & Troubleshooting Hub 🆕
+> **Example Agent Prompts**:
+> - *"I'm not sure which GitHub tool to use for this task."*
+> - *"How do I write advanced GitHub search syntax?"*
+
+* **Core Capabilities**:
+  * Task-routing navigation across all 9 tools;
+  * Official advanced search syntax cheat sheet (date ranges, status qualifiers, code search scopes);
+  * Self-healing recipes for common errors (403 rate limits, 422 missing params, stale forks, outdated CLI);
+  * Direct passthrough to the official `gh help <command>` offline manual.
+
+---
+
+## 🛡️ Safety Guardrails
+
+* **Destructive-action double confirmation**: `merge`, `close`, `release delete`, clobber uploads, `secret delete`, and `skill install` require an explicit `confirm: true` parameter; without it, only an impact assessment is returned — nothing executes. This prevents accidental merges or deletions from model hallucinations.
+* **Secret stdin channel**: Secret values travel via subprocess stdin — never on the command line (ps / task-manager safe), never persisted, never echoed; gh encrypts locally with the repository public key before uploading.
+* **Command-injection immunity**: All gh invocations use `execFile` array-argument isolation with zero shell string concatenation.
 
 ---
 
@@ -253,6 +320,7 @@ Works out of the box, with optional tweaks in `cordis.patch.yml` or your profile
         defaultTimeoutMs: 30000   # Command timeout in milliseconds (default 30s)
         maxOutputChars: 24000     # Safe output character ceiling (Token protection)
         maxOutputBytes: 96000     # Safe UTF-8 byte ceiling (default maxOutputChars * 4)
+        defaultListLimit: 20      # Default list size for pr/issue/run/release/skill queries
         cacheTtlMs: 15000         # Repository overview cache TTL (default 15s)
         checkUpdate: true         # Enable automatic update checks (default true)
         updateCheckIntervalMs: 86400000 # Check interval in ms (default 24h)

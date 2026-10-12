@@ -128,7 +128,8 @@ export function createPrTool(executor: GhExecutor) {
           if (args.author) {
             listCmd.push('--author', args.author);
           }
-          const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.min(args.limit, 100) : 20;
+          // 显式 limit 优先；缺省回退 executor.defaultListLimit（用户可在插件配置中调整）
+          const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.min(args.limit, 100) : Math.min(executor.defaultListLimit ?? 20, 100);
           listCmd.push('-L', String(limit));
 
           const res = await executor.run(listCmd, runOpts);

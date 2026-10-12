@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手和脚，为人机协作打造沉浸式 GitHub 工作台。</b><br>
-  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>5 大领域 Agent 核心工具</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
+  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>9 大领域 Agent 核心工具</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
 </p>
 
 <p align="center">
@@ -36,7 +36,7 @@
 
 ## 🤖 核心工具集 (Agent Tools)：给 Agent 装上 GitHub 的手和脚
 
-本插件精选聚合为 **5 大领域核心工具**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）** 与 **零参数 CWD 智能绑定**。
+本插件精选聚合为 **9 大领域核心工具**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）**、**高密度 Markdown 原生渲染（列表输出压缩 70%+ Token）** 与 **零参数 CWD 智能绑定**。
 
 ### 1. `github_pr`：PR 全生命周期管理与自动化代码审查
 > **典型对话指令**：
@@ -46,13 +46,15 @@
 > - *"检查 PR #8 的 CI 检查通过了吗？通过的话帮我 Squash 合并并删除源分支"*
 
 * **支持操作 (`action`)**：
-  * `list`：列出当前仓库开放的 PR（带作者、审查判定、CI 门禁状态）；
+  * `list`：列出当前仓库开放的 PR（带作者、审查判定、CI 门禁状态，支持 `state` / `author` / `limit` 过滤）；
   * `view`：查看指定 PR 详情、描述与元数据；
-  * `diff`：获取 PR 的完整代码差异（内置智能防溢出截断保护）；
+  * `diff`：获取 PR 的完整代码差异（`stat_only` 仅看文件变更概览，防大 PR 溢出）；
   * `checks`：审查指定 PR 的 CI 门禁状态与检查套件结果；
   * `create`：一键自动创建 PR（支持 draft 草稿模式与 `--dry-run` 预演）；
+  * `checkout`：🆕 把 PR 代码检出到本地分支，Agent 可直接在沙箱跑测试验证改动；
+  * `status`：🆕 查看当前分支关联 PR 的合并冲突状态（`CLEAN` / `CONFLICT`）；
   * `review`：提交代码审查意见（`APPROVE`, `REQUEST_CHANGES`, `COMMENT`）；
-  * `merge`：自动执行合并（支持 `squash` / `merge` / `rebase`，可指定 `delete_branch`）。
+  * `merge`：自动执行合并（支持 `squash` / `merge` / `rebase`，可指定 `delete_branch`；需 `confirm: true` 二次确认）。
 
 ---
 
@@ -64,8 +66,9 @@
 
 * **支持操作 (`action`)**：
   * `log_failed`（🔥 **核心杀手锏**）：**专供 Agent 快速诊断**，自动抓取并剥离无关日志，精准提取失败 Step 的关键错误堆栈，供 Agent 直击问题修复代码；
-  * `list`：查看当前仓库的 Workflow 运行历史与结论；
+  * `list`：查看当前仓库的 Workflow 运行历史与结论（支持 `branch` / `status: failure` 快速锁定失败构建）；
   * `view`：查看指定 run_id 的详细阶段（Jobs & Steps）；
+  * `trigger`：🆕 主动触发 `workflow_dispatch` 工作流（提交修复后立即验证远端 CI）；
   * `rerun`：重新触发失败的 CI 运行；
   * `cancel`：取消在途的工作流。
 
@@ -79,11 +82,13 @@
 > - *"把 Issue #45 关闭"*
 
 * **支持操作 (`action`)**：
-  * `list`：多条件检索 Issue 列表；
+  * `list`：多条件检索 Issue 列表（`state` / `labels` / `assignees` / `limit`）；
   * `view`：查看 Issue 正文与评论历史；
   * `create`：创建新 Issue（支持标题、正文、标签、指派人）；
+  * `edit`：🆕 修改标题、正文与增删标签；
+  * `develop`：🆕 从 Issue 一键切出关联开发分支并本地检出，打通「读需求 → 写代码」闭环；
   * `comment`：在指定 Issue 中追加排查进展或评论；
-  * `close` / `reopen`：开启或关闭 Issue。
+  * `close`（需 `confirm: true`）/ `reopen`：开启或关闭 Issue。
 
 ---
 
@@ -94,7 +99,8 @@
 > - *"查看仓库 cli/cli 的基本信息与星标数"*
 
 * **支持操作 (`action`)**：
-  * `view`：查看当前或目标仓库的元数据（默认分支、星标、描述、Visibility）；
+  * `view`：查看当前或目标仓库的元数据（默认分支、星标、描述、Topics 与开源协议）；
+  * `sync`：🆕 一键拉平 Fork 仓库与上游主干，解决贡献开源项目时 Fork 落后导致 CI 门禁失败；
   * `search_code`：跨仓库或当前仓库检索特定代码符号；
   * `search_repos`：跨全站检索 GitHub 开源仓库。
 
@@ -104,7 +110,68 @@
 > **典型对话指令**：
 > - *"调用 GitHub API 获取当前仓库最新的 Release 列表，用 jq 提取 tag 名称"*
 
-* **核心优势**：直接复用本地认证环境调用任意 REST / GraphQL API，支持 `--jq` 预过滤与 `raw` 原始响应模式，绝不因插件未封装特定接口而受限。
+* **核心优势**：直接复用本地认证环境调用任意 REST / GraphQL API，支持 `--jq` 预过滤、`raw` 原始响应模式与 `paginate` 自动翻页聚合，绝不因插件未封装特定接口而受限。
+
+---
+
+### 6. `github_release`：版本发布与构建资产交付 🆕
+> **典型对话指令**：
+> - *"给当前仓库发布 v0.2.0 版本，自动根据提交记录生成发版说明"*
+> - *"把刚打好的 dsh-github-flow-0.2.0.tgz 上传到 v0.2.0 Release"*
+
+* **支持操作 (`action`)**：
+  * `list` / `view`：查看发版历史与任意版本详情（资产清单、发版说明）；
+  * `create`：创建 Release（`generate_notes` 自动生成说明、`draft` / `prerelease` 标记、可直接附带资产）；
+  * `upload` / `download`：上传 `.tgz` 等构建产物或按 glob 下载资产；
+  * `delete`（需 `confirm: true`）：删除 Release，可选连 Tag 一起清理。
+
+---
+
+### 7. `github_secret`：CI/CD 部署密钥安全管理 🆕
+> **典型对话指令**：
+> - *"帮我把新的 NPM_TOKEN 更新到当前仓库的 Secrets 里"*
+> - *"看一下这个仓库配了哪些密钥"*
+
+* **支持操作 (`action`)**：
+  * `list`：查看密钥名称清单（仅名称与更新时间，GitHub API 设计上不允许读取密文）；
+  * `set`：设置/更新密钥值——**密文经子进程标准输入传递，绝不出现在命令行参数（防 `ps` 窃取），输出永不回显**；
+  * `delete`（需 `confirm: true`）：删除密钥。
+  * 支持仓库 / 组织 (`org`) / 环境 (`env`) 三级作用域与 `actions` / `codespaces` / `dependabot` / `agents` 应用归属。
+
+---
+
+### 8. `github_skill`：跨 Agent 开源 Skills 生态发现 🆕
+> **典型对话指令**：
+> - *"在 GitHub 上搜一下有没有关于 code-review 的 Agent Skill"*
+> - *"预览一下那个 Skill 的内容，合适就装到当前项目"*
+
+* **支持操作 (`action`)**：
+  * `search`：基于 GitHub Code Search 跨仓库检索开源 `SKILL.md` 技能（带 Stars 排序）；
+  * `preview`：只读预览 Skill 内容，安装前审阅行为约束，不落盘；
+  * `install`（需 `confirm: true`）：安装到本地 Agent 宿主（Claude Code / Cursor / Copilot 等 50+），支持 `project` / `user` 两种范围；
+  * `list`：查看本机已安装的全部 Skills。
+  * 依赖 GitHub CLI 2.9x+ 的 `gh skill` 官方 preview 特性。
+
+---
+
+### 9. `github_help`：元指南与故障自愈中枢 🆕
+> **典型对话指令**：
+> - *"我不确定该用哪个 GitHub 工具做这件事"*
+> - *"GitHub 搜索的高级语法怎么写？"*
+
+* **核心能力**：
+  * 9 大工具任务路由导航（「什么任务调什么工具」一查便知）；
+  * 官方高级检索语法速查（日期区间、状态修饰符、代码搜索范围限定）；
+  * 常见故障自愈配方（403 限流、422 参数缺失、Fork 落后拉平、CLI 版本过低）；
+  * 直接透传 `gh help <command>` 官方离线手册。
+
+---
+
+## 🛡️ 安全防线设计
+
+* **高危操作双重确认**：`merge`、`close`、`release delete`、覆盖上传 (`clobber`)、`secret delete`、`skill install` 等不可逆或写盘操作强制要求 `confirm: true` 参数；未确认时只返回影响评估报告，绝不执行。杜绝模型幻觉导致的意外合并或删除。
+* **密文标准输入通道**：`github_secret` 的密钥值经子进程 stdin 传递，全程不出现在命令行参数（防 `ps` / 任务管理器窃取）、不落盘、不在输出中回显；gh 在本地用仓库公钥加密后才上传。
+* **命令注入免疫**：所有 gh 调用采用 `execFile` 数组参数隔离执行，零 Shell 字符串拼接。
 
 ---
 
@@ -252,6 +319,7 @@ pnpm dsh plugin add dsh-github-flow
         defaultTimeoutMs: 30000   # 命令执行超时时间（毫秒，默认 30 秒）
         maxOutputChars: 24000     # 单次命令安全返回字符数上限（Token 防溢出保护）
         maxOutputBytes: 96000     # 单次命令 UTF-8 字节数硬上限，默认 maxOutputChars × 4
+        defaultListLimit: 20      # 列表类查询默认返回条数（pr/issue/run/release/skill 通用）
         cacheTtlMs: 15000         # 单仓库概览缓存时长（毫秒，默认 15 秒）
         checkUpdate: true         # 是否开启新版本自动检查提示（默认开启）
         updateCheckIntervalMs: 86400000 # 检查更新间隔（毫秒，默认 24 小时）
