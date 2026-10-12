@@ -29,7 +29,7 @@ When using AI Agents for collaborative coding, developers frequently hit these f
 | **CI / Actions Failure Debugging** | Sifting through pages of Actions logs in a browser, copying stack traces to chat for debugging. | **Pinpoint Error Extraction**: Tell the Agent *"Why did CI fail?"*; Agent calls `github_run(log_failed)` to grab failed step logs and patch code instantly. |
 | **Security & Token Management** | Pasting plain-text Personal Access Tokens (PATs) in plugin configs, risking token leaks and permission sprawl. | **Zero Token Exposure**: Directly reuses local `gh auth login` credentials via native OS Keychains/Keyrings securely. |
 | **Context Switching Overhead** | Jumping back and forth between VS Code, browser GitHub tabs, and DSH chat windows. | **Immersive Dual Cockpit**: Live PR status, Actions pipelines, and 3D issue matrices right inside DSH. |
-| **First-Screen Latency & Loading** | Staring at full-screen spinners for 8~15s while waiting for heavy background `gh` processes. | **SWR 0ms Instant Render**: Instantly displays local persistent snapshots; dedicated settings modal to customize sync intervals and manual mode. |
+| **First-Screen Latency & Loading** | Staring at full-screen spinners for 8~15s while waiting for heavy background `gh` processes. | **SWR 0ms Instant Render**: Instantly displays local persistent snapshots; dedicated settings modal to switch between SWR auto-sync and manual mode. |
 | **Plugin Upgrades & Maintenance** | Manually checking npm registry versions, complicated commands, fear of breaking configs. | **Idle Silent Detection + One-Click Upgrade**: Dual-registry acceleration, auto macOS/Windows adaptation, upgrade with one click. |
 
 ---
@@ -245,11 +245,9 @@ Located in the right drawer of every chat workspace:
 Click **`[⚙️ Settings]`** in the top right of the Cockpit to open the sectioned settings modal (left-side navigation, independently scrolling content; collapses to horizontal tabs on narrow screens):
 
 **🔄 Data Sync Section** — tune data fetching rhythm:
-* **Three Flexible Sync Strategies**:
-  * **⚡ Instant Render (SWR, Recommended)**: Instantly displays local cache (0ms), silently syncing latest state in background;
-  * **📋 Manual Only (Energy Saver)**: Browse local cache only; zero background `gh` processes triggered;
-  * **⏱️ Periodic Auto Poll**: Background polling according to custom intervals while cockpit is open.
-* **Custom Polling Intervals**: Choose from 1 min / 5 mins (Default) / 15 mins / 30 mins (Energy Saver) / 1 hour / Never;
+* **Two Sync Strategies**:
+  * **⚡ Instant Render (SWR, Recommended)**: Instantly displays local cache (0ms), then silently syncs the latest state within 300ms — no matter how stale the cache is, opening the panel self-heals to fresh data;
+  * **📋 Manual Only (Energy Saver)**: Browse local cache only; zero background `gh` processes triggered; click `[🔄 Refresh]` whenever you want updates.
 * **Visual Cache Management**: Real-time snapshot size and timestamp visibility with one-click `[🗑️ Clear Cache]`.
 
 **🌐 Network Proxy Section** — route all plugin traffic through your proxy:
@@ -291,17 +289,15 @@ Why did the Global Cockpit take several seconds to load in earlier releases? Bec
 Initial Mount (0ms) ──────────> Instantly render local persistent snapshot
                                        │
                                        ├── SWR Mode: Idle 300ms delay, silently revalidate in background
-                                       ├── Manual Mode: Browse offline snapshot, only fetch on click [🔄 Refresh]
-                                       └── Auto Poll: Periodically update according to chosen interval (e.g., 5m/30m)
+                                       └── Manual Mode: Browse offline snapshot, only fetch on click [🔄 Refresh]
 ```
 
 ### Strategy Comparison & Recommendations:
 
 | Sync Strategy | Mechanism | Recommended Use Case |
 | :--- | :--- | :--- |
-| **⚡ Instant Render (SWR, Default)** | **0ms instantaneous mount** from local cache, silently revalidating in background. | **Recommended for all developers**. Eliminates spinner freezes, delivering seamless UX. |
+| **⚡ Instant Render (SWR, Default)** | **0ms instantaneous mount** from local cache, silently revalidating in background within 300ms — however stale the snapshot, opening the panel self-heals to fresh data. | **Recommended for all developers**. Eliminates spinner freezes, delivering seamless UX. |
 | **📋 Manual Only (Energy Saver)** | Browse local cache only; zero automated background `gh` processes. | **Battery-powered laptops, low-spec hardware, or metered networks**. Zero background waste. |
-| **⏱️ Periodic Auto Poll** | Background polls status at user-specified intervals (1m to 1h). | **Maintainer workstations & dedicated monitoring setups**. Keep tasks strictly up to date. |
 
 * **Offline Resilience (Fail-Safe)**: Even when disconnected or hitting network timeouts, **your dashboard preserves the complete snapshot for searching, navigation, and review—zero blank screens or crash popups!**
 
