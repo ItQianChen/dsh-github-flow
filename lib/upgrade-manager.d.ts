@@ -12,6 +12,44 @@ import type { ProxyManager } from './proxy.js';
  */
 export declare function buildCrossPlatformEnv(): NodeJS.ProcessEnv;
 /**
+ * 探测 dsh CLI 是否对当前进程可达（PATH 或已知安装位置）。
+ * 为什么必须预检：桌面端 GUI 启动时 dsh 常不在 PATH，旧实现用 '||' 兜底到
+ * `npm install -g`——装到全局对 profile 依赖毫无作用，表现为「一键升级无效果」
+ * 的静默失败。预检不可达时直接给出带完整命令的明确指引，宁可见失败不可假成功。
+ */
+export declare function probeDshCliAvailable(env: NodeJS.ProcessEnv): Promise<{
+    ok: boolean;
+    hint?: string;
+}>;
+/**
+ * 定位桌面版自带的 pnpm 分发包（pnpm.mjs）。
+ * 官方事实（apps/desktop/README）：Desktop 在 resources/runtime/primary-runtime/
+ * dependencies/pnpm 携带完整 pnpm 分发，「包操作不要求 PATH 上存在 pnpm」。
+ * dsh CLI 的 plugin 子命令本质就是「进 profile 目录转发 pnpm」——CLI 不可达时
+ * 我们可以自己定位 profile 目录直调这份 pnpm，完全绕开 dsh CLI 依赖。
+ * 候选链：a. DSH_BUNDLED_PNPM 显式覆盖；b. argv[0] 宿主二进制推导（桌面版固定布局）。
+ */
+export declare function locateBundledPnpm(): string | null;
+/**
+ * 读取 profile 中已实际安装的本插件版本（实证校验的事实源）。
+ * 读不到（目录不存在/无产物/JSON 损坏）返回 null——调用方据此决定是否放行：
+ * 无法证伪时不在成功文案里虚报版本号，但不阻断（避免文件系统受限环境下误杀真成功）。
+ */
+export declare function readInstalledVersion(profileDir?: string): string | null;
+/**
+ * 把插件包名补写进 profile 的 dsh.profile.bundles（幂等）。
+ * 为什么需要：pnpm add 只改 dependencies；dsh plugin add 还会追加 bundles 列表
+ * （官方语义：无 dsh.bundle 声明的包只作普通依赖不激活）。直调 pnpm 的降级路径
+ * 必须补齐这一步，插件才会真正进入 profile 组合。
+ * 安全性（本机实测）：pnpm add 对 dsh.profile 自定义字段完整保真，因此补写放在
+ * pnpm 成功后执行，读写同一份 package.json 不会互相破坏；写入用「读-改-写全量
+ * JSON」保持 2 空格缩进 + 尾换行与 dsh CLI 产物一致。
+ */
+export declare function ensureBundleListed(profileDir: string, pkgName: string): {
+    ok: boolean;
+    error?: string;
+};
+/**
  * 自动升级执行引擎
  *
  * 核心设计考量与约束条件：
@@ -51,6 +89,26 @@ export declare class UpgradeManager {
      * 获取当前升级状态
      */
     getStatus(): UpgradeStatusResult;
+    /**
+     * 级别 2 降级路径：直调桌面版自带 pnpm 安装包（execFile 数组参数隔离，无 shell）。
+     * 输出与退出码经回调上抛，由调用方决定 bundles 补写与状态机收尾。
+     */
+    private runPnpmDirect;
+    /**
+     * 升级结果统一收尾（状态机 + 互斥锁复位）。级别 1/级别 2 共用，
+     * 保证 lastResult、isUpgrading、返回文案的形态完全一致。
+     *
+     * 关键防线一：退出码 0 ≠ 安装成功。本函数在退出码为 0 时再做一次实证校验——
+     * 读 profile 的 node_modules/<pkg>/package.json 实际版本，与目标版本比对。
+     * 不匹配（网络劫持返回空产物、registry 异常静默跳过安装、包管理器缓存错乱
+     * 等场景）一律判失败并如实报「实际安装版本」，绝不把没装上说成装好了。
+     *
+     * 关键防线二：失败文案不内嵌完整命令。前端升级卡片常驻「📋 复制命令」按钮
+     * （复制的命令已按当前 profile 生成），文字里贴长命令既让用户手动描选困难、
+     * 也无法区分 Web/桌面环境谁敲得了终端。文案只引导按钮 + 按环境给可行出路：
+     * 桌面版未注册 CLI 的用户走官方「管理 dsh 命令」菜单，其余走复制命令。
+     */
+    private finishUpgrade;
     /**
      * 执行一键升级核心流程
      */

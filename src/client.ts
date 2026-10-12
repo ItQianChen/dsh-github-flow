@@ -1367,7 +1367,16 @@ body[data-ds-dark-theme] .dsh-github-radio {
             setMsg(json.message || "升级成功！已安装最新依赖。");
           } else {
             setStatus("failed");
-            setMsg(json.message || "升级命令执行失败，请在宿主终端手动执行。");
+            // 失败原因透传：后端 log 的末尾几行含真实报错（如 'dsh' 不是内部命令），
+            // 只给「退出码异常」这类笼统话术用户无从下手
+            var logTail = "";
+            if (json.log && typeof json.log === "string") {
+              var lines = json.log.trim().split("\n").filter(function (l: string) { return l.trim(); });
+              if (lines.length > 0) {
+                logTail = "\n\n📝 日志末尾: " + lines.slice(-4).join(" ⏎ ").slice(0, 400);
+              }
+            }
+            setMsg((json.message || "升级命令执行失败，请在宿主终端手动执行。") + logTail);
           }
         } catch (err: any) {
           setStatus("failed");
@@ -1477,7 +1486,17 @@ body[data-ds-dark-theme] .dsh-github-radio {
               {
                 className: "dsh-github-btn-sm",
                 onClick: handleCopy,
-                style: { fontSize: "11px", padding: "4px 8px" },
+                style: {
+                  fontSize: "11px",
+                  padding: "4px 8px",
+                  // 失败态高亮：与驾驶舱横幅同一引导逻辑（失败文案指向复制动作）
+                  ...(status === "failed" ? {
+                    background: "var(--dsw-alias-link, #0969da)",
+                    color: "#ffffff",
+                    borderColor: "var(--dsw-alias-link, #0969da)",
+                    fontWeight: 600,
+                  } : {}),
+                },
               },
               "📋 复制命令"
             )
@@ -1562,9 +1581,18 @@ body[data-ds-dark-theme] .dsh-github-radio {
             {
               className: "dsh-github-btn-sm",
               onClick: handleCopy,
-              style: { padding: "6px 12px" },
+              style: {
+                padding: "6px 12px",
+                // 失败态高亮复制按钮：失败文案引导的动作就是它，视觉权重同步提升
+                ...(status === "failed" ? {
+                  background: "var(--dsw-alias-link, #0969da)",
+                  color: "#ffffff",
+                  borderColor: "var(--dsw-alias-link, #0969da)",
+                  fontWeight: 600,
+                } : {}),
+              },
             },
-            "📋 复制命令"
+            status === "failed" ? "📋 复制命令手动升级" : "📋 复制命令"
           ),
           h(
             "button",

@@ -1,5 +1,16 @@
 import type { UpdateInfo } from './types.js';
 /**
+ * 检测当前 DSH 运行 profile 名（升级命令的 --profile 必填项，官方 CLI 语义：
+ * `dsh plugin --profile <name> add <pkg>` 在 profile 目录内转发给 pnpm）。
+ * 探测优先级（从权威到兜底，不瞎猜）：
+ * 1. DSH_PROFILE 环境变量——launcher 启动时固定注入（桌面版=desktop，
+ *    `dsh --profile web` 启动的 Web 版=web），是运行进程对自身 profile 的事实源；
+ * 2. DSH_PROFILE_DIR 路径含 desktop 时判定 desktop；
+ * 3. 兜底探测 ~/.dsh/profiles 下实际存在的 profile 目录（web > default 顺序），
+ *    两者皆无才回落 'default'（dsh CLI 的默认 profile 名）。
+ */
+export declare function detectProfileName(): string;
+/**
  * 极简语义化版本大小比较函数 (latest > current 时返回 true)
  *
  * 为什么自研而不引入 semver npm 依赖：
@@ -34,7 +45,8 @@ export declare class UpdateChecker {
         applyFetchDispatcher(): boolean;
     } | null): void;
     /**
-     * 同步获取当前已知的版本状态（0ms 纯内存读取，绝不发外网请求）
+     * 同步获取当前已知的版本状态（0ms 纯内存读取，绝不发外网请求）。
+     * 兜底命令同样按当前 profile 生成：网络探测失败时复制命令也必须开箱可用。
      */
     getQuickStatus(): UpdateInfo;
     /**

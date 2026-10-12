@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   CURRENT_PLUGIN_VERSION,
   PLUGIN_PACKAGE_NAME,
@@ -6,6 +10,52 @@ import {
   NPM_REGISTRY_OFFICIAL,
 } from './version.js';
 import type { UpdateInfo } from './types.js';
+
+/**
+ * 检测当前 DSH 运行 profile 名（升级命令的 --profile 必填项，官方 CLI 语义：
+ * `dsh plugin --profile <name> add <pkg>` 在 profile 目录内转发给 pnpm）。
+ * 探测优先级（从权威到兜底，不瞎猜）：
+ * 1. DSH_PROFILE 环境变量——launcher 启动时固定注入（桌面版=desktop，
+ *    `dsh --profile web` 启动的 Web 版=web），是运行进程对自身 profile 的事实源；
+ * 2. DSH_PROFILE_DIR 路径含 desktop 时判定 desktop；
+ * 3. 兜底探测 ~/.dsh/profiles 下实际存在的 profile 目录（web > default 顺序），
+ *    两者皆无才回落 'default'（dsh CLI 的默认 profile 名）。
+ */
+export function detectProfileName(): string {
+  const profile = (process.env.DSH_PROFILE || '').trim();
+  if (profile) return profile;
+  const dir = (process.env.DSH_PROFILE_DIR || '').trim().toLowerCase();
+  if (dir.includes('desktop')) return 'desktop';
+
+  // 0.5 最可靠的事实源兜底：本插件模块必然安装在 <profile>/node_modules/ 下，
+  // 从自身 import.meta.url 逐级上溯找到 profiles/<name> 段即为当前 profile。
+  // 优先于目录枚举：即使机器上装了多个 profile 也能指认「正在运行的这一个」。
+  try {
+    let cur = path.dirname(fileURLToPath(import.meta.url));
+    for (let i = 0; i < 8; i++) {
+      const parent = path.dirname(cur);
+      if (path.basename(parent) === 'profiles' && parent !== cur) {
+        const name = path.basename(cur);
+        if (name && name !== 'node_modules') return name;
+      }
+      cur = parent;
+      if (!cur || cur === path.dirname(cur)) break;
+    }
+  } catch { /* 非 file:// 上下文（理论不发生）继续走兜底 */ }
+
+  // 环境变量缺失（自定义启动方式）：按实际存在的 profile 目录兜底
+  try {
+    const profilesRoot = path.join(os.homedir(), '.dsh', 'profiles');
+    if (fs.existsSync(profilesRoot)) {
+      const names = fs.readdirSync(profilesRoot).filter((n) => {
+        try { return fs.statSync(path.join(profilesRoot, n)).isDirectory(); } catch { return false; }
+      });
+      if (names.includes('web')) return 'web';
+      if (names.length > 0 && !names.includes('default')) return names[0];
+    }
+  } catch { /* 探测失败走最终兜底 */ }
+  return 'default';
+}
 
 /**
  * 极简语义化版本大小比较函数 (latest > current 时返回 true)
@@ -71,20 +121,23 @@ export class UpdateChecker {
   }
 
   /**
-   * 同步获取当前已知的版本状态（0ms 纯内存读取，绝不发外网请求）
+   * 同步获取当前已知的版本状态（0ms 纯内存读取，绝不发外网请求）。
+   * 兜底命令同样按当前 profile 生成：网络探测失败时复制命令也必须开箱可用。
    */
   getQuickStatus(): UpdateInfo {
     if (this.cachedInfo) {
       return this.cachedInfo;
     }
 
+    const profile = detectProfileName();
+    const primary = `dsh plugin --profile ${profile} add ${PLUGIN_PACKAGE_NAME}@latest`;
     return {
       currentVersion: CURRENT_PLUGIN_VERSION,
       hasUpdate: false,
-      upgradeCommand: `pnpm dsh plugin update ${PLUGIN_PACKAGE_NAME}`,
+      upgradeCommand: primary,
       allCommands: {
-        dshCli: `pnpm dsh plugin update ${PLUGIN_PACKAGE_NAME}`,
-        profile: `dsh plugin --profile default add ${PLUGIN_PACKAGE_NAME}@latest`,
+        dshCli: primary,
+        profile: primary,
         pnpm: `pnpm add ${PLUGIN_PACKAGE_NAME}@latest`,
         npm: `npm install -g ${PLUGIN_PACKAGE_NAME}@latest`,
       },
@@ -174,14 +227,18 @@ export class UpdateChecker {
     const hasUpdate = isNewerVersion(CURRENT_PLUGIN_VERSION, latestVersion);
     const targetPkg = `${PLUGIN_PACKAGE_NAME}@${latestVersion}`;
 
+    // 命令按真实 profile 生成（P1 修复）：dsh CLI 的 --profile 为必填项，
+    // 桌面端用户复制 'pnpm dsh plugin add ...' 会直接报 required option 错误。
+    const profile = detectProfileName();
+    const primary = `dsh plugin --profile ${profile} add ${targetPkg}`;
     this.cachedInfo = {
       currentVersion: CURRENT_PLUGIN_VERSION,
       latestVersion,
       hasUpdate,
-      upgradeCommand: `pnpm dsh plugin add ${targetPkg}`,
+      upgradeCommand: primary,
       allCommands: {
-        dshCli: `pnpm dsh plugin add ${targetPkg}`,
-        profile: `dsh plugin --profile default add ${targetPkg}`,
+        dshCli: primary,
+        profile: primary,
         pnpm: `pnpm add ${targetPkg}`,
         npm: `npm install -g ${targetPkg}`,
       },
