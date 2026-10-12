@@ -98,3 +98,15 @@ npm publish --access public
 ### Q2: 报错 `403 You cannot publish over the previously published versions`
 - **原因**：当前打 tag 的代码版本在 `package.json` 中的 `version` 已经被发布过了。
 - **解法**：本地执行 `npm version patch` 递增版本号后再重新打 tag 推送。
+
+### Q3: 刚发布了新版本（npm 与淘宝镜像均已更新），为什么用户执行 `dsh plugin add` 依然安装了旧版本？
+- **原因**：**触发了 DSH 底层 pnpm 的供应链安全最小发布年龄保护机制（`minimum-release-age`）**。
+  1. DSH 内置的包管理器（pnpm）默认启用了防供应链投毒与恶意包抢跑的防御机制，默认配置规则为 `minimum-release-age = 24 * 60`（即 24 小时 / 1 天）；
+  2. 当用户执行未指定版本号的裸名安装命令（如 `dsh plugin add dsh-github-flow`）时，pnpm 的 `filterPkgMetadataByPublishDate` 过滤器会自动剔除发布未满 24 小时的新版本，并将解析上下文中的 `dist-tags.latest` 动态降级回退到**满足安全年龄的上一版本**；
+  3. 用户终端安装输出中的第一行 `✓ Lockfile passes supply-chain policies (...)` 即为该供应链策略生效的标志。
+- **解法**：
+  1. **立即尝鲜安装最新版**：在命令末尾**显式指定目标版本号**（pnpm 会判定为开发者显式信任指定版本，将其加入 `minimumReleaseAgeExclude` 白名单并成功安装）：
+     ```powershell
+     dsh plugin --profile desktop add dsh-github-flow@0.1.8
+     ```
+  2. **自然解禁**：新版本在 npm 上的发布时间达到 24 小时后，安全锁定期自动解除，届时所有用户直接运行裸名安装命令均会默认解析安装最新版。

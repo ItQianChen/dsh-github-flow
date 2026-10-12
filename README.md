@@ -179,6 +179,13 @@ dsh plugin --profile desktop add dsh-github-flow
 pnpm dsh plugin add dsh-github-flow
 ```
 
+> 💡 **提示（新版本发布后 24 小时内的安全锁定期说明）**：  
+> DSH 内置包管理器默认启用了防投毒的供应链安全策略（`minimum-release-age = 24h`）。新版本发布后的 **24 小时内**，若执行不带版本号的裸名安装命令，底层会自动回退为发布满 24 小时的上一稳定版本。如需**立即尝鲜刚发布的新版本**，请在命令末尾显式指定版本号：
+> ```bash
+> dsh plugin --profile desktop add dsh-github-flow@0.1.8
+> ```
+> 版本发布满 24 小时后，执行原本的裸名命令即可默认解析安装最新版。
+
 ---
 
 ## ⚡ 智能升级与版本检查机制

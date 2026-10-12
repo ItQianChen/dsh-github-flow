@@ -180,6 +180,13 @@ dsh plugin --profile desktop add dsh-github-flow
 pnpm dsh plugin add dsh-github-flow
 ```
 
+> 💡 **Notice (24-Hour Supply-Chain Security Lock Window)**:  
+> DSH's bundled package manager enforces a supply-chain safety policy (`minimum-release-age = 24h`) by default to mitigate malicious package takeovers. Within **24 hours** of a new version release, running bare-name install commands without a version suffix will automatically fall back to the preceding stable version that has matured past 24 hours. To **install a newly released version immediately**, append the explicit version tag:
+> ```bash
+> dsh plugin --profile desktop add dsh-github-flow@0.1.8
+> ```
+> Once 24 hours have passed since release, the standard bare-name command will resolve to the latest version automatically.
+
 ---
 
 ## ⚡ Smart Upgrades & Cross-Platform Engine
