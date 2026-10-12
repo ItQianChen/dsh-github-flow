@@ -4,6 +4,9 @@ import { createIssueTool } from './tools/issue.js';
 import { createRunTool } from './tools/run.js';
 import { createRepoTool } from './tools/repo.js';
 import { createApiTool } from './tools/api.js';
+import { createReleaseTool } from './tools/release.js';
+import { createSecretTool } from './tools/secret.js';
+import { createSkillTool } from './tools/skill.js';
 import { createHelpTool } from './tools/help.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
@@ -81,6 +84,9 @@ export function apply(ctx: any, config: PluginConfig = {}) {
     ctx.tools.register(createRunTool(executor));
     ctx.tools.register(createRepoTool(executor));
     ctx.tools.register(createApiTool(executor));
+    ctx.tools.register(createReleaseTool(executor));
+    ctx.tools.register(createSecretTool(executor));
+    ctx.tools.register(createSkillTool(executor));
     ctx.tools.register(createHelpTool(executor));
   }
 

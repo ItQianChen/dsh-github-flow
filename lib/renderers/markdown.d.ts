@@ -19,3 +19,6 @@ export declare function renderPrMarkdown(args: any, value: any): string;
 export declare function renderIssueMarkdown(args: any, value: any): string;
 export declare function renderRunMarkdown(args: any, value: any): string;
 export declare function renderRepoMarkdown(args: any, value: any): string;
+export declare function formatReleaseBadge(isDraft?: boolean, isPrerelease?: boolean): string;
+export declare function renderReleaseMarkdown(args: any, value: any): string;
+export declare function renderSkillMarkdown(args: any, value: any): string;

@@ -12,9 +12,12 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_run\` | GitHub Actions 构建排查与工作流管理 | 查看构建列表、提取失败日志 (log_failed)、重新触发、手动触发 workflow_dispatch |
 | \`github_repo\` | 仓库元数据、Fork 同步与全局检索 | 查看仓库与 topics、一键拉平 Fork 仓库 (sync)、检索全局代码与仓库 |
 | \`github_api\` | 原生 GitHub REST/GraphQL 逃生门 | 调用任意端点、获取原始文件字节 (raw)、支持自动翻页 (paginate) |
+| \`github_release\` | 版本发布与构建资产交付 | 查看发版历史、自动生成 Release Notes、上传 .tgz 等构建产物 |
+| \`github_secret\` | CI/CD 部署密钥安全管理 | 查看 NPM_TOKEN 等密钥清单、经 stdin 安全写入密文、删除密钥 |
+| \`github_skill\` | 跨 Agent 开源 Skills 生态发现 | 检索/预览/安装 GitHub 上的 Agent Skills (gh preview 特性) |
 | \`github_help\` | 路由导航、官方语法速查与故障自愈 | 遇到不确定的操作、搜索语法或接口报错时查询用法与诊断配方 |
 
-💡 **使用准则**：优先调用高层语义工具（pr / issue / run / repo）；当高层工具无法满足特殊接口需求时，再降级使用 \`github_api\`。`,
+💡 **使用准则**：优先调用高层语义工具（pr / issue / run / repo / release / secret）；当高层工具无法满足特殊接口需求时，再降级使用 \`github_api\`。`,
 
   pr: `### 🔀 github_pr 详细操作指南
 
@@ -69,6 +72,47 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **GraphQL 请求**:
   \`github_api(endpoint: 'graphql', fields: { query: 'query { viewer { login } }' })\``,
 
+  release: `### 🏷️ github_release 版本发布指南
+
+- **查看发版历史**: \`github_release(action: 'list', limit: 10)\`
+- **查看某个版本详情**: \`github_release(action: 'view', tag: 'v0.1.9')\`（留空 tag 查看最新）
+- **创建 Release（自动生成说明）**:
+  \`github_release(action: 'create', tag: 'v0.1.9', generate_notes: true, prerelease: false)\`
+  - 若远端尚无该 Tag，gh 会自动从 target 分支（默认主分支）最新提交打 Tag。
+- **上传构建资产**:
+  \`github_release(action: 'upload', tag: 'v0.1.9', assets: ['./dsh-github-flow-0.1.9.tgz'])\`
+  - 覆盖同名旧资产必须附加 \`clobber: true, confirm: true\`（旧资产删除后不可恢复）。
+- **下载资产**: \`github_release(action: 'download', tag: 'v0.1.9', pattern: '*.tgz', dir: './dist')\`
+- **删除 Release**: \`github_release(action: 'delete', tag: 'v0.1.9', confirm: true)\`
+  - 高危不可逆操作，必须显式确认。`,
+
+  secret: `### 🔐 github_secret 部署密钥管理指南
+
+- **查看密钥清单**: \`github_secret(action: 'list')\`
+  - 仅返回名称、可见性与更新时间；GitHub API 设计上就不允许读取密文。
+- **设置/更新密钥（安全通道）**:
+  \`github_secret(action: 'set', name: 'NPM_TOKEN', value: 'npm_xxxx')\`
+  - 密文经子进程标准输入传递，绝不出现在命令行参数（防 ps 窃取），输出永不回显。
+  - gh 在本地用仓库公钥加密后才上传，明文不落盘。
+- **组织/环境级密钥**: 附加 \`org: 'my-org'\` 或 \`env: 'production'\` 参数切换作用域。
+- **删除密钥**: \`github_secret(action: 'delete', name: 'NPM_TOKEN', confirm: true)\`
+  - 删除后引用该密钥的 CI 工作流会立即失败，务必先确认无工作流依赖。`,
+
+  skill: `### 🧠 github_skill Agent Skills 生态指南
+
+基于 GitHub CLI 的 \`gh skill\` preview 特性（需 gh >= 2.9x），跨仓库发现与安装开源 Agent Skills：
+
+- **检索 Skills**: \`github_skill(action: 'search', query: 'code-review', limit: 15)\`
+  - 可附加 \`owner: 'github'\` 限定作者组织。
+- **预览 Skill 内容**: \`github_skill(action: 'preview', repository: 'github/awesome-copilot', skill_name: 'code-review')\`
+  - 只读不落盘，适合安装前审阅 SKILL.md 行为约束。
+- **安装 Skill**:
+  \`github_skill(action: 'install', repository: 'github/awesome-copilot', skill_name: 'code-review', agent: 'claude-code', scope: 'project', confirm: true)\`
+  - install 会写本地磁盘，必须 \`confirm: true\`；scope 默认 project（当前 git 仓库）。
+  - 支持的 agent 值：claude-code / cursor / github-copilot / codex / gemini-cli 等。
+- **查看已安装**: \`github_skill(action: 'list')\`
+- ⚠️ 若报「unknown command」，说明宿主机 gh 版本过低，需升级到 2.9x 以上。`,
+
   search_syntax: `### 🔍 GitHub 官方高级检索语法速查手册
 
 在 \`github_repo\`、\`github_api\` 或搜索场景中，请严格遵守 GitHub 官方搜索语法：
@@ -98,7 +142,10 @@ const KNOWLEDGE_BASE: Record<string, string> = {
    - *原因*：Fork 的仓库落后于主干，合并时带入了过期的配置或删除了近期条目。
    - *解法*：调用 \`github_repo(action: 'sync')\` 自动对齐 upstream 主干代码。
 4. **报 \`System cannot find GitHub CLI (gh)\`**:
-   - *解法*：宿主机尚未安装 gh。Windows 运行 \`winget install GitHub.cli\`，macOS 运行 \`brew install gh\`，然后执行 \`gh auth login\` 登录。`
+   - *解法*：宿主机尚未安装 gh。Windows 运行 \`winget install GitHub.cli\`，macOS 运行 \`brew install gh\`，然后执行 \`gh auth login\` 登录。
+ 5. **报 \`unknown command "skill" for "gh"\`**:
+    - *原因*：\`gh skill\` 是 GitHub CLI 2.9x 引入的 preview 特性，宿主机版本过低。
+    - *解法*：升级 gh（Windows: \`winget upgrade GitHub.cli\`；macOS: \`brew upgrade gh\`）后重试；升级前可改用 \`github_api\` 检索 \`SKILL.md\` 文件路径作为替代。`
 };
 
 export function createHelpTool(executor: GhExecutor) {
@@ -117,6 +164,9 @@ export function createHelpTool(executor: GhExecutor) {
             'run',
             'repo',
             'api',
+            'release',
+            'secret',
+            'skill',
             'search_syntax',
             'troubleshooting',
           ],
