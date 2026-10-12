@@ -209,14 +209,18 @@ export function createHelpTool(executor: GhExecutor) {
       }
 
       // 2. 查询内置知识库速查表
-      const topic = (args.topic || 'overview').toLowerCase();
+      // 类型防护：DSH 网关对 enum 参数的拦截强度依赖实现，Agent 仍可能传非字符串
+      // （数字/对象/数组）。`-1 || 'overview'` 真值短路挡不住负数，会炸 toLowerCase。
+      // 与上方 gh_command 分支的 typeof 防护保持同一强度。
+      const rawTopic = typeof args.topic === 'string' && args.topic.trim() ? args.topic : 'overview';
+      const topic = rawTopic.toLowerCase().trim();
       const content = KNOWLEDGE_BASE[topic];
       if (content) {
         return { result: content };
       }
 
       return {
-        result: `未找到主题「${topic}」的指南。可用主题：${Object.keys(KNOWLEDGE_BASE).join(', ')}。`,
+        result: `未找到主题「${rawTopic}」的指南。可用主题：${Object.keys(KNOWLEDGE_BASE).join(', ')}。`,
       };
     },
   };

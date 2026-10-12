@@ -123,10 +123,19 @@ export function createRunTool(executor: GhExecutor) {
             rawText: true,
           });
           if (!res.ok) {
-            // 当工作流未失败时，gh 会非零退出提示 "no failed jobs in run"
+            // 两类已知的非零退出需要优雅吸收：
+            // 1) 工作流本身成功/无失败步骤 —— gh 的确定性提示；
+            // 2) gh CLI 在 Windows 受限目录写日志缓存 zip 报 Access is denied ——
+            //    这是宿主环境问题而非构建失败，透传原文会让 Agent 误判为构建故障，
+            //    给出自查指引（gh cache 目录权限）更可行动。
             const err = String(res.error || '');
             if (err.includes('no failed jobs') || err.includes('not failed')) {
               return { result: `工作流 Run #${args.run_id} 中未检测到任何失败的任务步骤 (状态正常)。` };
+            }
+            if (err.includes('Access is denied') || err.includes('拒绝访问')) {
+              return {
+                result: `无法提取 Run #${args.run_id} 的失败日志：gh CLI 向本机缓存目录写入日志压缩包时被系统拒绝 (${err.trim().slice(0, 200)})。建议检查 gh 缓存目录（如 %LocalAppData%\\GitHub CLI）的写权限后重试，或改用 github_api 拉取日志端点。`,
+              };
             }
             throw new Error(res.error);
           }

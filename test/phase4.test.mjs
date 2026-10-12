@@ -120,6 +120,56 @@ async function runTests() {
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
   assert(pkg.scripts && pkg.scripts.test === 'node test/run-all.mjs', 'package.json has test script wired to run-all.mjs');
 
+  // --- 6. 模糊输入回归（审核发现的防护盲区）---
+  console.log('\n--- 6. Fuzz-input regression ---');
+  const { createHelpTool } = await import('../lib/tools/help.js');
+  const { createRunTool: createRunToolForFuzz } = await import('../lib/tools/run.js');
+  const helpTool = createHelpTool({ async run() { return { ok: true, rawOutput: '' }; } });
+  const runTool2 = createRunToolForFuzz({
+    defaultListLimit: 10,
+    async getRepoMetadata() { return { nameWithOwner: 'o/r' }; },
+    async run(cmd, opts) {
+      // 模拟 Windows gh CLI 日志缓存目录无写权限的宿主环境错误
+      if (cmd.includes('--log-failed')) {
+        return { ok: false, error: 'failed to get run log: creating cache entry: open C:\\Users\\x\\AppData\\Local\\GitHub CLI\\run-log-1-2.zip: Access is denied.' };
+      }
+      return { ok: true, data: {}, rawOutput: 'ok' };
+    },
+  });
+
+  // 6.1 help.topic 非字符串（负数真值短路 / 对象 / 数组 / 空串 / null / undefined）
+  for (const badTopic of [-1, 0, {}, [], true, null, undefined, '', '   ']) {
+    let threw = null;
+    try {
+      const r = await helpTool.execute({ topic: badTopic }, {});
+      assert(typeof r.result === 'string' && r.result.length > 0, `help.topic=${JSON.stringify(badTopic)} degrades gracefully without TypeError`);
+    } catch (e) {
+      threw = e;
+      assert(false, `help.topic=${JSON.stringify(badTopic)} degrades gracefully without TypeError (threw: ${e.message})`);
+    }
+  }
+
+  // 6.2 help.topic 合法值不受影响（大小写与前后空格）
+  const prGuide = await helpTool.execute({ topic: ' PR ' }, {});
+  assert(prGuide.result.includes('github_pr'), 'help.topic with case/space normalization still works');
+
+  // 6.3 help.gh_command 畸形输入（防护一致性）
+  for (const badCmd of [-1, {}, [], true]) {
+    try {
+      await helpTool.execute({ gh_command: badCmd }, {});
+      assert(true, `help.gh_command=${JSON.stringify(badCmd)} skipped safely`);
+    } catch (e) {
+      assert(false, `help.gh_command=${JSON.stringify(badCmd)} skipped safely (threw: ${e.message})`);
+    }
+  }
+
+  // 6.4 run.log_failed 环境权限错误优雅吸收（非构建故障不误报）
+  const logPerm = await runTool2.execute({ action: 'log_failed', run_id: '1', repo: 'o/r' }, {});
+  assert(
+    typeof logPerm.result === 'string' && logPerm.result.includes('写权限') && !logPerm.result.includes('构建'),
+    'run.log_failed absorbs Windows cache Access-denied error with actionable hint'
+  );
+
   console.log('\n========================================');
   console.log(`Phase 4 Test Result: ${passed}/${total} assertions PASSED!`);
   console.log('========================================');
