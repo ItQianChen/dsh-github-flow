@@ -24,7 +24,7 @@ export function createApiTool(executor: GhExecutor) {
         method: {
           type: 'string',
           enum: ['GET', 'POST', 'PATCH', 'DELETE'],
-          description: 'HTTP 方法，默认为 GET。',
+          description: 'HTTP 方法，默认为 GET（GraphQL 端点默认 POST）。',
         },
         jq: {
           type: 'string',
@@ -59,9 +59,12 @@ export function createApiTool(executor: GhExecutor) {
       const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
       const cmd = ['api', args.endpoint];
 
-      if (args.method && args.method !== 'GET') {
-        cmd.push('-X', args.method);
-      }
+      // gh api 默认在提供 -f/-F 时会自动将 HTTP 方法隐式切换为 POST。
+      // 若调用方未指定 method，且 endpoint 不是以 graphql 开头，则按契约默认为 GET。
+      // 必须显式传入 -X，防止带有 fields 参数的 GET 请求被 gh 自动改写为 POST 导致 422 报错。
+      const isGraphql = typeof args.endpoint === 'string' && args.endpoint.trim().toLowerCase().startsWith('graphql');
+      const method = args.method || (isGraphql ? 'POST' : 'GET');
+      cmd.push('-X', method);
       if (args.jq) {
         cmd.push('--jq', args.jq);
       }

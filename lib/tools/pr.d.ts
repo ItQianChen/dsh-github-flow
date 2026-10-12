@@ -52,6 +52,15 @@ export declare function createPrTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            state: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
+            limit: {
+                type: string;
+                description: string;
+            };
             dry_run: {
                 type: string;
                 description: string;
