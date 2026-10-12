@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { renderRepoMarkdown } from '../renderers/markdown.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -52,14 +53,7 @@ export function createRepoTool(executor: GhExecutor) {
     output: {
       schema: { type: 'object' },
       render(args: any, value: any) {
-        if (!value) return [{ type: 'text', text: '无返回内容' }];
-        if (typeof value.result === 'string') {
-          return [{ type: 'text', text: value.result }];
-        }
-        if (Array.isArray(value.items)) {
-          return [{ type: 'text', text: JSON.stringify(value.items, null, 2) }];
-        }
-        return [{ type: 'text', text: JSON.stringify(value, null, 2) }];
+        return [{ type: 'text', text: renderRepoMarkdown(args, value) }];
       },
     },
     async execute(args: any, execContext: any) {

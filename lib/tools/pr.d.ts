@@ -86,7 +86,7 @@ export declare function createPrTool(executor: GhExecutor): {
         };
         render(args: any, value: any): {
             type: string;
-            text: any;
+            text: string;
         }[];
     };
     execute(args: any, execContext: any): Promise<Record<string, any>>;
