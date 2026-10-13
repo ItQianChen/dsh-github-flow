@@ -18,6 +18,12 @@ const actions = await import('../lib/api/routes-actions.js');
     assert(i > 0 && built.args[i - 1] === 'DSH GitHub', 'start 的标题占位在 powershell.exe 之前（防标题吞噬）');
     assert(built.args.includes('-NoExit') && built.args[built.args.length - 1] === 'gh auth login', '-NoExit + 命令在末位');
     assert(!built.args.slice(0, 3).includes('powershell'), 'powershell 不再作为 start 第一个参数');
+    // -NoProfile：Windows 自带 5.1 默认策略 Restricted 下加载用户 profile 必报红
+    // （conda init 场景实测）；白名单命令不依赖 profile，跨 5.1/7 语义一致
+    const np = built.args.indexOf('-NoProfile');
+    const nc = built.args.indexOf('-Command');
+    assert(np > 0, '含 -NoProfile（5.1 Restricted 基线兼容）');
+    assert(nc > np, '-NoProfile 位于 -Command 之前');
   } else if (process.platform === 'darwin') {
     const built = actions.buildTerminalCommand('gh auth login');
     assert(built.bin === 'osascript' && built.args[0] === '-e', 'macOS osascript 形态');
