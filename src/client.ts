@@ -1492,7 +1492,9 @@ body[data-ds-dark-theme] .dsh-github-radio {
       };
 
       var handleCopy = function () {
-        var cmd = updateInfo.upgradeCommand || "pnpm dsh plugin add dsh-github-flow@latest";
+        // 兜底命令也必须带 --profile（官方 CLI 必填）——正常路径 upgradeCommand
+        // 由后端按真实 profile 生成，此默认值仅在后端数据缺失时兜底
+        var cmd = updateInfo.upgradeCommand || "dsh plugin --profile desktop add dsh-github-flow@latest";
         if (navigator.clipboard) {
           navigator.clipboard.writeText(cmd);
           alert("已复制升级命令到剪贴板：\n" + cmd);

@@ -74,8 +74,10 @@ export function registerGhCommand(commandsService: any, executor: GhExecutor, up
         md += `- **npm 仓库地址**: [${NPM_PACKAGE_URL}](${NPM_PACKAGE_URL})\n\n`;
 
         md += `#### 请根据你的 DSH 安装环境选择适用的升级方式：\n\n`;
-        md += `1. **DSH 官方标准工程升级（推荐）**:\n\`\`\`bash\npnpm dsh plugin add ${PLUGIN_PACKAGE_NAME}@latest\n\`\`\`\n\n`;
-        md += `2. **DSH 桌面版 Profile 环境升级**:\n\`\`\`bash\ndsh plugin --profile desktop add ${PLUGIN_PACKAGE_NAME}@latest\n\`\`\`\n`;
+        // 官方 CLI 语义：--profile 为必填参数（dsh plugin --profile <name> add <pkg>），
+        // 任何不带 --profile 的形态（含 pnpm dsh plugin add）都会直接报 required option 错误。
+        md += `1. **DSH 桌面版 Profile 环境升级（推荐）**:\n\`\`\`bash\ndsh plugin --profile desktop add ${PLUGIN_PACKAGE_NAME}@latest\n\`\`\`\n\n`;
+        md += `2. **DSH Web / CLI 环境**（profile 名按实际环境填写）:\n\`\`\`bash\ndsh plugin --profile web add ${PLUGIN_PACKAGE_NAME}@latest\n\`\`\`\n`;
         if (isMac) {
           md += `> 💡 *macOS 提示*：若在终端找不到 \`dsh\` 命令，可直接在桌面端目录更新：\n\`\`\`bash\ncd ~/.dsh/profiles/desktop && npm install ${PLUGIN_PACKAGE_NAME}@latest --save\n\`\`\`\n\n`;
         } else {

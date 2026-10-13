@@ -57,8 +57,8 @@ gh auth login
 # 场景 A：DSH 桌面版 (Desktop Profile)
 dsh plugin --profile desktop add dsh-github-flow
 
-# 场景 B：DSH Web / CLI 工程环境
-pnpm dsh plugin add dsh-github-flow
+# 场景 B：DSH Web / CLI 环境（--profile 为官方 CLI 必填参数，profile 名按实际环境填写）
+dsh plugin --profile web add dsh-github-flow
 ```
 
 > 💡 **提示（新版本发布后 24 小时内的安全锁定期说明）**：  
@@ -85,12 +85,13 @@ pnpm dsh plugin add dsh-github-flow
   * `list`：列出当前仓库开放的 PR（带作者、审查判定、CI 门禁状态，支持 `state` / `author` / `limit` 过滤）；
   * `view`：查看指定 PR 详情、描述与元数据；
   * `diff`：获取 PR 的完整代码差异（`stat_only` 仅看文件变更概览，防大 PR 溢出）；
-  * `checks`：审查指定 PR 的 CI 门禁状态与检查套件结果；
+  * `checks`：审查指定 PR 的 CI 门禁状态（通过/失败/跳过分类徽章、所属工作流与详情链接）；
   * `create`：一键自动创建 PR（支持 draft 草稿模式与 `--dry-run` 预演）；
   * `checkout`：🆕 把 PR 代码检出到本地分支，Agent 可直接在沙箱跑测试验证改动；
   * `status`：🆕 查看当前分支关联 PR 的合并冲突状态（`CLEAN` / `CONFLICT`）；
   * `review`：提交代码审查意见（`APPROVE`, `REQUEST_CHANGES`, `COMMENT`）；
-  * `merge`：自动执行合并（支持 `squash` / `merge` / `rebase`，可指定 `delete_branch`；需 `confirm: true` 二次确认）。
+  * `merge`：自动执行合并（支持 `squash` / `merge` / `rebase`，可指定 `delete_branch`；需 `confirm: true` 二次确认）；
+  * `view_images`：🆕 下载 PR 讨论截图（正文+评论，支持 `image_urls` 精准提取与触顶续传清单）。
 
 ---
 
@@ -124,7 +125,8 @@ pnpm dsh plugin add dsh-github-flow
   * `edit`：🆕 修改标题、正文与增删标签；
   * `develop`：🆕 从 Issue 一键切出关联开发分支并本地检出，打通「读需求 → 写代码」闭环；
   * `comment`：在指定 Issue 中追加排查进展或评论；
-  * `close`（需 `confirm: true`）/ `reopen`：开启或关闭 Issue。
+  * `close`（需 `confirm: true`）/ `reopen`：开启或关闭 Issue；
+  * `view_images`：🆕 下载 Issue 报障截图（正文+评论全量提取，支持 `image_urls` 按 URL 精准提取，触顶自动返回续传清单）。
 
 ---
 
@@ -136,6 +138,7 @@ pnpm dsh plugin add dsh-github-flow
 
 * **支持操作 (`action`)**：
   * `view`：查看当前或目标仓库的元数据（默认分支、星标、描述、Topics 与开源协议）；
+  * `readme`：🆕 读取仓库 README 原文（支持指定分支，相对路径截图自动解析下载）；
   * `sync`：🆕 一键拉平 Fork 仓库与上游主干，解决贡献开源项目时 Fork 落后导致 CI 门禁失败；
   * `search_code`：跨仓库或当前仓库检索特定代码符号；
   * `search_repos`：跨全站检索 GitHub 开源仓库。
@@ -234,14 +237,15 @@ pnpm dsh plugin add dsh-github-flow
 * **PR 门禁状态药丸**：展示当前开放 PR，悬停查看 Checks 结果与审核意见；
 * **当前仓库 Open Issues 列表**：直接在侧边栏审查待办任务并提供直达链接；
 * **最新 Actions 构建流水线**：实时关注 CI 状态；
-* **快捷操作网格**：一键在浏览器打开仓库、直达 Issues/PRs、一键创建 PR。
+* **快捷操作网格**：一键在浏览器打开仓库、直达 Issues/PRs、一键创建 PR；
+* **⚙️ 完整设置入口**：右侧栏同样提供设置按钮，与主页复用同一设置弹窗（数据同步 / 网络代理 / 更新设置 / 关于 四分区完整可用），无需切回主页调整。
 
 <p align="center">
   <img src="./docs/images/2.png" alt="右侧栏工作区面板" width="100%" />
 </p>
 
 ### 3. 设置中心 (Settings Modal)
-点击全景驾驶舱右上角 **`[⚙️ 设置]`** 打开分区式设置弹窗，左侧分区导航、右侧内容独立滚动（窄屏自动折叠为横向页签）：
+点击全景驾驶舱右上角 **`[⚙️ 设置]`**（或右侧栏的 ⚙️ 按钮）打开分区式设置弹窗，左侧分区导航、右侧内容独立滚动（窄屏自动折叠为横向页签）：
 
 **🔄 数据同步分区**——调优数据拉取节奏：
 * **两种同步策略**：
@@ -257,6 +261,19 @@ pnpm dsh plugin add dsh-github-flow
 * **生效可视化**：代理启用时驾驶舱标题栏显示 `🌐 代理` 徽章，悬停查看当前代理地址；
 * **NO_PROXY 排除列表**：`localhost` 与 `127.0.0.1` 强制包含，本机 Web API 回环请求永不被代理劫持。
 
+**⬆️ 更新设置分区**——选择新版本检测所用的 npm 源：
+* **三态单选**：🌍 npm 官方源（默认，版本全球首发最及时）/ 🇨🇳 国内镜像 npmmirror（国内访问快，同步存在分钟级延迟）/ ⛔ 不检查更新（仅关闭自动提示横幅，`/gh upgrade` 与一键升级仍可用）；
+* **单源严格不互备**：显式选择的源不会被静默替换——选官方就只查官方，探测失败如实提示而非假装正常；
+* **检测与升级流量遵循全局代理设置**（与网络代理分区联动，socks5 边界在界面如实标注）；
+* **一键升级的安装源跟随选择**：选了镜像源，一键升级也走镜像安装；
+* **保存即验证**：切换源后立即用新源真实探测一次并回显最新版本号。
+
+**ℹ️ 关于分区**——插件身份与项目信息：
+* 当前运行版本、项目简介、GitHub 仓库地址、npm 包页面与 MIT 开源协议；
+* 求 Star 卡片——如果插件对你的研发有帮助，欢迎到仓库点个 Star 支持持续迭代。
+
+> 🏷️ **插件身份标识**：全景驾驶舱与右侧栏的标题旁均带有「插件」小徽标，明确标识界面由第三方插件 `dsh-github-flow` 提供（非 DSH / GitHub 官方功能）。点击徽标即可打开「关于」页面查看项目信息。
+
 | 🔄 数据同步分区 | 🌐 网络代理分区 |
 | :---: | :---: |
 | ![设置中心·数据同步分区](./docs/images/3.png) | ![设置中心·网络代理分区](./docs/images/4.png) |
@@ -267,14 +284,16 @@ pnpm dsh plugin add dsh-github-flow
 
 再也不用担心错过新功能！`dsh-github-flow` 内置了工业级的版本管理机制：
 
-1. **业务优先，闲时静默后置**：
-   - 打开 Web 界面时，**核心 PR / Issue 数据 100% 毫秒级优先拉取渲染**；
-   - 在所有业务数据渲染就绪后，前端延迟 1.5 秒利用空闲时间发起后台探针，**对主业务 0 阻塞、0 抢占**。
-2. **国内双源智能加速**：
-   - 默认第一顺位走 **阿里云/淘宝 npm 镜像**（国内延迟仅 50~150ms），超时自动无缝回退官方 npmjs 兜底。
+1. **业务优先，检查与 gh 链路完全并行**：
+   - 版本检查与 gh 环境探测（安装/登录/业务数据）**零依赖并行发起**（挂载即触发，仅 300ms 微延迟避让首屏渲染），不串行等待 gh 概览返回，gh 环境异常也绝不影响升级提示；
+   - 服务端 `inFlightPromise` 合流 + 24 小时缓存，多面板同时挂载零请求风暴。
+2. **更新源自主可选**（详见设置中心「⬆️ 更新设置」分区）：
+   - 默认走 **npm 官方源**（版本全球首发最及时），或切换 **国内镜像 npmmirror**（同步存在分钟级延迟）；
+   - 可完全关闭自动检查（仅关提示不关能力，`/gh upgrade` 与一键升级仍可用）。
 3. **跨平台一键自动升级**：
    - **界面直升**：在全景驾驶舱或右侧栏点击 **`[⚡ 一键自动升级]`**，插件在后台安全执行拉取；
    - **智能适配**：自动识别 macOS、Windows 与桌面版 Profile，Mac 环境下自动补全 Homebrew 环境变量；
+   - **安装源跟随设置**：一键升级的 registry 跟随「更新设置」所选源，与版本检测保持一致；
    - **源码保护防线**：检测到本地 Git 源码软链接模式（`link:`）时自动阻止覆盖，防止破坏开发工作区；
    - **成功自愈提示**：升级成功后明确提醒重启 DSH 服务以激活后端新工具，也可点击按钮立即刷新页面预览新界面。
 
@@ -327,9 +346,9 @@ pnpm dsh plugin add dsh-github-flow
         maxOutputBytes: 96000     # 单次命令 UTF-8 字节数硬上限，默认 maxOutputChars × 4
         defaultListLimit: 20      # 列表类查询默认返回条数（pr/issue/run/release/skill 通用）
         cacheTtlMs: 15000         # 单仓库概览缓存时长（毫秒，默认 15 秒）
-        checkUpdate: true         # 是否开启新版本自动检查提示（默认开启）
+        checkUpdate: true         # 是否开启新版本自动检查提示（默认开启；false 时熔断自动探测，显式升级不受限）
         updateCheckIntervalMs: 86400000 # 检查更新间隔（毫秒，默认 24 小时）
-        registryUrl: ''           # 自定义私有 npm 镜像地址（留空则自动选用 npmmirror 与 npmjs）
+        registryUrl: ''           # 自定义私有 npm 镜像地址（留空走「更新设置」所选源，界面设置优先）
         proxyUrl: ''              # 代理地址预置默认值（如 'http://127.0.0.1:7890'；仅未在驾驶舱设置过时生效，界面设置优先）
 ```
 

@@ -57,8 +57,8 @@ Run in your DSH environment:
 # Scenario A: DSH Desktop Edition (Desktop Profile)
 dsh plugin --profile desktop add dsh-github-flow
 
-# Scenario B: DSH Web / CLI Environment
-pnpm dsh plugin add dsh-github-flow
+# Scenario B: DSH Web / CLI Environment (--profile is required by the official CLI; fill in your actual profile name)
+dsh plugin --profile web add dsh-github-flow
 ```
 
 > 💡 **Notice (24-Hour Supply-Chain Security Lock Window)**:  
@@ -85,12 +85,13 @@ Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring 
   * `list`: List open PRs with author, review decisions, and CI status (`state` / `author` / `limit` filters);
   * `view`: Inspect PR description, metadata, and mergeability;
   * `diff`: Retrieve complete code diffs (`stat_only` for file-change overview, safely truncated against token limits);
-  * `checks`: Audit CI status check rollups and test suites;
+  * `checks`: Audit CI gate status (pass/fail/skip category badges, owning workflow, and detail links);
   * `create`: Auto-create PRs (supports draft mode & `--dry-run`);
   * `checkout`: 🆕 Check out PR code to a local branch for sandboxed testing;
   * `status`: 🆕 Inspect merge conflict status (`CLEAN` / `CONFLICT`) for the current branch's PR;
   * `review`: Submit code reviews (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`);
-  * `merge`: Merge pull requests (`squash` / `merge` / `rebase`, optional `delete_branch`; requires `confirm: true`).
+  * `merge`: Merge pull requests (`squash` / `merge` / `rebase`, optional `delete_branch`; requires `confirm: true`);
+  * `view_images`: 🆕 Download PR discussion screenshots (body + comments; `image_urls` targeting with budget-overflow resume list).
 
 ---
 
@@ -124,7 +125,8 @@ Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring 
   * `edit`: 🆕 Update title, body, and add/remove labels;
   * `develop`: 🆕 Create a linked development branch from an issue and check it out locally;
   * `comment`: Append debugging updates or notes;
-  * `close` (requires `confirm: true`) / `reopen`: Manage issue lifecycle states.
+  * `close` (requires `confirm: true`) / `reopen`: Manage issue lifecycle states;
+  * `view_images`: 🆕 Download issue attachment screenshots (body + comments; `image_urls` targeting with resume list).
 
 ---
 
@@ -136,6 +138,7 @@ Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring 
 
 * **Supported Actions**:
   * `view`: View repository metadata (default branch, stars, description, topics & license);
+  * `readme`: 🆕 Read repository README raw content (branch-selectable; relative-path screenshots auto-resolved and downloaded);
   * `sync`: 🆕 One-click fork sync with upstream to fix stale-fork CI gate failures;
   * `search_code`: Search code symbols in current or specified repositories;
   * `search_repos`: Search open-source GitHub repositories globally.
@@ -235,14 +238,15 @@ Located in the right drawer of every chat workspace:
 * **PR Status Pills**: Live PR inspection with CI checks and review badges;
 * **Workspace Open Issues List**: Direct issue task review with author badges and external links;
 * **Latest Actions Pipeline**: Real-time CI workflow status tracking;
-* **Quick Action Grid**: Open repo in browser, jump to Issues/PRs, create PRs with one click.
+* **Quick Action Grid**: Open repo in browser, jump to Issues/PRs, create PRs with one click;
+* **⚙️ Full Settings Access**: The sidebar offers its own settings button reusing the same settings modal as the cockpit (all four sections: Sync / Proxy / Update Source / About) — no need to switch back to the main page.
 
 <p align="center">
   <img src="./docs/images/2.png" alt="Session Right Sidebar Panel" width="100%" />
 </p>
 
 ### 3. Settings Center (Settings Modal)
-Click **`[⚙️ Settings]`** in the top right of the Cockpit to open the sectioned settings modal (left-side navigation, independently scrolling content; collapses to horizontal tabs on narrow screens):
+Click **`[⚙️ Settings]`** in the top right of the Cockpit (or the ⚙️ button in the right sidebar) to open the sectioned settings modal (left-side navigation, independently scrolling content; collapses to horizontal tabs on narrow screens):
 
 **🔄 Data Sync Section** — tune data fetching rhythm:
 * **Two Sync Strategies**:
@@ -258,6 +262,19 @@ Click **`[⚙️ Settings]`** in the top right of the Cockpit to open the sectio
 * **Visibility**: A `🌐 Proxy` badge appears in the cockpit title bar while active; hover to inspect the current proxy URL;
 * **NO_PROXY Exclusions**: `localhost` and `127.0.0.1` are forcibly included — loopback Web API requests are never hijacked by the proxy.
 
+**⬆️ Update Source Section** — choose which npm registry checks for new versions:
+* **Three options**: 🌍 npm official registry (default — new releases visible immediately) / 🇨🇳 npmmirror (fast in China; minutes-level sync delay) / ⛔ No update checks (only silences the upgrade banner; `/gh upgrade` and one-click upgrade remain available);
+* **Strict single-source**: the selected source is never silently swapped — probe failures are reported honestly;
+* **Detection & upgrade traffic follows the global proxy setting** (socks5 boundary stated honestly in the UI);
+* **One-click upgrade installs from the selected source** — consistent with version detection;
+* **Verify on save**: switching sources immediately probes the new registry and shows the latest version.
+
+**ℹ️ About Section** — plugin identity & project info:
+* Current running version, project description, GitHub repository, npm package page, and MIT license;
+* Star card — if the plugin helps your workflow, a Star on the repo powers continued iteration.
+
+> 🏷️ **Plugin Identity Badge**: Panel titles (cockpit & right sidebar) carry a small "Plugin" badge, clearly marking the UI as provided by the third-party plugin `dsh-github-flow` (not a DSH / GitHub official feature). Click the badge to open the About page.
+
 | 🔄 Data Sync Section | 🌐 Network Proxy Section |
 | :---: | :---: |
 | ![Settings Center · Data Sync](./docs/images/3.png) | ![Settings Center · Network Proxy](./docs/images/4.png) |
@@ -268,14 +285,16 @@ Click **`[⚙️ Settings]`** in the top right of the Cockpit to open the sectio
 
 Never miss an update! Built-in industrial-grade update management:
 
-1. **Business-First, Idle Background Detection**:
-   - Primary PR/Issue data loads and renders **instantly in milliseconds**;
-   - Update checks run **1.5 seconds later during idle periods**, ensuring zero impact on user workflows.
-2. **Dual-Registry Acceleration**:
-   - Prioritizes npmmirror for ultra-fast checks (50~150ms in mainland regions) with seamless fallback to official npmjs.
+1. **Parallel Detection, Zero gh-Dependency**:
+   - Update checks fire **in parallel with the gh environment chain** (install/login/business data) on mount — never serialized behind gh overviews; gh failures never block upgrade banners;
+   - Server-side `inFlightPromise` merging + 24h cache keeps multi-panel mounting storm-free.
+2. **Selectable Update Source** (see the "⬆️ Update Source" settings section):
+   - Defaults to the **npm official registry** (new releases visible immediately), or switch to **npmmirror** (minutes-level sync delay);
+   - Auto checks can be disabled entirely (only silences prompts — `/gh upgrade` and one-click upgrade stay available).
 3. **Cross-Platform One-Click Upgrade**:
    - **Click to Upgrade**: Click **`[⚡ Upgrade]`** in the UI to update in the background;
    - **Auto OS Adaptation**: Differentiates macOS and Windows; auto-injects Homebrew PATH variables on macOS GUI launches;
+   - **Registry Follows Setting**: One-click upgrades install from the source selected in Update Source settings;
    - **Source Protection**: Automatically aborts npm overwrites when running in local Git linked development mode (`link:`);
    - **Restart Guidance**: Clearly notifies users to restart DSH service to reload backend tools, with instant web refresh options.
 

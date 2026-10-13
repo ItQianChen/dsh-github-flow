@@ -45,14 +45,21 @@
 
 ### 1.3 自动发布操作三步走 (发布新版本日常流程)
 
-配置好上述 Secret 后，日常发布新版本只需在本地终端运行：
+配置好上述 Secret 后，日常发布新版本只需在本地终端运行（完整清单见 [UPGRADE-NOTES.md](./UPGRADE-NOTES.md) 发版必改核对表）：
 
 ```bash
-# 第一步：递增版本号（自动修改 package.json 并生成对应 git commit 和 git tag）
+# 第一步：递增版本号——两处必须同步改（package.json + src/version.ts）！
+#   ⚠️ npm version patch 只改 package.json，src/version.ts 需手动同步，
+#   否则 pnpm run build 的版本一致性硬校验会直接失败（v0.2.0 假横幅事故的防线）
 npm version patch   # 修补 Bug: 0.1.0 -> 0.1.1
 # 或者 npm version minor # 新增特性: 0.1.0 -> 0.2.0
+#   （随后编辑 src/version.ts 的 CURRENT_PLUGIN_VERSION 为同值）
 
-# 第二步：将代码与标签推送到 GitHub
+# 第二步：构建 + 全量测试（版本校验在此拦截漏改）
+pnpm run build
+pnpm test
+
+# 第三步：将代码与标签推送到 GitHub（tag 值必须 = package.json 版本）
 git push origin master --tags
 ```
 
@@ -99,6 +106,10 @@ npm publish --access public
 - **原因**：当前打 tag 的代码版本在 `package.json` 中的 `version` 已经被发布过了。
 - **解法**：本地执行 `npm version patch` 递增版本号后再重新打 tag 推送。
 
+### Q2.5: 本地构建报「版本号不一致: package.json=..., src/version.ts=...」
+- **原因**：`npm version` 只更新 package.json，`src/version.ts` 的 `CURRENT_PLUGIN_VERSION` 漏改。
+- **解法**：同步修改 `src/version.ts` 为相同版本后重新构建。这是防「假更新横幅」的硬校验（历史事故：v0.2.0 发布时 version.ts 停留 0.1.8，全体用户被假横幅轰炸）。
+
 ### Q3: 刚发布了新版本（npm 与淘宝镜像均已更新），为什么用户执行 `dsh plugin add` 依然安装了旧版本？
 - **原因**：**触发了 DSH 底层 pnpm 的供应链安全最小发布年龄保护机制（`minimum-release-age`）**。
   1. DSH 内置的包管理器（pnpm）默认启用了防供应链投毒与恶意包抢跑的防御机制，默认配置规则为 `minimum-release-age = 24 * 60`（即 24 小时 / 1 天）；
@@ -107,6 +118,6 @@ npm publish --access public
 - **解法**：
   1. **立即尝鲜安装最新版**：在命令末尾**显式指定目标版本号**（pnpm 会判定为开发者显式信任指定版本，将其加入 `minimumReleaseAgeExclude` 白名单并成功安装）：
      ```powershell
-     dsh plugin --profile desktop add dsh-github-flow@0.1.8
+     dsh plugin --profile desktop add dsh-github-flow@<最新版本号>
      ```
   2. **自然解禁**：新版本在 npm 上的发布时间达到 24 小时后，安全锁定期自动解除，届时所有用户直接运行裸名安装命令均会默认解析安装最新版。

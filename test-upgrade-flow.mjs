@@ -113,8 +113,10 @@ async function runTests() {
 
   const upgradeOut = await registeredCmd.handler({ rawInput: 'upgrade' });
   assert.ok(upgradeOut.text.includes('升级指南'));
-  assert.ok(upgradeOut.text.includes('pnpm dsh plugin add'));
-  console.log('✅ /gh upgrade 升级指引命令执行成功');
+  // 官方 CLI 语义：--profile 必填——升级指引不得再输出无 profile 的 pnpm dsh 形态
+  assert.ok(upgradeOut.text.includes('dsh plugin --profile desktop add'));
+  assert.ok(!upgradeOut.text.includes('pnpm dsh plugin add'));
+  console.log('✅ /gh upgrade 升级指引命令执行成功（全部命令带 --profile）');
 
   console.log('\n🎉 所有 5 项核心升级与提示专项测试全部通过！');
 }

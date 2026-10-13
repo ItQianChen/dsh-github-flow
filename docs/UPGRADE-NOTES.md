@@ -24,7 +24,7 @@
 
 | # | 文件 | 位置 | 说明 |
 |---|---|---|---|
-| 3 | [docs/npm-publish-guide.md](../docs/npm-publish-guide.md) | 第 110 行 `dsh-github-flow@0.1.8` | 24h 供应链锁示例命令中的版本号，改成新版本（纯文档示例，不改不影响功能，但会误导用户复制到旧版本号） |
+| 3 | [docs/npm-publish-guide.md](../docs/npm-publish-guide.md) | Q3 示例命令 | 已改为 `<最新版本号>` 占位符（与 README 同策略，发版无需再改） |
 | 4 | [docs/UPGRADE-NOTES.md](../docs/UPGRADE-NOTES.md)（本文件） | 各表格"当前值"列 | 本清单自身的版本对照，发版后更新 |
 
 ## 三、禁止写死版本（4 处，用了占位符/常量——不要往里填具体数字）
@@ -50,7 +50,7 @@
 #    package.json  → "version": "0.2.1"
 #    src/version.ts → CURRENT_PLUGIN_VERSION = '0.2.1'
 
-# 2. 更新文档示例（docs/npm-publish-guide.md:110 的 @0.1.8 → @0.2.1）
+# 2. 文档已用占位符（npm-publish-guide 示例、README 安装命令），发版无需改文档版本号
 
 # 3. 构建（版本一致性校验在此拦截漏改）+ 全量测试
 pnpm run build
@@ -77,3 +77,17 @@ git push origin master --tags
 | v0.2.0 假更新横幅（全体用户） | src/version.ts 停留 0.1.8，package.json 已 0.2.0；且发布时 lib/version.js 是旧编译产物 | build.mjs 硬校验两处一致；本清单第一、二节 |
 | 0.1.8 幽灵版本（本机 GUI） | DSH 进程模块缓存，重建软链不更新运行中进程 | 流程第 4 步强制重启验证 |
 | tag 与 npm 版本错位风险 | CI 以 package.json 为准、Release 标题以 tag 为准 | 第五节流程强调 tag = package.json |
+| pr checks 完全不可用（Issue #3） | 字段集混入 REST API 字段名（conclusion/detailsUrl），gh 从未支持 | 测试写死合法九字段基准清单（phase1）；新增 --json 字段时对照 `gh <cmd> --json zzz` 错误提示核对 |
+| 无 gh 环境刷新永久卡死 | 前端数据链路 fetch 无 AbortController，代理劫持回环时挂起 | 全部数据 fetch 绑 signal（phase7 第 8 节锚点）；新增前端 fetch 必须带 signal 或显式超时 |
+
+## 七、环境陷阱速查（升级验证时必读）
+
+| 陷阱 | 现象 | 对策 |
+|---|---|---|
+| DSH 进程模块缓存 | 升级/重建后行为不变（幽灵旧版） | 重启 DSH 桌面进程再验证 |
+| execFile input 失效（本机 node 22.18） | stdin 命令挂到超时 | 已用 spawnWithStdin；回归前先跑最小复现 |
+| 交互终端管道继承 | open_terminal 响应挂 10s+ | 已用 stdio:'ignore'；勿改回 execFile |
+| 系统代理劫持回环 | 前端 fetch 永久挂起 | 所有数据链路 fetch 带 signal；文案引导查代理 bypass |
+| 沙箱解除后的测试盲区 | EPERM SKIP 分支掩盖真实缺陷 | CI/真机全绿 ≠ 本机沙箱绿；phase3/5 曾双双漏检 |
+| gh --json 字段集漂移 | Unknown JSON field 直接报错 | 新增字段前用 `gh <cmd> --json zzz` 探测合法集；不跨域复制字段名（checks≠run） |
+| PowerShell 5.1 默认策略 | 唤起终端报 profile 禁止运行红错 | 唤起命令带 -NoProfile（Windows 自带基线优先） |
