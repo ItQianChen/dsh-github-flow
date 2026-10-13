@@ -64,6 +64,9 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 
 - **查看元数据与标签**: \`github_repo(action: 'view')\`
   - 返回仓库基本信息、默认分支、Star 计数、许可证以及 \`repositoryTopics\`（用于 DSH 插件合规审查）。
+- **读取 README 及截图**: \`github_repo(action: 'readme', repo: 'owner/repo')\`
+  - 返回 README 原文与图片 URL 清单（仓库内相对路径自动解析为 raw 链接；默认过滤徽章小图标，\`include_badges: true\` 保留）。
+  - **下载图片查看**: 附加 \`image_urls: [...]\` 精准下载指定图（留空下载全部截图）；护栏与 Issue/PR 图片一致，触顶返回 remaining 可续传。
 - **一键拉平 Fork 主干 (防止 Stale)**: \`github_repo(action: 'sync', branch: 'main')\`
   - 解决开源项目贡献中因本地 Fork 落后导致上游 CI 门禁失败的顽疾。
 - **代码检索**: \`github_repo(action: 'search_code', query: 'filename:package.json dsh.bundle')\``,

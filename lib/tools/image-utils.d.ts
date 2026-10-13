@@ -1,4 +1,16 @@
 /**
+ * 把 README 中的仓库内相对图片路径解析为 raw.githubusercontent 绝对 URL。
+ * 强制落在 raw 域名模板内——不存在拼出任意域名的可能（SSRF 白名单天然覆盖）。
+ * 路径以 ./ ../ /docs/ 等形态出现；URL 编码空格等字符；无效形态返回 null。
+ */
+export declare function resolveRelativeImageUrl(rel: string, owner: string, repo: string, branch: string): string | null;
+/**
+ * 判断 URL 是否为徽章类小图标（shields.io / badge 类 svg）。
+ * README 图片场景默认过滤：用户要看的是截图/架构图，版本徽章是排版噪音；
+ * include_badges=true 时保留（有人确实要查徽章状态）。
+ */
+export declare function isBadgeImageUrl(url: string): boolean;
+/**
  * 从正文（Issue/PR body 或评论）提取图片 URL。
  * 域名白名单 + https 扩展名双条件：
  * - GitHub 四资产域名直接放行（用户上传/旧版上传/仓库引用/camo 代理）；
@@ -6,6 +18,20 @@
  *   （169.254.169.254）等 SSRF 面，file:/// 与 http:// 一律拒绝。
  */
 export declare function extractImageUrls(body: unknown): string[];
+/**
+ * README 专用提取：绝对 URL 走通用提取器；仓库内相对路径解析为 raw URL。
+ * 默认过滤徽章小图标（isBadgeImageUrl），include_badges 开关保留。
+ */
+export declare function extractReadmeImageUrls(body: unknown, ctx: {
+    owner: string;
+    repo: string;
+    branch: string;
+    includeBadges?: boolean;
+}): {
+    urls: string[];
+    relativeResolved: number;
+    badgeFiltered: number;
+};
 /** 从魔数推断图片 MIME（下载内容才是事实源——URL 扩展名可伪造） */
 export declare function sniffImageMime(buf: Buffer): string | null;
 /** 图片下载护栏：按真实资源消耗计算——单图字节与目录总量，无张数截断 */

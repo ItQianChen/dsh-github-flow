@@ -288,6 +288,19 @@ export function renderRunMarkdown(args: any, value: any): string {
 export function renderRepoMarkdown(args: any, value: any): string {
   if (!value) return '无返回内容';
   if (typeof value.result === 'string') return value.result;
+
+  // 4.0 README 预览（文本截断版 + 图片清单）——必须在 message 早退分支之前：
+  // readme 返回同时带 message 与 readme 字段，先判 readme 才能渲染预览而非一行摘要
+  if (args?.action === 'readme' && typeof value.readme === 'string') {
+    const lines = [`### 📖 README 预览`, '', '```markdown', value.readme, '```'];
+    if (Array.isArray(value.images) && value.images.length > 0) {
+      lines.push('', `**📎 图片清单 (${value.images.length}):** 可用 \`image_urls\` 参数下载指定图片（留空下载全部）`);
+      value.images.slice(0, 8).forEach((u: string, i: number) => lines.push(`${i + 1}. ${u}`));
+      if (value.images.length > 8) lines.push(`…共 ${value.images.length} 个`);
+    }
+    return lines.join('\n');
+  }
+
   if (typeof value.message === 'string' && !value.items) {
     return `**${value.message}**` + (value.output ? `\n\`\`\`\n${value.output}\n\`\`\`` : '');
   }

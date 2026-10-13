@@ -14,6 +14,17 @@ export declare function createRepoTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            image_urls: {
+                type: string;
+                items: {
+                    type: string;
+                };
+                description: string;
+            };
+            include_badges: {
+                type: string;
+                description: string;
+            };
             query: {
                 type: string;
                 description: string;
@@ -41,10 +52,7 @@ export declare function createRepoTool(executor: GhExecutor): {
         schema: {
             type: string;
         };
-        render(args: any, value: any): {
-            type: string;
-            text: string;
-        }[];
+        render(args: any, value: any): any[];
     };
     execute(args: any, execContext: any): Promise<Record<string, any>>;
 };
