@@ -1175,13 +1175,15 @@ body[data-ds-dark-theme] .dsh-github-radio {
           });
           var json = await res.json();
           if (json.ok) {
-            setToastMsg("已唤起系统终端，请在弹出窗口中完成操作");
-            setTimeout(() => setToastMsg(null), 4000);
+            // 措辞留余地：start 的成败偶受系统会话策略影响，未弹出时用户仍有手动出路
+            setToastMsg("已唤起系统终端，请在弹出窗口中完成操作；若未弹出，可手动打开终端执行上方命令");
+            setTimeout(() => setToastMsg(null), 6000);
           } else {
-            setToastMsg(json.message || "唤起失败，请在终端手动运行");
+            // 失败如实展示：后端带回真实原因（如未找到终端/命令失败），并给出手动命令
+            setToastMsg("❌ " + (json.message || "唤起失败，请手动打开终端执行上方命令"));
           }
         } catch (e) {
-          setToastMsg("无法连接后台服务，请在终端手动运行");
+          setToastMsg("无法连接后台服务，请手动打开终端执行上方命令");
         } finally {
           setLaunching(false);
         }

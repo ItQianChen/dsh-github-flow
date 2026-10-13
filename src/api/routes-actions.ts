@@ -2,10 +2,113 @@
  * 动作类路由：缓存强制刷新 + 右侧栏快捷操作（create_pr/create_issue/open_browser/open_terminal）。
  * 共同特征：POST 触发、读少写多、无缓存语义，与概览类路由的演进方向不同。
  */
+import { execFile } from 'node:child_process';
 import type { GhExecutor } from '../executor.js';
 import { TtlCache } from '../cache.js';
 import type { GitHubOverviewData, GlobalOverviewData } from '../types.js';
 import { isSafeExternalUrl, sendJson, type RouteDeps } from './route-helpers.js';
+
+/**
+ * 构造「在新终端窗口运行命令」的平台命令（execFile 数组形态，不经 shell）。
+ *
+ * Issue #2 修复要点：
+ * - Windows：cmd.exe（显式 .exe，规避 GUI 父进程 PATH 解析差异）+ start 的窗口标题
+ *   占位 "DSH GitHub"——start 的首个带引号参数会被解析为标题而非程序，占位后
+ *   powershell.exe 才能被稳定识别为目标程序；
+ * - macOS：osascript 驱动 Terminal.app，命令经引号转义拼入 AppleScript；
+ * - Linux：发行版终端二进制与参数形态各异（gnome-terminal 用 `--`、konsole 用
+ *   `-e`、xfce4-terminal 用 `-x`），单一硬编码在主流桌面大概率不存在——由
+ *   detectLinuxTerminal 按探测结果返回对应形态。
+ */
+export function buildTerminalCommand(command: string): { bin: string; args: string[] } | null {
+  if (process.platform === 'win32') {
+    return {
+      bin: 'cmd.exe',
+      args: ['/c', 'start', 'DSH GitHub', 'powershell.exe', '-NoExit', '-Command', command],
+    };
+  }
+  if (process.platform === 'darwin') {
+    // AppleScript 字符串内的双引号以 \" 转义；白名单命令虽无引号，仍统一转义防未来扩展踩坑
+    const escaped = command.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return {
+      bin: 'osascript',
+      args: [
+        '-e', `tell application "Terminal" to do script "${escaped}"`,
+        '-e', 'tell application "Terminal" to activate',
+      ],
+    };
+  }
+  if (process.platform === 'linux') {
+    const terminal = detectLinuxTerminal();
+    if (!terminal) return null;
+    // 各终端「执行命令并保持窗口」的参数形态不同：
+    // - gnome-terminal -- <sh> -c：新版 -e 已弃用，-- 后直接跟命令行
+    // - konsole/xfce4-terminal/xterm：-e/-x 执行，sh -c + exec 保交互语义
+    //   （命令结束后 exec sh 落回交互 shell，窗口不闪退）
+    const shArgs = ['sh', '-c', `${command}; exec sh`];
+    switch (terminal) {
+      case 'gnome-terminal': return { bin: 'gnome-terminal', args: ['--', ...shArgs] };
+      case 'konsole': return { bin: 'konsole', args: ['-e', ...shArgs] };
+      case 'xfce4-terminal': return { bin: 'xfce4-terminal', args: ['-x', ...shArgs] };
+      case 'x-terminal-emulator': return { bin: 'x-terminal-emulator', args: ['-e', ...shArgs] };
+      case 'xterm': return { bin: 'xterm', args: ['-e', ...shArgs] };
+      default: return null;
+    }
+  }
+  return null;
+}
+
+/** Linux 终端探测结果缓存（进程级）：which 探测有子进程成本，会话内只做一次 */
+let cachedLinuxTerminal: string | null | undefined;
+
+/**
+ * 探测当前 Linux 桌面可用的终端模拟器（按桌面占有率排序）。
+ * 返回 null 表示全部不可用——调用方据此走失败分支而非硬编码赌一个。
+ */
+function detectLinuxTerminal(): string | null {
+  if (cachedLinuxTerminal !== undefined) return cachedLinuxTerminal;
+  const candidates = ['gnome-terminal', 'konsole', 'xfce4-terminal', 'x-terminal-emulator', 'xterm'];
+  try {
+    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
+    for (const name of candidates) {
+      try {
+        execFileSync('which', [name], { stdio: 'ignore', timeout: 2_000 });
+        cachedLinuxTerminal = name;
+        return name;
+      } catch { /* 该候选不存在，试下一个 */ }
+    }
+  } catch { /* which 本身不可用（极端环境），视为无可用终端 */ }
+  cachedLinuxTerminal = null;
+  return null;
+}
+
+/** 测试辅助：重置 Linux 终端探测缓存（便于单测注入不同探测环境） */
+export function resetLinuxTerminalCache(): void {
+  cachedLinuxTerminal = undefined;
+}
+
+/**
+ * 执行终端唤起并等待真实结果（Issue #2 核心修复：不再先斩后奏报假成功）。
+ * start/osascript 场景下命令随宿主立即退出，close 即代表唤起动作用的成败；
+ * err 与 stderr 原样上抛给调用方决定 HTTP 语义。
+ */
+function launchTerminalAndWait(command: string): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    const built = buildTerminalCommand(command);
+    if (!built) {
+      resolve({ ok: false, error: '未找到可用的系统终端（Linux 下请先安装 gnome-terminal / konsole 等任一终端模拟器）' });
+      return;
+    }
+    execFile(built.bin, built.args, { timeout: 10_000 }, (err, _stdout, stderr) => {
+      if (err) {
+        const detail = [err.message, stderr ? String(stderr).slice(0, 200) : ''].filter(Boolean).join(' | ');
+        resolve({ ok: false, error: detail });
+      } else {
+        resolve({ ok: true });
+      }
+    });
+  });
+}
 
 export function registerActionRoutes(
   deps: RouteDeps,
@@ -93,23 +196,17 @@ export function registerActionRoutes(
               if (!allowedCommands.includes(command)) {
                 throw new Error(`不支持唤起该指令: ${command}`);
               }
-              const { execFile } = await import('node:child_process');
-              let bin = 'cmd';
-              let args: string[] = [];
-              if (process.platform === 'win32') {
-                bin = 'cmd';
-                args = ['/c', 'start', 'powershell', '-NoExit', '-Command', command];
-              } else if (process.platform === 'darwin') {
-                bin = 'osascript';
-                args = ['-e', `tell application "Terminal" to do script "${command}"`, '-e', 'tell application "Terminal" to activate'];
-              } else {
-                bin = 'x-terminal-emulator';
-                args = ['-e', command];
+              // Issue #2 修复：等待真实唤起结果再回传——旧实现 execFile 异步回调吞错、
+              // 路由先行返回 ok:true，导致终端弹不弹都提示成功。
+              const launch = await launchTerminalAndWait(command);
+              if (!launch.ok) {
+                sendJson(res, 500, {
+                  ok: false,
+                  message: `唤起终端失败：${launch.error}。请手动打开系统终端执行：${command}`,
+                });
+                return;
               }
-              execFile(bin, args, (err: any) => {
-                if (err) console.warn('[dsh-github-flow] 唤起终端失败:', err?.message || err);
-              });
-              sendJson(res, 200, { ok: true, message: '已请求唤起系统终端' });
+              sendJson(res, 200, { ok: true, message: '已唤起系统终端' });
               break;
             }
             default:
