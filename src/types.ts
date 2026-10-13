@@ -41,6 +41,11 @@ export interface GhExecutionOptions {
   /** 是否强制以纯文本形式返回，不进行 JSON 尝试解析 */
   rawText?: boolean;
   /**
+   * 二进制输出模式：stdout 保持 Buffer 原样返回（不做 UTF-8 转换与截断）。
+   * 用于 gh api 下载图片/附件等字节流场景；GhResult.data 此时是 Buffer。
+   */
+  binary?: boolean;
+  /**
    * 写入子进程标准输入的内容。
    * 为什么需要：gh secret set 不带 -b 时从 stdin 读取密文，这是唯一不把敏感值
    * 暴露在进程命令行（ps / 任务管理器 / 审计日志可见）的传入通道。
@@ -55,6 +60,8 @@ export interface GhResult<T = unknown> {
   error?: string;
   /** 是否因超出安全阈值而被截断 */
   truncated?: boolean;
+  /** 二进制模式下的字节长度（data 为 Buffer 时存在） */
+  binaryBytes?: number;
 }
 
 export interface AuthInstallGuide {

@@ -219,6 +219,10 @@ export function renderIssueMarkdown(args: any, value: any): string {
     if (value.body) {
       lines.push('\n**议题正文:**\n```markdown\n' + sanitizeCell(value.body, 300) + '\n```');
     }
+    // 图片附件清单（view 附带 URL 清单，view_images 按需下载查看）
+    if (Array.isArray(value.images) && value.images.length > 0) {
+      lines.push(`- **📎 图片附件 (${value.images.length}):** 调用 \`github_issue(action: 'view_images', issue_number: ${value.number})\` 可下载查看`);
+    }
     return lines.join('\n');
   }
 

@@ -198,11 +198,17 @@ export class GhExecutor {
     const cwd = this.resolveWorkspaceCwd(options.cwd, options.sessionId);
     const timeout = options.timeoutMs || this.defaultTimeoutMs;
 
+    // 二进制模式（如 gh api 下载图片字节流）：stdout 保持 Buffer，绕过 UTF-8
+    // 字符串转换（PNG 等二进制经 utf8 解码必然损坏），也不做截断（截断只面向
+    // 文本 Token 预算）。显式开启才生效，既有调用方零感知。
+    const binary = options.binary === true;
+
     try {
       const { stdout, stderr } = await execFileAsync(this.ghPath, args, {
         cwd,
         timeout,
         maxBuffer: 15 * 1024 * 1024, // 15MB 进程缓冲
+        ...(binary ? { encoding: 'buffer' } : {}),
         env: {
           ...process.env,
           GH_NO_UPDATE_NOTIFIER: '1', // 禁用 CLI 版本更新检查，避免污染 stdout
@@ -218,9 +224,24 @@ export class GhExecutor {
         ...(options.stdin !== undefined ? { input: options.stdin } : {}),
       });
 
-      let rawOutput = (stdout || '').trim();
-      if (!rawOutput && stderr) {
-        rawOutput = stderr.trim();
+      // 二进制通道：Buffer 原样返回（调用方自行写文件/校验魔数），stderr 仅作
+      // 错误线索不做输出回退——把错误提示字节当图片保存毫无意义。
+      // TS 无法从 options 展开的 encoding 键收窄 stdout 类型，这里显式归一化。
+      if (binary) {
+        const buf = Buffer.isBuffer(stdout) ? stdout : Buffer.from(String(stdout ?? ''));
+        const errBuf = Buffer.isBuffer(stderr) ? stderr : (stderr ? Buffer.from(String(stderr)) : null);
+        if (!buf.length) {
+          const errMsg = errBuf ? errBuf.toString('utf8').trim() : '';
+          return { ok: false, error: errMsg || '二进制输出为空' };
+        }
+        return { ok: true, data: buf as unknown as T, binaryBytes: buf.length, truncated: false };
+      }
+
+      const outText = Buffer.isBuffer(stdout) ? stdout.toString('utf8') : String(stdout ?? '');
+      const errText = Buffer.isBuffer(stderr) ? stderr.toString('utf8') : String(stderr ?? '');
+      let rawOutput = outText.trim();
+      if (!rawOutput && errText) {
+        rawOutput = errText.trim();
       }
 
       const outcome = truncateOutput(rawOutput, this.maxOutputChars, this.maxOutputBytes);

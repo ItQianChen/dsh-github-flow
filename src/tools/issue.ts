@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
 import type { GhExecutor } from '../executor.js';
 import { renderIssueMarkdown } from '../renderers/markdown.js';
 
@@ -11,6 +15,70 @@ function normalizeOutput(data: any): Record<string, any> {
   return { result: data !== undefined && data !== null ? data : '' };
 }
 
+/**
+ * 从 Issue 正文提取图片 URL（用户拖拽上传 / 旧版上传 / 仓库引用 / camo 代理 / 带扩展名外链）。
+ * 为什么域名白名单 + 扩展名兜底双条件：GitHub 会把外链图片代理成 camo 域名，
+ * 用户上传走 user-attachments；仓库内图片是 raw 域名——三类是最常见可信来源。
+ * 任意公网 URL 必须带图片扩展名才纳入，避免把截图里的按钮链接误当图片下载。
+ */
+export function extractIssueImageUrls(body: unknown): string[] {
+  if (typeof body !== 'string' || !body) return [];
+  const urls = new Set<string>();
+  // HTML <img src="..."> 与 Markdown ![alt](url) 两种形态
+  const pattern = /(?:<img[^>]+src="([^"]+)"|!\[[^\]]*\]\(([^)\s]+)[^)]*\))/gi;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(body)) !== null) {
+    const url = m[1] || m[2];
+    if (!url) continue;
+    const isGithubAsset =
+      url.startsWith('https://github.com/user-attachments/') ||
+      url.startsWith('https://user-images.githubusercontent.com/') ||
+      url.startsWith('https://raw.githubusercontent.com/') ||
+      url.startsWith('https://camo.githubusercontent.com/');
+    // 仅 https 的图片扩展名外链可放行：http:// 明文与 file:/// 等协议不仅不安全，
+    // 且是 SSRF 面——恶意 issue 可诱导插件访问云元数据端点（169.254.169.254）或
+    // 内网服务。https 强制 + 扩展名双条件把下载目标限定在加密公网图片。
+    const looksLikeImage = url.startsWith('https://') &&
+      /\.(png|jpe?g|gif|webp|bmp|svg)([?#]|$)/i.test(url);
+    if (isGithubAsset || looksLikeImage) urls.add(url);
+  }
+  return Array.from(urls);
+}
+
+/** 从魔数推断图片 MIME（下载内容才是事实源——URL 扩展名可伪造） */
+function sniffMime(buf: Buffer): string | null {
+  // 长度下限只挡二进制格式（PNG/JPEG/GIF/WEBP 均有 ≥12 字节头）；SVG 是文本，
+  // 无固定头长度——短到 4 字节的 '<svg' 也合法，必须在长度检查之前判定
+  if (buf.slice(0, 4).toString('ascii').toLowerCase() === '<svg') return 'image/svg+xml';
+  if (buf.length < 12) return null;
+  if (buf[0] === 0x89 && buf[1] === 0x50) return 'image/png';                     // PNG
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg'; // JPEG
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif';  // GIF
+  if (buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp'; // RIFF....WEBP
+  return null;
+}
+
+/** 图片下载护栏：与 Token 防溢出同哲学——单图/单次数量/总量三重上限 */
+const IMG_MAX_BYTES = 5 * 1024 * 1024;   // 单图 5MB
+const IMG_MAX_COUNT = 5;                  // 单次最多 5 张
+const IMG_DIR_MAX_BYTES = 15 * 1024 * 1024; // 图片缓存目录总量 15MB
+
+/** 图片落盘目录（按内容寻址命名，重复下载天然去重） */
+function imageStoreDir(): string {
+  return path.join(os.homedir(), '.dsh', 'data', 'dsh-github-flow', 'images');
+}
+
+/** 粗略统计图片目录现有总量（遍历一次，文件数有护栏上限不会失控） */
+function imageDirSize(dir: string): number {
+  let total = 0;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      try { total += fs.statSync(path.join(dir, f)).size; } catch {}
+    }
+  } catch {}
+  return total;
+}
+
 export function createIssueTool(executor: GhExecutor) {
   return {
     name: 'github_issue',
@@ -20,8 +88,8 @@ export function createIssueTool(executor: GhExecutor) {
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'create', 'comment', 'close', 'reopen', 'edit', 'develop'],
-          description: 'Issue 操作类型。',
+          enum: ['list', 'view', 'create', 'comment', 'close', 'reopen', 'edit', 'develop', 'view_images'],
+          description: 'Issue 操作类型。view_images 下载正文内的图片到本地并返回可渲染的图片内容块（Agent 可直接"看"用户报障截图）。',
         },
         issue_number: {
           type: 'number',
@@ -82,7 +150,17 @@ export function createIssueTool(executor: GhExecutor) {
     output: {
       schema: { type: 'object' },
       render(args: any, value: any) {
-        return [{ type: 'text', text: renderIssueMarkdown(args, value) }];
+        const blocks: any[] = [{ type: 'text', text: renderIssueMarkdown(args, value) }];
+        // view_images 的图片以宿主 image 内容块输出：模型与人类都能直接看到图，
+        // base64 会污染上下文（一张截图 ~88KB），引用落盘文件由宿主按需加载
+        if (Array.isArray(value?.images)) {
+          for (const img of value.images) {
+            if (img && typeof img.file === 'string' && typeof img.mimeType === 'string') {
+              blocks.push({ type: 'image', path: img.file, mimeType: img.mimeType });
+            }
+          }
+        }
+        return blocks;
       },
     },
     async execute(args: any, execContext: any) {
@@ -136,7 +214,80 @@ export function createIssueTool(executor: GhExecutor) {
             runOpts
           );
           if (!res.ok) throw new Error(res.error);
-          return normalizeOutput(res.data || res.rawOutput);
+          const out = normalizeOutput(res.data || res.rawOutput);
+          // 附带图片 URL 清单：Agent 先知道有哪些图（零下载成本），
+          // 需要看图时再显式 view_images 按需拉取——默认不把二进制预算花在可能不需要的图上
+          if (typeof out.body === 'string') {
+            out.images = extractIssueImageUrls(out.body);
+          }
+          return out;
+        }
+
+        case 'view_images': {
+          if (!args.issue_number) throw new Error('view_images 操作必须提供 issue_number');
+          // 第一步：取正文提取图片 URL（与 view 同源，不重复拉取详情）
+          const detail = await executor.run(
+            ['issue', 'view', String(args.issue_number), ...repoArgs, '--json', 'body'],
+            runOpts
+          );
+          if (!detail.ok) throw new Error(detail.error);
+          const bodyText = detail.data && typeof detail.data === 'object' ? String((detail.data as any).body ?? '') : String(detail.rawOutput || '');
+          const urls = extractIssueImageUrls(bodyText);
+          if (urls.length === 0) {
+            return { message: `Issue #${args.issue_number} 正文中未发现图片附件。` };
+          }
+
+          // 第二步：逐张经 gh api 下载（gh 的网络栈穿过直连被拦的环境），
+          // 魔数校验 + 护栏 + 内容寻址落盘。落盘失败（目录权限受限）降级系统
+          // 临时目录——只损失跨会话去重，不让整个功能在受限环境不可用。
+          let dir = imageStoreDir();
+          try {
+            fs.mkdirSync(dir, { recursive: true });
+          } catch {
+            dir = path.join(os.tmpdir(), 'dsh-github-flow-images');
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          let dirSize = imageDirSize(dir);
+          const images: Array<{ file: string; mimeType: string; url: string; bytes: number }> = [];
+          const failures: string[] = [];
+
+          for (const url of urls.slice(0, IMG_MAX_COUNT)) {
+            const res = await executor.run<Buffer>(['api', url], { ...runOpts, binary: true, timeoutMs: 30_000 });
+            if (!res.ok || !Buffer.isBuffer(res.data)) {
+              failures.push(`${url.slice(-24)}: ${res.error || '非二进制响应'}`);
+              continue;
+            }
+            const buf = res.data;
+            if (buf.length > IMG_MAX_BYTES) {
+              failures.push(`${url.slice(-24)}: 超过单图 5MB 上限（${(buf.length / 1024 / 1024).toFixed(1)}MB）`);
+              continue;
+            }
+            const mime = sniffMime(buf);
+            if (!mime) {
+              failures.push(`${url.slice(-24)}: 内容不是图片（魔数校验失败）`);
+              continue;
+            }
+            if (dirSize + buf.length > IMG_DIR_MAX_BYTES) {
+              failures.push(`${url.slice(-24)}: 图片缓存目录超过 15MB 总量上限，请清理后重试`);
+              continue;
+            }
+            // 内容寻址（sha256 前 16 位）+ 扩展名：重复下载同一图去重，文件名可读
+            const ext = mime.includes('svg') ? 'svg' : mime.split('/')[1].replace('jpeg', 'jpg');
+            const file = path.join(dir, `${crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16)}.${ext}`);
+            fs.writeFileSync(file, buf);
+            // 累计已写入量：下张图的总量护栏判定必须基于最新值（否则多图可突破上限）
+            dirSize += buf.length;
+            images.push({ file, mimeType: mime, url, bytes: buf.length });
+          }
+
+          if (images.length === 0) {
+            return { message: `Issue #${args.issue_number} 的图片全部下载失败：`, failures };
+          }
+          return {
+            message: `Issue #${args.issue_number} 成功获取 ${images.length} 张图片${failures.length ? `（${failures.length} 张失败）` : ''}：`,
+            images,
+            failures: failures.length ? failures : undefined,
+          };
         }
 
         case 'create': {
