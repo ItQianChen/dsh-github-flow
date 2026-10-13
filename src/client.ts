@@ -300,6 +300,40 @@ body[data-ds-dark-theme] .dsh-badge-purple {
   border-color: rgba(163, 113, 247, 0.3);
 }
 
+/* 插件身份徽标：标识界面由第三方插件 dsh-github-flow 提供（非 DSH/GitHub 官方）。
+ * 为什么需要：界面以 GitHub 官方 Octocat 做功能图标，新用户易误认为官方功能；
+ * 徽标点击跳插件仓库，与设置「关于」页形成身份闭环。 */
+.dsh-github-plugin-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 10px;
+  line-height: 14px;
+  vertical-align: middle;
+  margin-left: 8px;
+  text-decoration: none !important;
+  background: rgba(125, 133, 144, 0.12);
+  color: #656d76;
+  border: 1px solid rgba(125, 133, 144, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.dsh-github-plugin-badge:hover {
+  background: rgba(125, 133, 144, 0.2);
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+body[data-ds-dark-theme] .dsh-github-plugin-badge {
+  background: rgba(139, 148, 158, 0.18);
+  color: #8b949e;
+  border-color: rgba(139, 148, 158, 0.3);
+}
+body[data-ds-dark-theme] .dsh-github-plugin-badge:hover {
+  background: rgba(139, 148, 158, 0.28);
+  color: #f0f6fc;
+}
+
 /* 7.5. 分类筛选药丸栏 */
 .dsh-github-pills {
   display: flex;
@@ -1068,6 +1102,45 @@ body[data-ds-dark-theme] .dsh-github-cache-info-box {
   color: var(--dsw-alias-label-secondary, #8c8c8c);
 }
 
+/* 关于页求 Star 卡片：与 cache-info-box 同款双主题底色（浅色纸面/暗色深底） */
+.dsh-github-about-star-box {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #f6f8fa);
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+}
+body[data-ds-dark-theme] .dsh-github-about-star-box {
+  background: var(--dsw-alias-bg-base, #161b22);
+  border-color: var(--dsw-alias-border-l1, #30363d);
+}
+
+/* 主操作按钮（链接色底）：链接色底 + 白字，暗色用亮蓝（对齐 radio/链接的暗色强调色 58a6ff） */
+.dsh-github-primary-btn {
+  padding: 5px 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--dsw-alias-link, #0969da);
+  border-color: var(--dsw-alias-link, #0969da);
+  color: #ffffff;
+}
+.dsh-github-primary-btn:hover {
+  background: var(--dsw-alias-link, #0969da);
+  border-color: var(--dsw-alias-link, #0969da);
+  color: #ffffff;
+  opacity: 0.88;
+}
+body[data-ds-dark-theme] .dsh-github-primary-btn {
+  background: #58a6ff;
+  border-color: #58a6ff;
+  color: #0d1117;
+}
+body[data-ds-dark-theme] .dsh-github-primary-btn:hover {
+  background: #58a6ff;
+  border-color: #58a6ff;
+  color: #0d1117;
+  opacity: 0.88;
+}
+
 /* 单选框点强调色 */
 .dsh-github-radio {
   accent-color: var(--dsw-alias-link, #0969da);
@@ -1127,6 +1200,24 @@ body[data-ds-dark-theme] .dsh-github-radio {
         },
         renderOctocat(Math.round(size * 0.58), "#ffffff")
       );
+    }
+
+    // 插件身份徽标（h 工厂注入）：标注界面由第三方插件 dsh-github-flow 提供。
+    // 点击不直接跳仓库，而是派发全局事件打开「设置-关于」弹窗（仓库/协议/Star
+    // 都在里面），由各宿主面板监听并挂载弹窗——避免从任意界面突兀跳浏览器。
+    function renderPluginBadge(h: any) {
+      return h("button", {
+        className: "dsh-github-plugin-badge",
+        type: "button",
+        title: "本界面由第三方插件 dsh-github-flow 提供（非 DSH / GitHub 官方）。点击查看关于。",
+        onClick: function (e: any) {
+          e.stopPropagation();
+          e.preventDefault();
+          try {
+            window.dispatchEvent(new CustomEvent("dsh-github-open-about"));
+          } catch (err) { /* 事件派发失败不阻断点击语义 */ }
+        },
+      }, "插件");
     }
 
     // 认证与安装引导卡片组件（响应式自适应中央大面板与右侧栏）
@@ -1689,7 +1780,8 @@ body[data-ds-dark-theme] .dsh-github-radio {
       isRightbar: boolean = false,
       updateInfo: any = null,
       syncStatus: string = "",
-      lastSyncedAt: number = 0
+      lastSyncedAt: number = 0,
+      onOpenSettings: (() => void) | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -1710,16 +1802,33 @@ body[data-ds-dark-theme] .dsh-github-radio {
           { className: "dsh-github-title" },
           renderOctocatBadge(isRightbar ? 26 : 30),
           h("h2", null, isRightbar ? "GitHub 仓库" : "GitHub 工作台"),
+          renderPluginBadge(h),
           syncStatus ? h(SyncStatusBadge, { syncStatus, lastSyncedAt, isRightbar }) : null
         ),
         h(
-          "button",
-          {
-            className: "dsh-github-refresh-btn",
-            onClick: onRefresh,
-            disabled: loading,
-          },
-          loading ? "刷新中..." : "🔄 刷新"
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: "6px" } },
+          h(
+            "button",
+            {
+              className: "dsh-github-refresh-btn",
+              onClick: onRefresh,
+              disabled: loading,
+            },
+            loading ? "刷新中..." : "🔄 刷新"
+          ),
+          // 设置按钮：与全景主页复用同一设置弹窗（传入回调时渲染——目前仅右侧栏）。
+          // 右侧栏此前没有设置入口，用户必须切到主页才能改同步/代理/更新设置。
+          onOpenSettings ? h(
+            "button",
+            {
+              className: "dsh-github-btn-sm",
+              onClick: onOpenSettings,
+              title: "配置数据同步节奏、本地缓存、网络代理与插件信息",
+              style: { padding: "4px 10px" },
+            },
+            "⚙️"
+          ) : null
         )
       );
 
@@ -2262,11 +2371,58 @@ body[data-ds-dark-theme] .dsh-github-radio {
         return () => window.removeEventListener("focus", onFocus);
       }, [data, loadData]);
 
+      // 设置弹窗（右侧栏独立实例）：插件徽标 → 直开「关于」分区；⚙️ 按钮 → 默认
+      // 「数据同步」。与全景主页复用同一弹窗组件，同步设置经事件总线实时对齐两侧。
+      var [aboutModalOpen, setAboutModalOpen] = React.useState(false);
+      var [rightbarModalOpen, setRightbarModalOpen] = React.useState(false);
+      var [rightbarModalSection, setRightbarModalSection] = React.useState("sync");
+      var containerRef = React.useRef(null as any);
+      React.useEffect(() => {
+        // 多宿主同挂载防叠层：全景主页与右侧栏可能同时在 DOM 中，徽标事件若被
+        // 两处同时响应会出现双层弹窗。只有「自身容器可见」的宿主才响应——
+        // 徽标所在面板必然是用户当前看到的那个。
+        var onOpenAbout = () => {
+          var el = containerRef.current;
+          if (!el) return;
+          var rect = el.getBoundingClientRect();
+          var visible = rect.width > 0 && rect.height > 0;
+          if (visible) setAboutModalOpen(true);
+        };
+        window.addEventListener("dsh-github-open-about", onOpenAbout);
+        return () => window.removeEventListener("dsh-github-open-about", onOpenAbout);
+      }, []);
+      var openRightbarSettings = () => {
+        setRightbarModalSection("sync");
+        setRightbarModalOpen(true);
+      };
+
       var h = React.createElement;
       return h(
         "div",
-        { className: "dsh-github-rightbar-container" },
-        ...renderGithubRepoView(h, data, loading, error, () => loadData(true), true, updateInfo, syncStatus, lastSyncedAt)
+        { className: "dsh-github-rightbar-container", ref: containerRef },
+        ...renderGithubRepoView(h, data, loading, error, () => loadData(true), true, updateInfo, syncStatus, lastSyncedAt, openRightbarSettings),
+        // 弹窗一：插件徽标触发的「关于」单页展示
+        h(GlobalSyncSettingsModal, {
+          isOpen: aboutModalOpen,
+          initialSection: "about",
+          onClose: () => setAboutModalOpen(false),
+          currentSettings: syncSettings,
+          onSave: function () { /* 关于入口不触发 sync 保存路径 */ },
+          onClearCache: function () { setData(null); },
+        }),
+        // 弹窗二：⚙️ 按钮触发的完整设置（与主页同一弹窗组件，分区可自由切换）
+        h(GlobalSyncSettingsModal, {
+          isOpen: rightbarModalOpen,
+          initialSection: rightbarModalSection,
+          onClose: () => setRightbarModalOpen(false),
+          currentSettings: syncSettings,
+          onSave: function (newSettings: any) { setSyncSettings(newSettings); },
+          onClearCache: function () {
+            setData(null);
+            setLastSyncedAt(0);
+            setSyncStatus("loading");
+          },
+        })
       );
     }
 
@@ -2293,7 +2449,7 @@ body[data-ds-dark-theme] .dsh-github-radio {
         "div",
         {
           className: "dsh-github-icon" + (active ? " active" : ""),
-          title: "GitHub 全景驾驶舱",
+          title: "GitHub 全景驾驶舱（dsh-github-flow 插件）",
         },
         React.createElement(
           "div",
@@ -2305,20 +2461,22 @@ body[data-ds-dark-theme] .dsh-github-radio {
       );
     }
 
-    // 全景驾驶舱「⚙️ 设置」模态弹窗组件：左侧分区导航（数据同步 / 网络代理）+ 右侧内容区。
+    // 全景驾驶舱「⚙️ 设置」模态弹窗组件：左侧分区导航（数据同步 / 网络代理 / 更新设置 / 关于）+ 右侧内容区。
     // 为什么改多分区：弹窗承载能力从单一「同步偏好」扩展为多项插件设置（后续可继续加），
     // 单页滚动堆叠会让用户找不到入口；分区导航让每项设置拥有独立心智空间与保存动作。
+    // initialSection：宿主可指定初始分区——插件徽标点击时直开「关于」，单独展示身份信息。
     function GlobalSyncSettingsModal(props: {
       isOpen: boolean;
       onClose: () => void;
       currentSettings: any;
       onSave: (newSettings: any) => void;
       onClearCache: () => void;
+      initialSection?: string;
     }) {
       if (!props.isOpen) return null;
 
-      // ---- 当前激活分区：sync（数据同步）/ proxy（网络代理）/ update（更新设置）----
-      var [activeSection, setActiveSection] = React.useState("sync");
+      // ---- 当前激活分区：sync / proxy / update / about ----
+      var [activeSection, setActiveSection] = React.useState(props.initialSection || "sync");
       var [strategy, setStrategy] = React.useState(props.currentSettings.strategy || "swr");
       var [cacheMeta, setCacheMeta] = React.useState(getCacheStorageMeta());
       var [clearTip, setClearTip] = React.useState("");
@@ -2329,6 +2487,8 @@ body[data-ds-dark-theme] .dsh-github-radio {
       var [updateMode, setUpdateMode] = React.useState("official");
       var [updateBusy, setUpdateBusy] = React.useState(false);
       var [updateMsg, setUpdateMsg] = React.useState(null as { kind: "ok" | "err" | "info"; text: string } | null);
+      // ---- 关于分区：当前运行版本号（弹窗打开时轻量拉取，失败静默回落占位）----
+      var [aboutVersion, setAboutVersion] = React.useState(null as string | null);
 
       React.useEffect(function () {
         if (!props.isOpen) return;
@@ -2340,6 +2500,13 @@ body[data-ds-dark-theme] .dsh-github-radio {
             }
           })
           .catch(function () { /* 后端不可达时保持默认 official，保存时会得到明确报错 */ });
+        // 版本号：check-update 命中 24h 缓存时零成本；失败静默（关于页显示占位版本）
+        fetch("/api/github/check-update")
+          .then(function (r: any) { return r.json(); })
+          .then(function (j: any) {
+            if (j && j.ok && j.data && j.data.currentVersion) setAboutVersion(j.data.currentVersion);
+          })
+          .catch(function () {});
       }, [props.isOpen]);
 
       // ---- 网络代理分区状态 ----
@@ -2379,6 +2546,15 @@ body[data-ds-dark-theme] .dsh-github-radio {
         window.addEventListener("keydown", onKeyDown);
         return function () { window.removeEventListener("keydown", onKeyDown); };
       }, [props.onClose]);
+
+      // initialSection 同步：弹窗实例常驻（return null 在 hooks 后，不卸载），
+      // useState 初值只在首挂载取一次——宿主切换入口重开时（如齿轮→关→徽标），
+      // 必须显式把 activeSection 对齐到新的 initialSection，否则停留在旧分区。
+      React.useEffect(function () {
+        if (props.isOpen && props.initialSection) {
+          setActiveSection(props.initialSection);
+        }
+      }, [props.isOpen, props.initialSection]);
 
       // 更新源保存：POST 后端（写盘 + 热切换 checker + 立即用新源真探）。
       // 返回的 probe 结果如实展示：探测失败提示网络问题而非假报「已生效无异常」。
@@ -2527,7 +2703,11 @@ body[data-ds-dark-theme] .dsh-github-radio {
               h("button", {
                 className: "dsh-github-settings-nav-item" + (activeSection === "update" ? " active" : ""),
                 onClick: function () { setActiveSection("update"); },
-              }, "⬆️ 更新设置")
+              }, "⬆️ 更新设置"),
+              h("button", {
+                className: "dsh-github-settings-nav-item" + (activeSection === "about" ? " active" : ""),
+                onClick: function () { setActiveSection("about"); },
+              }, "ℹ️ 关于")
             ),
             h("div", { className: "dsh-github-settings-content" },
               activeSection === "sync" ? h("div", null,
@@ -2631,18 +2811,11 @@ body[data-ds-dark-theme] .dsh-github-radio {
                     )
                   )
                 ),
-                // 保存按钮 + 结果反馈
+                // 保存按钮 + 结果反馈（按钮复用 star-btn 的双主题链接色样式：内联色
+                // 会覆盖 btn-sm 暗色规则，且暗色下亮蓝底刺眼——与关于页修复同源）
                 h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
                   h("button", {
-                    className: "dsh-github-btn-sm",
-                    style: {
-                      padding: "5px 14px",
-                      fontSize: "12px",
-                      background: "var(--dsw-alias-link, #0969da)",
-                      color: "#ffffff",
-                      borderColor: "var(--dsw-alias-link, #0969da)",
-                      fontWeight: 600,
-                    },
+                    className: "dsh-github-btn-sm dsh-github-primary-btn",
                     disabled: updateBusy,
                     onClick: handleUpdateSave,
                   }, updateBusy ? "验证中..." : "💾 保存并全局应用"),
@@ -2657,6 +2830,58 @@ body[data-ds-dark-theme] .dsh-github-radio {
                           : "var(--dsw-alias-label-secondary, #656d76)",
                     },
                   }, updateMsg.text) : null
+                )
+              ) : activeSection === "about" ? h("div", null,
+                // ℹ️ 关于分区：项目信息/仓库地址/开源协议/求 Star。纯静态展示，零状态零请求。
+                h("div", { style: { display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" } },
+                  renderOctocatBadge(40),
+                  h("div", null,
+                    h("div", { style: { fontSize: "15px", fontWeight: 600 } }, "DSH GitHub Flow"),
+                    h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
+                      "当前版本: v" + (aboutVersion || "…")
+                    )
+                  )
+                ),
+                h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.6" } },
+                  "让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手脚。原生复用宿主机 gh CLI 安全凭据，深度打通本地 Git 工作区与云端协作，提供 9 大领域 Agent 工具、人类 Slash 指令、Web 全景驾驶舱与一键跨平台升级。"
+                ),
+                // 信息条目
+                h("div", { style: { display: "flex", flexDirection: "column", gap: "8px", marginBottom: "14px" } },
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "8px", fontSize: "12px" } },
+                    h("span", { style: { minWidth: "64px", color: "var(--dsw-alias-label-secondary, #656d76)" } }, "仓库地址"),
+                    h("a", { href: "https://github.com/ItQianChen/dsh-github-flow", target: "_blank", rel: "noopener noreferrer", style: { color: "var(--dsw-alias-link, #0969da)" } }, "github.com/ItQianChen/dsh-github-flow")
+                  ),
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "8px", fontSize: "12px" } },
+                    h("span", { style: { minWidth: "64px", color: "var(--dsw-alias-label-secondary, #656d76)" } }, "npm 包"),
+                    h("a", { href: "https://www.npmjs.com/package/dsh-github-flow", target: "_blank", rel: "noopener noreferrer", style: { color: "var(--dsw-alias-link, #0969da)" } }, "npmjs.com/package/dsh-github-flow")
+                  ),
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "8px", fontSize: "12px" } },
+                    h("span", { style: { minWidth: "64px", color: "var(--dsw-alias-label-secondary, #656d76)" } }, "开源协议"),
+                    h("a", { href: "https://github.com/ItQianChen/dsh-github-flow/blob/master/LICENSE", target: "_blank", rel: "noopener noreferrer", style: { color: "var(--dsw-alias-link, #0969da)" } }, "MIT License")
+                  )
+                ),
+                // 求 Star 卡片
+                // 主题兼容：不用内联色——暗色主题的覆盖只能作用于 class 选择器；
+                // 且此前的 canvas-subtle/border-muted 并非宿主真实令牌（全项目无他处使用），
+                // 永远回落亮色值导致暗色下一块刺眼亮底。改用 cache-info-box 同款双主题 class。
+                h("div", {
+                  className: "dsh-github-about-star-box",
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                  },
+                },
+                  h("span", { style: { fontSize: "18px" } }, "⭐"),
+                  h("div", { style: { flex: 1, fontSize: "12px", lineHeight: "1.5" } },
+                    "如果这个插件对你的日常研发有帮助，欢迎到 GitHub 仓库点个 Star 支持一下——你的 Star 是持续迭代的动力！也欢迎提交 Issue 与 PR。"
+                  ),
+                  h("a", {
+                    href: "https://github.com/ItQianChen/dsh-github-flow",
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    className: "dsh-github-btn-sm dsh-github-primary-btn",
+                  }, "🌟 去点 Star")
                 )
               ) : h("div", null,
                 // 🌐 网络代理分区：设置保存即全局生效（驾驶舱/右侧栏/Agent 工具/升级链路），
@@ -2777,7 +3002,10 @@ body[data-ds-dark-theme] .dsh-github-radio {
       var [loading, setLoading] = React.useState(!initialSnapshot);
       var [syncStatus, setSyncStatus] = React.useState(initialSnapshot ? "cached" : "loading");
       var [lastSyncedAt, setLastSyncedAt] = React.useState(initialSnapshot?.savedAt || 0);
+      // 弹窗开闭 + 初始分区分离：插件徽标点击直开「关于」分区（initialSection=about），
+      // 而齿轮按钮仍默认打开「数据同步」——同一弹窗两种入口语义。
       var [isSettingsModalOpen, setIsSettingsModalOpen] = React.useState(false);
+      var [settingsInitialSection, setSettingsInitialSection] = React.useState("sync");
       var [error, setError] = React.useState(null as string | null);
       var [updateInfo, setUpdateInfo] = React.useState(null as any);
       var [activeTab, setActiveTab] = React.useState("workspaces"); // 'workspaces' | 'repos' | 'mywork'
@@ -2817,6 +3045,29 @@ body[data-ds-dark-theme] .dsh-github-radio {
         }, 300);
         return function () { clearTimeout(timer); };
       }, []);
+
+      // 插件徽标事件：标题上的「插件」徽标点击 → 直开设置弹窗的「关于」分区。
+      // 可见性守卫：右侧栏与主页可能同挂载，只有自身容器可见的宿主响应（防双层弹窗）。
+      var panelRef = React.useRef(null as any);
+      React.useEffect(() => {
+        var onOpenAbout = () => {
+          var el = panelRef.current;
+          if (!el) return;
+          var rect = el.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            setSettingsInitialSection("about");
+            setIsSettingsModalOpen(true);
+          }
+        };
+        window.addEventListener("dsh-github-open-about", onOpenAbout);
+        return () => window.removeEventListener("dsh-github-open-about", onOpenAbout);
+      }, []);
+
+      // 齿轮按钮：默认打开「数据同步」分区（既有语义不变）
+      var openSettingsDefault = () => {
+        setSettingsInitialSection("sync");
+        setIsSettingsModalOpen(true);
+      };
 
       var loadData = React.useCallback(async (forceRefresh = false) => {
         // 如果是纯手动模式，且非显式强制刷新，且本地已有旧数据，直接跳过后台拉取
@@ -2927,6 +3178,7 @@ body[data-ds-dark-theme] .dsh-github-radio {
           { className: "dsh-github-title" },
           renderOctocatBadge(32),
           h("h2", null, "GitHub 全景驾驶舱"),
+          renderPluginBadge(h),
           h(SyncStatusBadge, { syncStatus, lastSyncedAt }),
           // 代理生效徽章：启用时可见，hover 展示代理地址，让用户随时确认「当前确实在走代理」
           proxyActive && proxyActive.enabled
@@ -2964,8 +3216,8 @@ body[data-ds-dark-theme] .dsh-github-radio {
             "button",
             {
               className: "dsh-github-btn-sm",
-              onClick: () => setIsSettingsModalOpen(true),
-              title: "配置数据同步节奏、本地缓存与网络代理",
+              onClick: openSettingsDefault,
+              title: "配置数据同步节奏、本地缓存、网络代理与插件信息",
               style: { padding: "6px 12px" },
             },
             "⚙️ 设置"
@@ -2974,7 +3226,7 @@ body[data-ds-dark-theme] .dsh-github-radio {
       );
 
       if (loading && !data) {
-        return h("div", { className: "dsh-github-panel" }, headerEl, h("div", { className: "dsh-github-empty" }, "正在加载全局 GitHub 账号与工作区数据..."));
+        return h("div", { className: "dsh-github-panel", ref: panelRef }, headerEl, h("div", { className: "dsh-github-empty" }, "正在加载全局 GitHub 账号与工作区数据..."));
       }
 
       var effectiveUpdateInfo = updateInfo || data?.updateInfo;
@@ -2984,6 +3236,7 @@ body[data-ds-dark-theme] .dsh-github-radio {
 
       var settingsModalEl = h(GlobalSyncSettingsModal, {
         isOpen: isSettingsModalOpen,
+        initialSection: settingsInitialSection,
         onClose: () => {
           setIsSettingsModalOpen(false);
           // 弹窗内可能刚保存过代理配置，关闭时同步刷新标题栏徽章
@@ -3004,7 +3257,7 @@ body[data-ds-dark-theme] .dsh-github-radio {
       if (!data && error) {
         return h(
           "div",
-          { className: "dsh-github-panel" },
+          { className: "dsh-github-panel", ref: panelRef },
           headerEl,
           upgradeBannerEl,
           h(
@@ -3279,7 +3532,7 @@ body[data-ds-dark-theme] .dsh-github-radio {
 
       return h(
         "div",
-        { className: "dsh-github-panel" },
+        { className: "dsh-github-panel", ref: panelRef },
         headerEl,
         upgradeBannerEl,
         errorEl,
@@ -3324,6 +3577,7 @@ body[data-ds-dark-theme] .dsh-github-radio {
             id: "dsh-github-flow",
             kind: "github",
             priority: "plugin",
+            // 标题保持简洁，身份由面板内徽标标注（Tab 体系不支持内嵌徽标元素）
             title: () => "GitHub 仓库",
             guide: [
               {
@@ -3331,7 +3585,7 @@ body[data-ds-dark-theme] .dsh-github-radio {
                 commandId: "workspace.github",
                 order: 40,
                 title: () => "GitHub 仓库",
-                description: () => "查看与操作当前工作区目录下的 GitHub 仓库",
+                description: () => "查看与操作当前工作区目录下的 GitHub 仓库（由 dsh-github-flow 插件提供）",
                 icon: GithubArtwork,
               },
             ],

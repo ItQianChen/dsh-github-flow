@@ -137,9 +137,10 @@ console.log('\n--- 6. update check parallelization ---');
 {
   const cs = readFileSync('src/client.ts', 'utf8');
   // 原缺陷：useEffect(..., [data]) + if (!data) return 导致 check-update 串行等待
-  // gh 概览（5~19s），且 gh 冷启动失败时 data 恒空、横幅永不出。修复后两处均应为空依赖挂载即触发。
+  // gh 概览（5~19s），且 gh 冷启动失败时 data 恒空、横幅永不出。修复后挂载/开窗即触发。
+  // 触发点三处：右侧栏 + 全景主页（并行化）+ 设置弹窗「关于」分区版本号（开窗即取，同语义）。
   const gates = cs.split('fetch("/api/github/check-update")').length - 1;
-  assert(gates === 2, `check-update 恰好两处触发点（实际: ${gates}）`);
+  assert(gates === 3, `check-update 恰好三处触发点（实际: ${gates}）`);
   const gatedPatterns = [
     /if \(!data\) return;\s*\n\s*var timer = setTimeout\(function \(\) \{\s*\n\s*fetch\("\/api\/github\/check-update"\)/,
   ];
@@ -183,6 +184,35 @@ console.log('\n--- 7. update settings section ---');
   const vt = readFileSync('src/version.ts', 'utf8');
   const m = vt.match(/CURRENT_PLUGIN_VERSION\s*=\s*'([^']+)'/);
   assert(m && m[1] === pkg.version, `version.ts(${m?.[1]}) 与 package.json(${pkg.version}) 同版`);
+
+  // 「关于」分区锚点：项目信息/仓库/协议/求 Star
+  assert(cs.includes('"ℹ️ 关于"'), '设置弹窗含「ℹ️ 关于」导航项');
+  assert(cs.includes('"github.com/ItQianChen/dsh-github-flow"'.replace(/"/g, '"')), '关于页含仓库地址');
+  assert(cs.includes('"npmjs.com/package/dsh-github-flow"'.replace(/"/g, '"')), '关于页含 npm 包地址');
+  assert(cs.includes('"MIT License"'), '关于页含 MIT 开源协议');
+  assert(cs.includes('去点 Star'), '关于页含求 Star 行动按钮');
+  assert(cs.includes('当前版本: v'), '关于页展示当前版本号');
+
+  // 插件身份标识锚点：界面用 GitHub 官方 Octocat 做功能图标，新用户易误认为
+  // 官方功能——两处面板标题（右侧栏/工作台共用渲染 + 驾驶舱）必须带「插件」徽标
+  assert(cs.includes('function renderPluginBadge('), '插件身份徽标组件存在');
+  assert((cs.match(/renderPluginBadge\(h\)/g) || []).length === 2, `两处标题渲染函数调用身份徽标（实际: ${(cs.match(/renderPluginBadge\(h\)/g) || []).length}）`);
+  assert(cs.includes('data-ds-dark-theme] .dsh-github-plugin-badge'), '徽标含暗色主题适配');
+  assert(cs.includes('dsh-github-flow 插件'), 'tab/tooltip 文案注明插件身份');
+  // 徽标交互语义：点击打开「关于」弹窗而非直接跳仓库（事件派发 + initialSection 直开 about）
+  assert(cs.includes('dsh-github-open-about'), '徽标点击派发 open-about 事件');
+  assert((cs.match(/addEventListener\("dsh-github-open-about"/g) || []).length === 2, '两个宿主面板都监听徽标事件');
+  assert(cs.includes('initialSection: "about"'), '徽标路径直开关于分区');
+  assert(!cs.includes('href: "https://github.com/ItQianChen/dsh-github-flow",\n        target: "_blank"'), '徽标不再直跳仓库');
+  // 右侧栏设置按钮：复用主页设置弹窗（onOpenSettings 回调 + 完整 save/clear 接线）
+  assert(cs.includes('onOpenSettings: (() => void) | null = null'), '渲染函数支持设置入口回调');
+  assert(cs.includes('openRightbarSettings'), '右侧栏有设置打开函数');
+  assert(cs.includes('setRightbarModalSection("sync")'), '右侧栏设置默认打开数据同步分区');
+  assert(cs.includes('setSyncSettings(newSettings)'), '右侧栏设置保存完整接线');
+  // 多宿主防叠层 + 分区同步（审核修复项）：可见性守卫防止主页与右侧栏同时弹窗；
+  // initialSection 同步 effect 防止常驻弹窗实例停留在旧分区
+  assert((cs.match(/getBoundingClientRect\(\)/g) || []).length >= 2, '两个宿主都有可见性守卫（防双层弹窗）');
+  assert(cs.includes('setActiveSection(props.initialSection)'), '弹窗打开时对齐 initialSection（实例常驻不重初始化）');
 }
 
 // ---- 8. 数据链路 fetch 超时保护锚点（防刷新永久卡死回归）----
