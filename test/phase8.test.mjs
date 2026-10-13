@@ -1,5 +1,7 @@
-// test/phase8.test.mjs - Issue 图片功能验证：URL 提取/魔数嗅探/护栏/render 块/真实下载
+// test/phase8.test.mjs - Issue/PR 图片功能验证：URL 提取/魔数嗅探/护栏/render 块/真实下载
 import { readFileSync } from 'node:fs';
+import nodeFs from 'node:fs';
+import nodePath from 'node:path';
 
 let pass = 0, total = 0;
 const fails = [];
@@ -122,18 +124,71 @@ console.log('\n--- 4. executor binary channel ---');
   assert(src.includes("options.binary === true") && src.includes("encoding: 'buffer'"), 'binary 选项显式开启 buffer 编码');
   assert(src.includes('binaryBytes'), '结果带 binaryBytes 字段');
   assert(src.includes("Buffer.isBuffer(stdout)"), 'Buffer 归一化防御');
-  // SVG 短内容边界（审核修复）：文本格式无 12 字节头，长度下限前判定
-  const svgSrc = readFileSync('src/tools/issue.ts', 'utf8');
-  assert(svgSrc.indexOf("'<svg'") < svgSrc.indexOf('if (buf.length < 12)'), 'SVG 嗅探先于长度下限（短 SVG 不误杀）');
-  // dirSize 累计（审核修复）
-  assert(svgSrc.includes('dirSize += buf.length'), '多图循环累计写入量（护栏不破）');
+  // SVG 短内容边界（审核修复）+ dirSize 累计（审核修复）：逻辑已抽至共享模块 image-utils.ts
+  const shared = readFileSync('src/tools/image-utils.ts', 'utf8');
+  assert(shared.indexOf("'<svg'") < shared.indexOf('if (buf.length < 12)'), 'SVG 嗅探先于长度下限（短 SVG 不误杀）');
+  assert(shared.includes('dirSize += buf.length'), '多图循环累计写入量（护栏不破）');
 }
 
 // ---- 5. help 条目 ----
 console.log('\n--- 5. help entry ---');
 {
   const cj = readFileSync('lib/tools/help.js', 'utf8');
-  assert(cj.includes('view_images') && cj.includes('报障截图'), '帮助条目已收录');
+  assert(cj.includes('view_images') && cj.includes('报障截图'), '帮助条目已收录（issue）');
+  assert(cj.includes('下载并查看 PR 图片'), '帮助条目已收录（PR）');
+}
+
+// ---- 6. PR view_images（正文 + 评论合并提取） ----
+console.log('\n--- 6. PR view_images ---');
+{
+  const { createPrTool } = await import('../lib/tools/pr.js');
+  // 真实 PR 正文形态（cli/cli#14648 实测样例：Markdown + HTML 双语法混排）
+  const prBody = '![Two runs](https://github.com/user-attachments/assets/74c26801-09d8-4a26-b42d-98be2c861f9c)\n<img src="https://github.com/user-attachments/assets/30a91ceb-4101-8917-21cad9968d0a" />';
+  const commentBody = '<img src="https://github.com/user-attachments/assets/fdc25ff7-63b1-455b-bb9b-d69d322046b3" />';
+
+  const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000' + '1f15c4890000000a49444154789c6300010000050001', 'hex');
+  const downloaded = [];
+  const mock = {
+    defaultListLimit: 20,
+    async run(cmd, opts) {
+      if (cmd[0] === 'pr' && cmd[1] === 'view') {
+        return { ok: true, data: { number: 14648, body: prBody, comments: [{ body: commentBody }] }, rawOutput: '' };
+      }
+      if (cmd[0] === 'api' && opts?.binary) {
+        downloaded.push(cmd[1]);
+        return { ok: true, data: png, binaryBytes: png.length };
+      }
+      return { ok: true, data: {}, rawOutput: '' };
+    },
+    async getRepoMetadata() { return { nameWithOwner: 'cli/cli' }; },
+  };
+  const tool = createPrTool(mock);
+
+  // 6.1 view 附带 images 清单（正文范围）
+  const v = await tool.execute({ action: 'view', pr_number: 14648, repo: 'cli/cli' }, {});
+  assert(Array.isArray(v.images) && v.images.length === 2, `view 附带正文图片清单（实际 ${v.images?.length}，应 2）`);
+
+  // 6.2 view_images 正文+评论合并、去重
+  const r = await tool.execute({ action: 'view_images', pr_number: 14648, repo: 'cli/cli' }, {});
+  assert(r.images && r.images.length === 3, `正文+评论合并提取 3 张（实际 ${r.images?.length}）`);
+  assert(downloaded.length === 3 && new Set(downloaded).size === 3, '3 个不同 URL 各下载一次');
+  assert(r.images.every((i) => nodeFs.existsSync(i.file)), '全部落盘');
+  assert(r.images.every((i) => i.mimeType === 'image/png'), '魔数嗅探全部通过');
+  // 清理
+  for (const i of r.images) nodeFs.rmSync(nodePath.dirname(i.file), { recursive: true, force: true });
+
+  // 6.3 render 输出 image 块（PR 工具）
+  const rendered = tool.output.render({ action: 'view_images' }, { message: 'ok', images: r.images });
+  assert(rendered.filter((b) => b.type === 'image').length === 3, 'PR render 输出 3 个 image 块');
+
+  // 6.4 无图 PR 明确提示
+  const mockNone = {
+    defaultListLimit: 20,
+    async run(cmd) { return cmd[0] === 'pr' ? { ok: true, data: { body: '纯文本', comments: [] } } : { ok: true, data: {} }; },
+    async getRepoMetadata() { return { nameWithOwner: 'cli/cli' }; },
+  };
+  const rn = await createPrTool(mockNone).execute({ action: 'view_images', pr_number: 1, repo: 'cli/cli' }, {});
+  assert(rn.message.includes('未发现图片'), '无图 PR 明确提示');
 }
 
 console.log(`\n===== Phase 8: ${pass}/${total} PASS =====`);

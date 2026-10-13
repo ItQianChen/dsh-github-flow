@@ -84,10 +84,7 @@ export declare function createPrTool(executor: GhExecutor): {
         schema: {
             type: string;
         };
-        render(args: any, value: any): {
-            type: string;
-            text: string;
-        }[];
+        render(args: any, value: any): any[];
     };
     execute(args: any, execContext: any): Promise<Record<string, any>>;
 };

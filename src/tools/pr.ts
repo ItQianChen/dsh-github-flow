@@ -1,5 +1,6 @@
 import type { GhExecutor } from '../executor.js';
 import { renderPrMarkdown } from '../renderers/markdown.js';
+import { extractImageUrls, downloadImages, buildImageBlocks } from './image-utils.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -20,8 +21,8 @@ export function createPrTool(executor: GhExecutor) {
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'create', 'diff', 'checks', 'review', 'merge', 'checkout', 'status'],
-          description: 'PR 操作类型。新增 checkout (检出 PR 到本地分支)、status (检测当前分支 PR 冲突与状态)。',
+          enum: ['list', 'view', 'create', 'diff', 'checks', 'review', 'merge', 'checkout', 'status', 'view_images'],
+          description: 'PR 操作类型。view_images 下载正文与评论中的图片（UI 变更对比图、复现截图等）到本地并以图片内容块返回，供 Agent 审查时直接查看。',
         },
         pr_number: {
           type: 'number',
@@ -96,7 +97,7 @@ export function createPrTool(executor: GhExecutor) {
     output: {
       schema: { type: 'object' },
       render(args: any, value: any) {
-        return [{ type: 'text', text: renderPrMarkdown(args, value) }];
+        return [{ type: 'text', text: renderPrMarkdown(args, value) }, ...buildImageBlocks(value)];
       },
     },
     async execute(args: any, execContext: any) {
@@ -144,7 +145,50 @@ export function createPrTool(executor: GhExecutor) {
             runOpts
           );
           if (!res.ok) throw new Error(res.error);
-          return normalizeOutput(res.data || res.rawOutput);
+          const out = normalizeOutput(res.data || res.rawOutput);
+          // 附带图片 URL 清单（与 issue.view 同语义）：Agent 先知道有哪些图，按需 view_images
+          if (typeof out.body === 'string') {
+            out.images = extractImageUrls(out.body);
+          }
+          return out;
+        }
+
+        case 'view_images': {
+          if (!args.pr_number) throw new Error('view_images 操作必须提供 pr_number');
+          // PR 与 Issue 图片机制同构；评论走同一 issues-comments API（实测 PR 评论
+          // 的 <img> 形态与 issue 完全一致），正文 + 评论合并提取一次覆盖全部
+          const detail = await executor.run(
+            ['pr', 'view', String(args.pr_number), ...repoArgs, '--json', 'body,comments'],
+            runOpts
+          );
+          if (!detail.ok) throw new Error(detail.error);
+          const d = detail.data && typeof detail.data === 'object' ? detail.data as any : {};
+          const bodies: string[] = [];
+          if (typeof d.body === 'string') bodies.push(d.body);
+          if (Array.isArray(d.comments)) {
+            for (const c of d.comments) {
+              if (c && typeof c.body === 'string') bodies.push(c.body);
+            }
+          }
+          // 多来源合并去重（Set 语义由 extractImageUrls 内部保证）
+          const urls = Array.from(new Set(bodies.flatMap((b) => extractImageUrls(b))));
+          if (urls.length === 0) {
+            return { message: `PR #${args.pr_number} 正文与评论中未发现图片附件。` };
+          }
+
+          const { images, failures } = await downloadImages(
+            urls,
+            (url) => executor.run<Buffer>(['api', url], { ...runOpts, binary: true, timeoutMs: 30_000 })
+          );
+
+          if (images.length === 0) {
+            return { message: `PR #${args.pr_number} 的图片全部下载失败：`, failures };
+          }
+          return {
+            message: `PR #${args.pr_number} 成功获取 ${images.length} 张图片（正文+评论）${failures.length ? `（${failures.length} 张失败）` : ''}：`,
+            images,
+            failures: failures.length ? failures : undefined,
+          };
         }
 
         case 'checks': {
