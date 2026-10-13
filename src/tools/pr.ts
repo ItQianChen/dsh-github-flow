@@ -1,6 +1,6 @@
 import type { GhExecutor } from '../executor.js';
 import { renderPrMarkdown } from '../renderers/markdown.js';
-import { extractImageUrls, downloadImages, buildImageBlocks } from './image-utils.js';
+import { extractImageUrls, downloadImages, buildImageBlocks, filterRequestedUrls } from './image-utils.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -91,6 +91,11 @@ export function createPrTool(executor: GhExecutor) {
           type: 'boolean',
           description: '是否只预演不真正创建（create 操作时使用，默认 false）。透传 gh --dry-run：打印将要创建的 PR 详情而不落库，用于提交前确认 head/base/title 是否正确。',
         },
+        image_urls: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'view_images 可选：仅下载指定 URL 的图片（从 view 返回的 images 清单中选取，不在清单内的会被拒绝）。留空下载全部（正文+评论）。',
+        },
       },
       required: ['action'],
     },
@@ -141,15 +146,20 @@ export function createPrTool(executor: GhExecutor) {
         case 'view': {
           const target = args.pr_number ? [String(args.pr_number)] : [];
           const res = await executor.run(
-            ['pr', 'view', ...target, ...repoArgs, '--json', 'number,title,body,state,author,labels,assignees,reviewDecision,mergeable,statusCheckRollup,url'],
+            ['pr', 'view', ...target, ...repoArgs, '--json', 'number,title,body,state,author,labels,assignees,reviewDecision,mergeable,statusCheckRollup,url,comments'],
             runOpts
           );
           if (!res.ok) throw new Error(res.error);
           const out = normalizeOutput(res.data || res.rawOutput);
-          // 附带图片 URL 清单（与 issue.view 同语义）：Agent 先知道有哪些图，按需 view_images
-          if (typeof out.body === 'string') {
-            out.images = extractImageUrls(out.body);
+          // 附带图片 URL 清单（正文+评论，与 view_images 提取范围同源）：
+          // Agent 按正文里的原始 URL 决策，需要看图时用 image_urls 精准选取
+          const bodies = [typeof out.body === 'string' ? out.body : ''];
+          if (Array.isArray(out.comments)) {
+            for (const c of out.comments) {
+              if (c && typeof c.body === 'string') bodies.push(c.body);
+            }
           }
+          out.images = Array.from(new Set(bodies.flatMap((b) => extractImageUrls(b))));
           return out;
         }
 
@@ -171,23 +181,44 @@ export function createPrTool(executor: GhExecutor) {
             }
           }
           // 多来源合并去重（Set 语义由 extractImageUrls 内部保证）
-          const urls = Array.from(new Set(bodies.flatMap((b) => extractImageUrls(b))));
-          if (urls.length === 0) {
+          const extracted = Array.from(new Set(bodies.flatMap((b) => extractImageUrls(b))));
+          if (extracted.length === 0) {
             return { message: `PR #${args.pr_number} 正文与评论中未发现图片附件。` };
           }
 
-          const { images, failures } = await downloadImages(
-            urls,
+          // 目标选择：不传 image_urls 下载全部；传入则与清单严格交集
+          //（防幻觉/诱导的任意 URL 下载），空数组视为误传明确报错
+          let targets = extracted;
+          const rejections: string[] = [];
+          if (args.image_urls !== undefined) {
+            if (!Array.isArray(args.image_urls) || args.image_urls.length === 0) {
+              throw new Error('image_urls 为空数组：如需下载全部请省略该参数，如需指定请传入 view 返回清单中的 URL。');
+            }
+            const filtered = filterRequestedUrls(args.image_urls, extracted);
+            targets = filtered.matched;
+            for (const bad of filtered.rejected) {
+              rejections.push(`${String(bad).slice(-24)}: 不在本 PR 图片清单中，已拒绝（防任意下载）`);
+            }
+          }
+
+          const { images, failures: dlFailures, remaining } = await downloadImages(
+            targets,
             (url) => executor.run<Buffer>(['api', url], { ...runOpts, binary: true, timeoutMs: 30_000 })
           );
 
-          if (images.length === 0) {
+          const failures = [...rejections, ...dlFailures];
+          if (images.length === 0 && rejections.length === 0 && !remaining) {
             return { message: `PR #${args.pr_number} 的图片全部下载失败：`, failures };
           }
+          if (images.length === 0) {
+            return { message: `PR #${args.pr_number} 未能获取任何图片（请求 ${targets.length} 张，被拒 ${rejections.length} 张）`, failures, remaining };
+          }
           return {
-            message: `PR #${args.pr_number} 成功获取 ${images.length} 张图片（正文+评论）${failures.length ? `（${failures.length} 张失败）` : ''}：`,
+            message: `PR #${args.pr_number} 成功获取 ${images.length} 张图片（正文+评论）${failures.length ? `（${failures.length} 条失败/提示）` : ''}：`,
             images,
             failures: failures.length ? failures : undefined,
+            // 续传清单：触顶时 Agent 直接 image_urls: remaining 发起下一批
+            remaining,
           };
         }
 

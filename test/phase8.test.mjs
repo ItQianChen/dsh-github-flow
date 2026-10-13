@@ -164,9 +164,9 @@ console.log('\n--- 6. PR view_images ---');
   };
   const tool = createPrTool(mock);
 
-  // 6.1 view 附带 images 清单（正文范围）
+  // 6.1 view 附带 images 清单（正文+评论，与 view_images 范围同源——新语义）
   const v = await tool.execute({ action: 'view', pr_number: 14648, repo: 'cli/cli' }, {});
-  assert(Array.isArray(v.images) && v.images.length === 2, `view 附带正文图片清单（实际 ${v.images?.length}，应 2）`);
+  assert(Array.isArray(v.images) && v.images.length === 3, `view 附带正文+评论图片清单（实际 ${v.images?.length}，应 3）`);
 
   // 6.2 view_images 正文+评论合并、去重
   const r = await tool.execute({ action: 'view_images', pr_number: 14648, repo: 'cli/cli' }, {});
@@ -189,6 +189,106 @@ console.log('\n--- 6. PR view_images ---');
   };
   const rn = await createPrTool(mockNone).execute({ action: 'view_images', pr_number: 1, repo: 'cli/cli' }, {});
   assert(rn.message.includes('未发现图片'), '无图 PR 明确提示');
+}
+
+// ---- 7. image_urls 精准提取（issue + pr 双侧对称） ----
+console.log('\n--- 7. image_urls targeting ---');
+{
+  const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000' + '1f15c4890000000a49444154789c6300010000050001', 'hex');
+  const mkBody = (n) => Array.from({ length: n }, (_, i) => `<img src="https://github.com/user-attachments/assets/img-${i}" />`).join('\n');
+
+  function makeMock(issueOrPr) {
+    return {
+      defaultListLimit: 20,
+      async run(cmd, opts) {
+        const isIssue = issueOrPr === 'issue';
+        if (cmd[(isIssue ? 0 : 1)] === (isIssue ? 'issue' : 'view') || (cmd[0] === 'pr' && cmd[1] === 'view')) {
+          return { ok: true, data: { number: 1, body: mkBody(7), comments: [] }, rawOutput: '' };
+        }
+        if (cmd[0] === 'api' && opts?.binary) return { ok: true, data: png, binaryBytes: png.length };
+        return { ok: true, data: {}, rawOutput: '' };
+      },
+      async getRepoMetadata() { return { nameWithOwner: 'o/r' }; },
+    };
+  }
+
+  const issueTool = (await import('../lib/tools/issue.js')).createIssueTool(makeMock('issue'));
+  const prTool2 = (await import('../lib/tools/pr.js')).createPrTool(makeMock('pr'));
+
+  // 7.1 全量无截断（issue）：7 张全部下载（旧 5 张截断语义已废除）
+  {
+    const r = await issueTool.execute({ action: 'view_images', issue_number: 1, repo: 'o/r' }, {});
+    assert(r.images.length === 7, `issue 全量无截断：7/7（实际 ${r.images.length}）`);
+    for (const i of r.images) nodeFs.rmSync(nodePath.dirname(i.file), { recursive: true, force: true });
+  }
+
+  // 7.2 image_urls 单张精准（pr）：只下载指定那张
+  {
+    const target = 'https://github.com/user-attachments/assets/img-3';
+    const r = await prTool2.execute({ action: 'view_images', pr_number: 1, repo: 'o/r', image_urls: [target] }, {});
+    assert(r.images.length === 1 && r.images[0].url === target, `pr 单张精准下载（实际 ${r.images.length} 张）`);
+    nodeFs.rmSync(nodePath.dirname(r.images[0].file), { recursive: true, force: true });
+  }
+
+  // 7.3 批量 + 顺序保持 + 非法拒绝（issue）：传入 [img-5, img-1, evil]
+  {
+    const r = await issueTool.execute({ action: 'view_images', issue_number: 1, repo: 'o/r', image_urls: [
+      'https://github.com/user-attachments/assets/img-5',
+      'https://github.com/user-attachments/assets/img-1',
+      'https://evil.example.com/steal.png',
+    ] }, {});
+    assert(r.images.length === 2, `交集后仅 2 张（实际 ${r.images.length}）`);
+    assert(r.images[0].url.includes('img-5') && r.images[1].url.includes('img-1'), '下载顺序保持传入顺序');
+    assert((r.failures || []).some((f) => f.includes('已拒绝')), '非法 URL 被拒并报告');
+    for (const i of r.images) nodeFs.rmSync(nodePath.dirname(i.file), { recursive: true, force: true });
+  }
+
+  // 7.4 空数组防御（双侧）
+  {
+    for (const [tool, args] of [[issueTool, { issue_number: 1 }], [prTool2, { pr_number: 1 }]]) {
+      let threw = false;
+      try { await tool.execute({ action: 'view_images', repo: 'o/r', ...args, image_urls: [] }, {}); }
+      catch (e) { threw = e.message.includes('空数组'); }
+      assert(threw, `空数组明确报错（${args.issue_number ? 'issue' : 'pr'}）`);
+    }
+  }
+
+  // 7.5 非字符串元素剔除（pr）：[42, null, 合法url]
+  {
+    const r = await prTool2.execute({ action: 'view_images', pr_number: 1, repo: 'o/r', image_urls: [42, null, 'https://github.com/user-attachments/assets/img-2'] }, {});
+    assert(r.images.length === 1 && r.images[0].url.includes('img-2'), '非字符串元素剔除、合法照常');
+    nodeFs.rmSync(nodePath.dirname(r.images[0].file), { recursive: true, force: true });
+  }
+
+  // 7.6 续传闭环：字节护栏触顶 → remaining 结构化返回 → 用 remaining 再调全部通过
+  {
+    const { downloadImages } = await import('../lib/tools/image-utils.js');
+    // 4 张 4.5MB（每张过单图 5MB 限，累计 18MB 超 15MB 目录限）→ 第 4 张触顶
+    const imgBig = Buffer.concat([png, Buffer.alloc(4.5 * 1024 * 1024)]);
+    const urls4 = ['b1', 'b2', 'b3', 'b4'].map((k) => `https://github.com/user-attachments/assets/${k}`);
+    const r = await downloadImages(urls4, async () => ({ ok: true, data: imgBig }));
+    assert(r.images.length === 3 && r.remaining && r.remaining.length === 1, `触顶：3 成功 + remaining 1（实际 ${r.images.length}+${r.remaining?.length}）`);
+    assert((r.failures || []).some((f) => f.includes('3/4')), 'failures 含 N/M 计数');
+    nodeFs.rmSync(nodePath.dirname(r.images[0].file), { recursive: true, force: true });
+    // 续传：remaining 作为下一批目标（模拟清理后的再调用，小图必过）
+    const r2 = await downloadImages(r.remaining || [], async () => ({ ok: true, data: png }));
+    assert(r2.images.length === 1 && !r2.remaining, 'remaining 续传闭环：全部通过');
+    nodeFs.rmSync(nodePath.dirname(r2.images[0].file), { recursive: true, force: true });
+  }
+
+  // 7.7 issue view 清单对齐 comments
+  {
+    const mockC = {
+      defaultListLimit: 20,
+      async run(cmd) {
+        if (cmd[0] === 'issue') return { ok: true, data: { number: 1, body: '<img src="https://github.com/user-attachments/assets/a1" />', comments: [{ body: '<img src="https://github.com/user-attachments/assets/c9" />' }] } };
+        return { ok: true, data: {} };
+      },
+      async getRepoMetadata() { return { nameWithOwner: 'o/r' }; },
+    };
+    const v = await (await import('../lib/tools/issue.js')).createIssueTool(mockC).execute({ action: 'view', issue_number: 1, repo: 'o/r' }, {});
+    assert(v.images.length === 2 && v.images.some((u) => u.includes('c9')), 'issue view 清单含评论图片');
+  }
 }
 
 console.log(`\n===== Phase 8: ${pass}/${total} PASS =====`);

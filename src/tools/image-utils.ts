@@ -51,9 +51,8 @@ export function sniffImageMime(buf: Buffer): string | null {
   return null;
 }
 
-/** 图片下载护栏：与 Token 防溢出同哲学——单图/单次数量/总量三重上限 */
+/** 图片下载护栏：按真实资源消耗计算——单图字节与目录总量，无张数截断 */
 export const IMG_MAX_BYTES = 5 * 1024 * 1024;      // 单图 5MB
-export const IMG_MAX_COUNT = 5;                     // 单次最多 5 张
 export const IMG_DIR_MAX_BYTES = 15 * 1024 * 1024;  // 图片缓存目录总量 15MB
 
 /** 图片落盘目录（按内容寻址命名，重复下载天然去重） */
@@ -82,6 +81,33 @@ export interface DownloadedImage {
 export interface ImageBatchResult {
   images: DownloadedImage[];
   failures: string[];
+  /**
+   * 因目录总量护栏触顶而未处理的 URL（结构化续传清单）。
+   * Agent 可直接 image_urls: result.remaining 发起下一批——remaining 中的
+   * URL 本就来自正文合法清单，交集校验天然通过，分批获取无需清理目录。
+   */
+  remaining?: string[];
+}
+
+/**
+ * 交集过滤：把调用方请求的 URL 硬约束在正文实际提取的合法清单内。
+ * 为什么必须交集而非直接信任传入：image_urls 来自模型生成参数，存在幻觉或
+ * 被诱导传入任意 URL 的可能——交集把下载目标限定在本条 Issue/PR 引用过的
+ * 图片范围，SSRF 防线（提取阶段的 https+域名白名单）自动覆盖全部下载目标。
+ * 返回 { matched, rejected }：matched 保持请求顺序（Agent 按自己的关注顺序拿结果）。
+ */
+export function filterRequestedUrls(requested: unknown, extracted: string[]): { matched: string[]; rejected: string[] } {
+  const matched: string[] = [];
+  const rejected: string[] = [];
+  const allow = new Set(extracted);
+  for (const u of Array.isArray(requested) ? requested : []) {
+    if (typeof u === 'string' && u && allow.has(u)) {
+      matched.push(u);
+    } else {
+      rejected.push(typeof u === 'string' && u ? u : JSON.stringify(u));
+    }
+  }
+  return { matched, rejected };
 }
 
 /**
@@ -104,8 +130,16 @@ export async function downloadImages(
   let dirSize = imageDirSize(dir);
   const images: DownloadedImage[] = [];
   const failures: string[] = [];
+  const remaining: string[] = [];
+  let budgetExhausted = false;
 
-  for (const url of urls.slice(0, IMG_MAX_COUNT)) {
+  // 无张数截断：字节护栏按真实资源消耗逐张判定。触顶后仍继续遍历——
+  // 剩余 URL 全部收进 remaining 供 Agent 分批续传，而非静默丢弃。
+  for (const url of urls) {
+    if (budgetExhausted) {
+      remaining.push(url);
+      continue;
+    }
     const res = await run(url);
     const buf = res.ok && Buffer.isBuffer(res.data) ? res.data : null;
     if (!buf) {
@@ -122,7 +156,8 @@ export async function downloadImages(
       continue;
     }
     if (dirSize + buf.length > IMG_DIR_MAX_BYTES) {
-      failures.push(`${url.slice(-24)}: 图片缓存目录超过 15MB 总量上限，请清理后重试`);
+      budgetExhausted = true;
+      remaining.push(url);
       continue;
     }
     // 内容寻址（sha256 前 16 位）+ 扩展名：重复下载同一图去重，文件名可读
@@ -133,7 +168,13 @@ export async function downloadImages(
     dirSize += buf.length;
     images.push({ file, mimeType: mime, url, bytes: buf.length });
   }
-  return { images, failures };
+
+  // 触顶反馈（用户裁定的续传闭环）：已获取 N/M + 结构化剩余清单，
+  // Agent 直接 image_urls: remaining 续传，无需从文本里解析 URL
+  if (remaining.length > 0) {
+    failures.push(`图片缓存目录达 15MB 上限：本次获取 ${images.length}/${urls.length} 张，剩余 ${remaining.length} 张未下载（可分批续传）`);
+  }
+  return { images, failures, remaining: remaining.length ? remaining : undefined };
 }
 
 /** render 的 image 内容块构造（text 块由调用方自行拼）：仅双合法字段才产出块 */

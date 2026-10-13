@@ -72,6 +72,13 @@ export declare function createIssueTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            image_urls: {
+                type: string;
+                items: {
+                    type: string;
+                };
+                description: string;
+            };
         };
         required: string[];
     };
