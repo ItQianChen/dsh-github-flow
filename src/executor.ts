@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,6 +7,86 @@ import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConf
 import type { ProxyManager } from './proxy.js';
 
 const execFileAsync = promisify(execFile);
+
+/**
+ * spawn 形态的执行通道（stdin 可选注入）。
+ *
+ * 为什么存在：execFile 的 input 选项在本机（node 22.18.0 + Windows）实测从不写入
+ * 子进程 stdin——既无数据也无 EOF，管道永久悬空（gh secret set 等需要 stdin 的
+ * 命令会一直等到超时）。最小复现：execFile+input 对 `cmd /c more` 与 node 子进程
+ * 均挂起；而 spawn + stdin.end(data) 全部正常。此函数即为后者的工程化封装，
+ * 仅在调用方显式传入 stdin 时使用，其余路径保持 execFileAsync 零改动。
+ *
+ * 为什么超时要自己管：spawn 无 timeout 选项，用 kill + SIGTERM 兜底；
+ * 输出按 maxBuffer 手工聚合（上限与 execFile 路径一致，15MB）。
+ */
+function spawnWithStdin(
+  ghPath: string,
+  args: string[],
+  opts: { cwd?: string; timeout: number; env: NodeJS.ProcessEnv; stdin: string }
+): Promise<{ stdout: string | Buffer; stderr: string | Buffer; killed: boolean }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ghPath, args, {
+      cwd: opts.cwd,
+      env: opts.env,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const outChunks: Buffer[] = [];
+    const errChunks: Buffer[] = [];
+    let totalBytes = 0;
+    let killed = false;
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      killed = true;
+      child.kill();
+    }, opts.timeout);
+
+    const settle = (err?: Error & { killed?: boolean; stderr?: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) reject(err);
+      else resolve({ stdout: Buffer.concat(outChunks), stderr: Buffer.concat(errChunks), killed });
+    };
+
+    // 聚合上限：超出即杀（与 execFile maxBuffer 语义一致；gh 正常输出远小于此）
+    const MAX_BYTES = 15 * 1024 * 1024;
+    child.stdout?.on('data', (d: Buffer) => {
+      totalBytes += d.length;
+      outChunks.push(d);
+      if (totalBytes > MAX_BYTES) { killed = true; child.kill(); }
+    });
+    child.stderr?.on('data', (d: Buffer) => { errChunks.push(d); });
+    child.on('error', (err) => {
+      // spawn 失败（如 ENOENT）对齐 execFile 的错误形状：code 保留在 Error 上
+      const e = Object.assign(new Error(err.message), { code: (err as NodeJS.ErrnoException).code });
+      settle(e);
+    });
+    child.on('close', (code, signal) => {
+      if (killed) {
+        // 超时/超量被杀：对齐 execFile 的 Timeout 错误形状（err.killed + signal）
+        const e = Object.assign(new Error(`Command timed out after ${opts.timeout}ms`), { killed: true, signal: signal || 'SIGTERM' });
+        settle(e);
+        return;
+      }
+      if (code !== 0) {
+        const e = Object.assign(new Error(`Command failed with exit code ${code}`), { code, stderr: Buffer.concat(errChunks).toString('utf8').slice(0, 800) });
+        settle(e);
+        return;
+      }
+      settle();
+    });
+    // stdin 注入：end(data) 半关闭（写完即 EOF），子进程流式读取或一次性读取均可
+    child.stdin?.end(opts.stdin, (err?: Error | null) => {
+      if (err && !settled) {
+        const e = Object.assign(new Error(`stdin write failed: ${err.message}`), { code: 'EPIPE' });
+        settle(e);
+      }
+    });
+  });
+}
 
 /** 认证状态缓存时长。用户手动 `gh auth login/logout` 后最多 30 秒内面板才会反映，属可接受代价 */
 const AUTH_CACHE_TTL_MS = 30_000;
@@ -204,11 +284,11 @@ export class GhExecutor {
     const binary = options.binary === true;
 
     try {
-      const { stdout, stderr } = await execFileAsync(this.ghPath, args, {
+      // stdin 显式传入时走 spawn 通道：execFile 的 input 选项在本机从不真正写入
+      // （详见 spawnWithStdin 注释），gh secret set 等命令会挂到超时。其余调用
+      // 保持 execFileAsync 原路径零改动。
+      const commonOpts = {
         cwd,
-        timeout,
-        maxBuffer: 15 * 1024 * 1024, // 15MB 进程缓冲
-        ...(binary ? { encoding: 'buffer' } : {}),
         env: {
           ...process.env,
           GH_NO_UPDATE_NOTIFIER: '1', // 禁用 CLI 版本更新检查，避免污染 stdout
@@ -218,11 +298,23 @@ export class GhExecutor {
           ...(this.proxyManager?.getEnv('gh') || {}),
           ...options.env,
         },
-        // 仅在显式传入 stdin 时附加 input 键：promisified execFile 会把 input
-        // 写入子进程 stdin 后立即结束流。不传则保持既有行为（继承/null 句柄），
-        // 确保对全部既有调用方零破坏。
-        ...(options.stdin !== undefined ? { input: options.stdin } : {}),
-      });
+      };
+      let stdout: string | Buffer;
+      let stderr: string | Buffer;
+      if (options.stdin !== undefined) {
+        const r = await spawnWithStdin(this.ghPath, args, { ...commonOpts, timeout, stdin: options.stdin });
+        stdout = r.stdout;
+        stderr = r.stderr;
+      } else {
+        const r = await execFileAsync(this.ghPath, args, {
+          ...commonOpts,
+          timeout,
+          maxBuffer: 15 * 1024 * 1024, // 15MB 进程缓冲
+          ...(binary ? { encoding: 'buffer' } : {}),
+        });
+        stdout = r.stdout;
+        stderr = r.stderr;
+      }
 
       // 二进制通道：Buffer 原样返回（调用方自行写文件/校验魔数），stderr 仅作
       // 错误线索不做输出回退——把错误提示字节当图片保存毫无意义。

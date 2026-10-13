@@ -93,13 +93,19 @@ console.log('\n--- 4. route e2e (mock) ---');
     assert(status === 500 && json.ok === false && /不支持唤起/.test(json.error || json.message || ''), '非白名单命令被拒绝');
   }
 
-  // 4.2 合法命令（Windows 本机真实唤起会弹窗——用沙箱判定跳过真实 spawn，验证返回结构）
+  // 4.2 合法命令（Windows 本机真实唤起会弹窗——stdio ignore 后 cmd start 亚秒返回，
+  //     close 事件异步到达，需轮询等待响应而非同步断言）
   {
     let status = 0, body = '';
     const res = { setHeader() {}, end(d) { body = d; }, get statusCode() { return status; }, set statusCode(v) { status = v; } };
     const payload = JSON.stringify({ action: 'open_terminal', command: 'gh auth login' });
     const req2 = { method: 'POST', on(ev, cb) { if (ev === 'data') cb(payload); if (ev === 'end') cb(); } };
     await handler(req2, res);
+    // 响应经 spawn close 异步到达：最多等 12s（后端兜底 10s + 余量）
+    for (let i = 0; i < 120 && !body; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert(body, 'open_terminal 响应最终到达（不悬挂）');
     const json = JSON.parse(body);
     // 真实环境：ok:true（终端已弹出）或 ok:false+原因（如沙箱 EPERM）——两者都是「如实」，不能是恒真
     if (json.ok === true) {
@@ -171,6 +177,24 @@ console.log('\n--- 7. update settings section ---');
   const vt = readFileSync('src/version.ts', 'utf8');
   const m = vt.match(/CURRENT_PLUGIN_VERSION\s*=\s*'([^']+)'/);
   assert(m && m[1] === pkg.version, `version.ts(${m?.[1]}) 与 package.json(${pkg.version}) 同版`);
+}
+
+// ---- 8. 数据链路 fetch 超时保护锚点（防刷新永久卡死回归）----
+console.log('\n--- 8. fetch timeout guards ---');
+{
+  const cs = readFileSync('src/client.ts', 'utf8');
+  // 8.1 refresh 预置请求必须绑定 signal（原缺陷：挂起时 loading 永不清除）
+  const refreshCalls = (cs.match(/fetch\("\/api\/github\/refresh"[^)]*\)/g) || []).length;
+  const guardedRefresh = (cs.match(/fetch\("\/api\/github\/refresh", \{ method: "POST", signal: controller\.signal \}\)/g) || []).length;
+  assert(refreshCalls === 2 && guardedRefresh === 2, `两处 refresh 预置请求均绑定 signal（实际: ${guardedRefresh}/${refreshCalls}）`);
+  // 8.2 右侧栏 loadData 必须有 AbortController + 45s（原先完全没有）
+  assert(cs.includes('var res = await fetch(url, { signal: controller.signal });'), '右侧栏 overview fetch 绑定 signal');
+  assert((cs.match(/\}, 45000\);/g) || []).length === 2, `两处 loadData 均有 45 秒超时定时器（实际: ${(cs.match(/\}, 45000\);/g) || []).length}）`);
+  // 8.3 引导卡刷新按钮 10s 超时
+  assert(cs.includes('probeController.abort(); }, 10000);'), 'AuthGuideCard 探测按钮 10s 超时');
+  // 8.4 超时文案与实际一致（45 秒），不再有 30 秒的旧文案
+  assert(cs.includes('获取超时（45 秒）'), '超时文案为 45 秒');
+  assert(!cs.includes('获取超时（30 秒）'), '旧 30 秒文案已清除');
 }
 
 console.log(`\n===== Phase 7: ${pass}/${total} PASS =====`);

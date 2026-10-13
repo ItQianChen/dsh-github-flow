@@ -141,8 +141,11 @@ async function runTests() {
     }
 
     // 未配置代理时子进程不注入（保持系统环境）
-    const pmNone = new ProxyManager();
+    // 顺序关键：必须先删 proxy.json 再构造 ProxyManager——构造函数即从文件加载。
+    // 原实现先构造后删文件，pmNone 内存里带着上一组用例写入的 exec-proxy:7890，
+    // 「未配置」前提不成立（此前被沙箱 EPERM 跳过断言掩盖，解除沙箱后暴露）。
     trySilentRemove();
+    const pmNone = new ProxyManager();
     const fakeExec2 = new GhExecutor({ ghPath: 'node' });
     fakeExec2.attachProxyManager(pmNone);
     try {

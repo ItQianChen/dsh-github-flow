@@ -2,7 +2,7 @@
  * 动作类路由：缓存强制刷新 + 右侧栏快捷操作（create_pr/create_issue/open_browser/open_terminal）。
  * 共同特征：POST 触发、读少写多、无缓存语义，与概览类路由的演进方向不同。
  */
-import { execFile } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import type { GhExecutor } from '../executor.js';
 import { TtlCache } from '../cache.js';
 import type { GitHubOverviewData, GlobalOverviewData } from '../types.js';
@@ -99,12 +99,32 @@ function launchTerminalAndWait(command: string): Promise<{ ok: boolean; error?: 
       resolve({ ok: false, error: '未找到可用的系统终端（Linux 下请先安装 gnome-terminal / konsole 等任一终端模拟器）' });
       return;
     }
-    execFile(built.bin, built.args, { timeout: 10_000 }, (err, _stdout, stderr) => {
-      if (err) {
-        const detail = [err.message, stderr ? String(stderr).slice(0, 200) : ''].filter(Boolean).join(' | ');
-        resolve({ ok: false, error: detail });
-      } else {
+    // stdio 必须忽略：start 唤起的交互式窗口会继承 execFile 的 stdout/stderr 管道句柄，
+    // -NoExit 窗口存活期间管道永不关闭——回调要等满 10s 超时甚至不触发（实测复现：
+    // 唤起成功的窗口让 HTTP 响应挂起 10s+）。交互终端本就不该捕获输出；stdio ignore
+    // 后等待语义回归 cmd.exe 自身退出（start 创建窗口后立即返回，亚秒级）。
+    // 改用原生 spawn：execFile 的类型与实现都强制 stdout 管道捕获，而交互终端唤起
+    // 场景需要的恰恰是「不捕获」——spawn 的 stdio:'ignore' 是官方支持的干净形态。
+    const child = spawn(built.bin, built.args, {
+      stdio: 'ignore',
+      detached: false,
+    });
+    // 10s 兜底超时：正常路径 cmd.exe start 毫秒级返回；超时视为唤起故障并如实回传
+    let timedOut = false;
+    const killTimer = setTimeout(() => { timedOut = true; child.kill(); }, 10_000);
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      clearTimeout(killTimer);
+      resolve({ ok: false, error: err.message });
+    });
+    child.on('close', (code: number | null) => {
+      clearTimeout(killTimer);
+      if (code === 0) {
         resolve({ ok: true });
+      } else if (timedOut) {
+        // kill 触发的 close 是 code=null——如实归因为超时而非"退出码 null"
+        resolve({ ok: false, error: '终端启动命令 10 秒未返回（可能被安全软件拦截）' });
+      } else {
+        resolve({ ok: false, error: `终端启动命令退出码 ${code}` });
       }
     });
   });
