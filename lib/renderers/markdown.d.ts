@@ -11,7 +11,12 @@
 export declare function sanitizeCell(text: any, maxLen?: number): string;
 /** 格式化 PR / Issue 状态药丸徽章 */
 export declare function formatStateBadge(state?: string, isDraft?: boolean): string;
-/** 格式化 CI 工作流状态徽章 */
+/**
+ * 格式化 CI 工作流状态徽章。
+ * 第二参数按调用域语义不同：run 域传 conclusion（success/failure/cancelled/skipped），
+ * pr checks 域传 bucket（pass/fail/pending/skipping/cancel）——取值族不同但映射到
+ * 同一组徽章；state 参数兜底（in_progress/queued 等进行中态）。
+ */
 export declare function formatCiBadge(status?: string, conclusion?: string): string;
 /** 格式化合并冲突状态 */
 export declare function formatConflictBadge(status?: string): string;

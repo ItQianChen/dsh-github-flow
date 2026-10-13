@@ -101,6 +101,20 @@ async function runTests() {
   await prTool.execute({ action: 'status' });
   assert(recorded[0].join(' ').includes('pr status -R owner/test-repo -c'), 'pr status inspects conflict status');
 
+  // Issue #3 回归锁：pr checks 字段集必须 ⊆ gh 合法九字段（bucket,completedAt,
+  // description,event,link,name,startedAt,state,workflow）——mock 层测试拦不住
+  // 字段集非法（gh 才是唯一裁判），这里以断言基准清单方式锁死。
+  recorded.length = 0;
+  await prTool.execute({ action: 'checks', pr_number: 101 });
+  const checksJsonIdx = recorded[0].indexOf('--json');
+  const checksFields = checksJsonIdx > -1 ? recorded[0][checksJsonIdx + 1].split(',') : [];
+  const LEGAL_PR_CHECKS_FIELDS = ['bucket', 'completedAt', 'description', 'event', 'link', 'name', 'startedAt', 'state', 'workflow'];
+  assert(checksFields.length > 0, 'pr checks 携带 --json 字段集');
+  for (const f of checksFields) {
+    assert(LEGAL_PR_CHECKS_FIELDS.includes(f), `pr checks 字段 "${f}" 在 gh 合法九字段内`);
+  }
+  assert(!checksFields.includes('conclusion') && !checksFields.includes('detailsUrl'), '不再使用 gh 从未支持的 conclusion/detailsUrl');
+
   recorded.length = 0;
   await prTool.execute({ action: 'diff', pr_number: 101, stat_only: true });
   assert(recorded[0].join(' ').includes('pr diff 101 -R owner/test-repo --stat'), 'pr diff adds --stat for stat_only');

@@ -32,14 +32,20 @@ export function formatStateBadge(state?: string, isDraft?: boolean): string {
   return s;
 }
 
-/** 格式化 CI 工作流状态徽章 */
+/**
+ * 格式化 CI 工作流状态徽章。
+ * 第二参数按调用域语义不同：run 域传 conclusion（success/failure/cancelled/skipped），
+ * pr checks 域传 bucket（pass/fail/pending/skipping/cancel）——取值族不同但映射到
+ * 同一组徽章；state 参数兜底（in_progress/queued 等进行中态）。
+ */
 export function formatCiBadge(status?: string, conclusion?: string): string {
   const conc = (conclusion || '').toLowerCase();
   const st = (status || '').toLowerCase();
-  if (conc === 'success') return '✅ success';
-  if (conc === 'failure') return '❌ failure';
-  if (conc === 'cancelled') return '🚫 cancelled';
-  if (conc === 'skipped') return '⏭️ skipped';
+  if (conc === 'success' || conc === 'pass') return '✅ ' + conc;
+  if (conc === 'failure' || conc === 'fail') return '❌ ' + conc;
+  if (conc === 'cancelled' || conc === 'cancel') return '🚫 ' + conc;
+  if (conc === 'skipped' || conc === 'skipping') return '⏭️ ' + conc;
+  if (conc === 'pending') return '⏳ pending';
   if (st === 'in_progress') return '⏳ running';
   if (st === 'queued') return '⏱️ queued';
   return conc || st || '-';
@@ -99,14 +105,18 @@ export function renderPrMarkdown(args: any, value: any): string {
     if (list.length === 0) return '当前 PR 暂无 CI Checks 运行记录。';
     const rows = list.map((c: any) => {
       const name = sanitizeCell(c.name, 40);
-      const badge = formatCiBadge(c.state, c.conclusion);
-      const url = c.detailsUrl ? `[查看详情](${c.detailsUrl})` : '-';
-      return `| ${name} | ${badge} | ${url} |`;
+      // bucket 是 gh pr checks 的分类字段（pass/fail/pending/skipping/cancel），
+      // 优先于 state 呈现；state（SUCCESS/FAILURE/...）作为兜底——渲染器同步
+      // Issue #3 修复：旧 conclusion/detailsUrl 字段在 gh 中不存在。
+      const badge = formatCiBadge(c.state, c.bucket);
+      const url = c.link ? `[查看详情](${c.link})` : '-';
+      const wf = c.workflow ? sanitizeCell(c.workflow, 24) : '-';
+      return `| ${name} | ${badge} | ${wf} | ${url} |`;
     });
     return [
       `**CI 检查结果 (${list.length} 项):**\n`,
-      '| 检查项名称 | 结论 / 状态 | 详情链接 |',
-      '| :--- | :--- | :--- |',
+      '| 检查项名称 | 结论 / 状态 | 工作流 | 详情链接 |',
+      '| :--- | :--- | :--- | :--- |',
       ...rows,
     ].join('\n');
   }

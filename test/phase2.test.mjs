@@ -80,13 +80,18 @@ async function runTests() {
 
   assert(parseFloat(reduction) >= 60.0, `Token/文本压缩率达到显著降本标准 (实际: ${reduction}% >= 60%)`);
 
-  // Checks 测试
+  // Checks 测试（字段集与 gh pr checks 合法九字段对齐——Issue #3 修复：
+  // 旧 conclusion/detailsUrl 是 REST API 字段名，pr checks 从未支持过）
   const sampleChecks = [
-    { name: 'PR check / lint', state: 'COMPLETED', conclusion: 'success', detailsUrl: 'https://actions/run/1' },
-    { name: 'Submission gate', state: 'COMPLETED', conclusion: 'failure', detailsUrl: 'https://actions/run/2' },
+    { name: 'PR check / lint', state: 'SUCCESS', bucket: 'pass', link: 'https://actions/run/1', workflow: 'Lint' },
+    { name: 'Submission gate', state: 'FAILURE', bucket: 'fail', link: 'https://actions/run/2', workflow: 'Gate' },
+    { name: 'Slow e2e', state: 'SKIPPED', bucket: 'skipping', link: 'https://actions/run/3', workflow: 'E2E' },
   ];
   const checksMd = renderPrMarkdown({ action: 'checks' }, { items: sampleChecks });
-  assert(checksMd.includes('✅ success') && checksMd.includes('❌ failure') && checksMd.includes('[查看详情]'), 'renderPrMarkdown formats checks table');
+  assert(checksMd.includes('✅') && checksMd.includes('❌') && checksMd.includes('⏭️'), 'bucket 值族映射徽章 (pass/fail/skipping)');
+  assert(checksMd.includes('[查看详情]') && checksMd.includes('https://actions/run/1'), 'link 字段渲染详情链接');
+  assert(checksMd.includes('Lint') && checksMd.includes('Gate'), 'workflow 字段渲染工作流列');
+  assert(!checksMd.includes('conclusion') && !checksMd.includes('detailsUrl'), '不再消费不存在的 gh 字段');
 
   // Status 测试
   const statusMd = renderPrMarkdown({ action: 'status' }, {
