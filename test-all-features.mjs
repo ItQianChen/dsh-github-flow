@@ -94,9 +94,10 @@ async function runComprehensiveAudit() {
   console.log('  ✓ probeAuth 登录探测算法在 Unicode、多语言及未安装异常下 100% 稳健');
 
   // --------------------------------------------------------------------------
-  // [3] WebServer 全部 8 个 API 端点完整性与路由注册核查
+  // [3] WebServer 全部 API 端点完整性与路由注册核查
+  //     （路由数随功能演进增长：proxy 2 条 + update-settings 1 条，此处只验不漏不重）
   // --------------------------------------------------------------------------
-  console.log('\n▶ [3/6] 审查 WebServer 全部 8 个 API 路由与通信契约...');
+  console.log('\n▶ [3/6] 审查 WebServer 全部 API 路由与通信契约...');
   const routes = [];
   const mockWebServer = {
     exact: new Map(),
@@ -119,14 +120,17 @@ async function runComprehensiveAudit() {
     '/api/github/upgrade',
     '/api/github/upgrade-status',
     '/api/github/auth',
+    '/api/github/proxy',
+    '/api/github/proxy/probe',
+    '/api/github/update-settings',
   ];
 
   for (const path of expectedPaths) {
     const hit = routes.find((r) => r.path === path);
     assert.ok(hit, `必须成功挂载路由: ${path}`);
   }
-  assert.equal(routes.length, 8, '必须严格注册 8 个 API 路由，不得遗漏');
-  console.log('  ✓ WebServer 8 大核心端点全量注册通过');
+  assert.equal(routes.length, expectedPaths.length, `必须恰好注册 ${expectedPaths.length} 个 API 路由（不重不漏）`);
+  console.log(`  ✓ WebServer ${expectedPaths.length} 个核心端点全量注册通过`);
 
   // 测试快速认证探针 /api/github/auth
   const authRoute = routes.find((r) => r.path === '/api/github/auth');
@@ -152,9 +156,10 @@ async function runComprehensiveAudit() {
   console.log('  ✓ /api/github/refresh 缓存清空端点通信正常');
 
   // --------------------------------------------------------------------------
-  // [4] Agent 5 大领域核心工具与人类 Slash 命令核查
+  // [4] Agent 领域核心工具与人类 Slash 命令核查
+  //     （工具数随功能演进增长：release/secret/skill/help，此处只验不漏不重）
   // --------------------------------------------------------------------------
-  console.log('\n▶ [4/6] 审查 5 大 Agent 原生工具与人类 Slash 指令...');
+  console.log('\n▶ [4/6] 审查 Agent 原生工具与人类 Slash 指令...');
   const tools = [];
   const dummyCtx = {
     tools: { register: (t) => tools.push(t) },
@@ -162,13 +167,12 @@ async function runComprehensiveAudit() {
   };
   apply(dummyCtx);
 
-  assert.equal(tools.length, 5, '必须注册 5 大核心工具');
+  const expectedTools = ['github_pr', 'github_issue', 'github_run', 'github_repo', 'github_api', 'github_release', 'github_secret', 'github_skill', 'github_help'];
+  assert.equal(tools.length, expectedTools.length, `必须注册 ${expectedTools.length} 个核心工具（不重不漏）`);
   const toolNames = tools.map((t) => t.name);
-  assert.ok(toolNames.includes('github_pr'), '必须包含 github_pr');
-  assert.ok(toolNames.includes('github_issue'), '必须包含 github_issue');
-  assert.ok(toolNames.includes('github_run'), '必须包含 github_run');
-  assert.ok(toolNames.includes('github_repo'), '必须包含 github_repo');
-  assert.ok(toolNames.includes('github_api'), '必须包含 github_api');
+  for (const name of expectedTools) {
+    assert.ok(toolNames.includes(name), `必须包含 ${name}`);
+  }
 
   // 验证工具描述与网关格式
   for (const t of tools) {
@@ -205,10 +209,10 @@ async function runComprehensiveAudit() {
   assert.ok(envInfo.platform, '环境信息必须包含当前 platform');
   console.log(`  ✓ 宿主环境识别成功 (Platform: ${envInfo.platform}, Desktop: ${envInfo.isDesktop}, Profile: ${envInfo.profile})`);
 
-  // 验证跨平台环境变量注入
+  // 验证跨平台环境变量注入（默认 registry 为官方源；镜像随用户「更新设置」注入）
   const crossEnv = buildCrossPlatformEnv();
   assert.ok(crossEnv.PATH && crossEnv.PATH.length > 0, '自愈补全的 PATH 不能为空');
-  assert.equal(crossEnv.NPM_CONFIG_REGISTRY, 'https://registry.npmmirror.com', '必须默认注入国内加速镜像');
+  assert.equal(crossEnv.NPM_CONFIG_REGISTRY, 'https://registry.npmjs.org', '默认 registry 为 npm 官方源');
   console.log('  ✓ 跨平台环境变量自愈引擎测试通过');
 
   // 验证本地源码软链接模式防破坏保护

@@ -14,6 +14,7 @@ import { UpdateChecker } from './updater.js';
 import { UpgradeManager } from './upgrade-manager.js';
 import { ProxyManager } from './proxy.js';
 import { NPM_PACKAGE_URL } from './version.js';
+import { loadUpdateSettings } from './update-settings.js';
 // 引用即生效：加载本模块以挂上 declare module '@deepseek-ai/cordis' 的 ctx.github 类型声明，
 // 并随下面 `export * from './github-service.js'` 一起传给消费方。
 import './github-service.js';
@@ -69,10 +70,18 @@ export function apply(ctx: any, config: PluginConfig = {}) {
   const updateChecker = new UpdateChecker({
     intervalMs: config.updateCheckIntervalMs,
     customRegistry: config.registryUrl,
+    // checkUpdate: false 熔断全部探测入口（路由/命令/启动横幅共用此实例）
+    enabled: config.checkUpdate !== false,
   });
+  // 更新源设置（UI 持久化 store 优先于 Cordis 静态配置）：
+  // 启动时读取并应用到 checker；UI 保存时经路由直接调 applySettings 热切换。
+  const updateMode = loadUpdateSettings();
+  updateChecker.applySettings(updateMode);
   updateChecker.applyProxy(proxyManager);
   const upgradeManager = new UpgradeManager();
   upgradeManager.attachProxyManager(proxyManager);
+  // 注入查询函数而非静态值：用户切源后，下一次一键升级的 registry 实时跟随
+  upgradeManager.attachUpdateModeQuery(() => updateChecker.getSourceMode());
 
   // 1. 兑现生态服务契约：将 GitHub 执行引擎作为服务暴露给其他 DSH 插件 (ctx.github)
   if (ctx.provide && typeof ctx.provide === 'function') {

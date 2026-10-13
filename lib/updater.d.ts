@@ -1,4 +1,5 @@
 import type { UpdateInfo } from './types.js';
+import type { UpdateSourceMode } from './update-settings.js';
 /**
  * 检测当前 DSH 运行 profile 名（升级命令的 --profile 必填项，官方 CLI 语义：
  * `dsh plugin --profile <name> add <pkg>` 在 profile 目录内转发给 pnpm）。
@@ -32,9 +33,17 @@ export declare class UpdateChecker {
     private inFlightPromise;
     private readonly intervalMs;
     private readonly customRegistry?;
+    /** 配置总开关（checkUpdate: false 时的自动探测熔断），见 check() 内注释 */
+    private readonly enabled;
+    /**
+     * 当前更新源模式。null = 未初始化（走 legacy 双源竞速，兼容 store 不存在
+     * 且无 Cordis registryUrl 的老安装）；一旦 UI 保存过任何 mode 即为权威。
+     */
+    private sourceMode;
     constructor(options?: {
         intervalMs?: number;
         customRegistry?: string;
+        enabled?: boolean;
     });
     /**
      * 应用代理到 npm 探测的 fetch 链路。
@@ -44,6 +53,16 @@ export declare class UpdateChecker {
     applyProxy(manager: {
         applyFetchDispatcher(): boolean;
     } | null): void;
+    /**
+     * 运行时切换更新源（UI 保存即调用，无需插件 reload）。
+     * 为什么必须失效缓存：24h 缓存里存的是旧源的结果，用户切源后若不清缓存，
+     * 首次 check() 仍返回旧源的 latestVersion——用户感知「切换无效」。
+     * 'off' 与 enabled 熔断独立并存：enabled 来自 Cordis 静态配置（缺省 true），
+     * off 来自 UI 持久化设置；任一为「关」都熔断自动探测。
+     */
+    applySettings(mode: UpdateSourceMode): void;
+    /** 当前生效的更新源模式（供命令行/升级链路展示与对齐） */
+    getSourceMode(): UpdateSourceMode | null;
     /**
      * 同步获取当前已知的版本状态（0ms 纯内存读取，绝不发外网请求）。
      * 兜底命令同样按当前 profile 生成：网络探测失败时复制命令也必须开箱可用。

@@ -2129,9 +2129,10 @@ body[data-ds-dark-theme] .dsh-github-radio {
         };
       }, []);
 
-      // gh 数据拉取完毕后，闲时 1.5 秒异步检测升级，绝对不抢占主业务首屏资源
+      // 检查更新与 gh 环境链路（安装/登录/业务数据）零依赖，挂载即并行发起：
+      // 原先门控在 [data] 之后会串行等 5~19 秒，且 gh 冷启动失败时 data 恒空导致横幅永不出。
+      // 仅 300ms 微延迟避让首屏渲染；并发由服务端 inFlightPromise + 24h 缓存合流去重。
       React.useEffect(() => {
-        if (!data) return;
         var timer = setTimeout(function () {
           fetch("/api/github/check-update")
             .then(function (res) { return res.json(); })
@@ -2141,9 +2142,9 @@ body[data-ds-dark-theme] .dsh-github-radio {
               }
             })
             .catch(function () {});
-        }, 1500);
+        }, 300);
         return function () { clearTimeout(timer); };
-      }, [data]);
+      }, []);
 
       // 遵循全局规则的数据拉取核心函数 (仅依赖标量 cwd 与 sessionId，坚决去除 props 引用依赖，彻底终结死循环)
       var loadData = React.useCallback(async (forceRefresh = false) => {
@@ -2297,11 +2298,30 @@ body[data-ds-dark-theme] .dsh-github-radio {
     }) {
       if (!props.isOpen) return null;
 
-      // ---- 当前激活分区：sync（数据同步）/ proxy（网络代理）----
+      // ---- 当前激活分区：sync（数据同步）/ proxy（网络代理）/ update（更新设置）----
       var [activeSection, setActiveSection] = React.useState("sync");
       var [strategy, setStrategy] = React.useState(props.currentSettings.strategy || "swr");
       var [cacheMeta, setCacheMeta] = React.useState(getCacheStorageMeta());
       var [clearTip, setClearTip] = React.useState("");
+
+      // ---- 更新设置分区状态 ----
+      // 打开弹窗时从后端拉取真实模式（权威源是 update-settings.json 而非 localStorage），
+      // 与代理分区同范式：避免多窗口/外部手改文件导致 UI 与实际生效配置漂移。
+      var [updateMode, setUpdateMode] = React.useState("official");
+      var [updateBusy, setUpdateBusy] = React.useState(false);
+      var [updateMsg, setUpdateMsg] = React.useState(null as { kind: "ok" | "err" | "info"; text: string } | null);
+
+      React.useEffect(function () {
+        if (!props.isOpen) return;
+        fetch("/api/github/update-settings")
+          .then(function (r: any) { return r.json(); })
+          .then(function (j: any) {
+            if (j && j.ok && j.data && j.data.mode) {
+              setUpdateMode(j.data.mode);
+            }
+          })
+          .catch(function () { /* 后端不可达时保持默认 official，保存时会得到明确报错 */ });
+      }, [props.isOpen]);
 
       // ---- 网络代理分区状态 ----
       // 打开弹窗时从后端拉取真实代理状态（权威源是 proxy.json 而非 localStorage），
@@ -2340,6 +2360,45 @@ body[data-ds-dark-theme] .dsh-github-radio {
         window.addEventListener("keydown", onKeyDown);
         return function () { window.removeEventListener("keydown", onKeyDown); };
       }, [props.onClose]);
+
+      // 更新源保存：POST 后端（写盘 + 热切换 checker + 立即用新源真探）。
+      // 返回的 probe 结果如实展示：探测失败提示网络问题而非假报「已生效无异常」。
+      var handleUpdateSave = function () {
+        setUpdateBusy(true);
+        setUpdateMsg(null);
+        fetch("/api/github/update-settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: updateMode }),
+        })
+          .then(function (r: any) { return r.json(); })
+          .then(function (j: any) {
+            setUpdateBusy(false);
+            if (j && j.ok && j.data) {
+              var d = j.data;
+              var text = "";
+              if (d.mode === "off") {
+                text = "✅ 已关闭自动检查更新（/gh upgrade 与一键升级仍可用），无需重启";
+              } else if (d.probe && d.probe.latestVersion) {
+                text = "✅ 已切换至" + d.description + "，当前最新版本 v" + d.probe.latestVersion
+                  + (d.probe.hasUpdate ? "（有可用更新）" : "（已是最新）") + "，无需重启";
+              } else {
+                // 探测失败如实告知：设置已生效但新源暂不可达（可能是网络或源同步问题）
+                text = "✅ 已切换至" + d.description + "，但新源暂时不可达（版本探测失败，稍后会自动重试）；设置已生效，无需重启";
+              }
+              if (d.persisted === false) {
+                text += "；⚠️ 设置写盘失败，重启后需重新选择";
+              }
+              setUpdateMsg({ kind: "ok", text: text });
+            } else {
+              setUpdateMsg({ kind: "err", text: (j && j.message) || "保存失败" });
+            }
+          })
+          .catch(function (e: any) {
+            setUpdateBusy(false);
+            setUpdateMsg({ kind: "err", text: "网络请求失败: " + (e && e.message ? e.message : e) });
+          });
+      };
 
       var h = React.createElement;
 
@@ -2445,7 +2504,11 @@ body[data-ds-dark-theme] .dsh-github-radio {
               h("button", {
                 className: "dsh-github-settings-nav-item" + (activeSection === "proxy" ? " active" : ""),
                 onClick: function () { setActiveSection("proxy"); },
-              }, "🌐 网络代理")
+              }, "🌐 网络代理"),
+              h("button", {
+                className: "dsh-github-settings-nav-item" + (activeSection === "update" ? " active" : ""),
+                onClick: function () { setActiveSection("update"); },
+              }, "⬆️ 更新设置")
             ),
             h("div", { className: "dsh-github-settings-content" },
               activeSection === "sync" ? h("div", null,
@@ -2500,6 +2563,81 @@ body[data-ds-dark-theme] .dsh-github-radio {
                     }, "🗑️ 清空缓存") : null
                   ),
                   clearTip ? h("div", { style: { color: "var(--dsw-alias-state-success, #2ea043)", marginTop: "4px", fontWeight: 500 } }, clearTip) : null
+                )
+              ) : activeSection === "update" ? h("div", null,
+                // ⬆️ 更新设置分区：选择版本检测的 npm 源（或关闭自动检查）。
+                // 检测与升级流量均遵循「🌐 网络代理」分区设置——代理是全局的。
+                h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.5" } },
+                  "选择插件新版本检测所用的 npm 源。检测与升级流量均遵循「🌐 网络代理」分区设置：启用 http/https 代理时自动经代理访问；socks5 代理下 npm 检测为直连（gh 与升级子进程链路仍走代理）。无论选择哪个源，安装与升级流程本身不受影响。"
+                ),
+                h("div", { style: { marginBottom: "16px" } },
+                  h("div", { style: { fontSize: "13px", fontWeight: 600, marginBottom: "8px" } }, "更新源"),
+                  // 源 A: npm 官方（默认）
+                  h("div", {
+                    className: "dsh-github-radio-card" + (updateMode === "official" ? " active" : ""),
+                    onClick: function () { setUpdateMode("official"); },
+                  },
+                    h("input", { type: "radio", className: "dsh-github-radio", checked: updateMode === "official", readOnly: true }),
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "🌍 npm 官方源 (推荐)"),
+                      h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
+                        "版本全球首发最及时，刚发布的新版立即可见；国内直连可能较慢。"
+                      )
+                    )
+                  ),
+                  // 源 B: 国内镜像
+                  h("div", {
+                    className: "dsh-github-radio-card" + (updateMode === "mirror" ? " active" : ""),
+                    onClick: function () { setUpdateMode("mirror"); },
+                  },
+                    h("input", { type: "radio", className: "dsh-github-radio", checked: updateMode === "mirror", readOnly: true }),
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "🇨🇳 国内镜像 (npmmirror)"),
+                      h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
+                        "阿里云镜像，国内访问快；同步存在分钟级延迟，刚发布的新版可能暂时查不到。"
+                      )
+                    )
+                  ),
+                  // 源 C: 不检查更新
+                  h("div", {
+                    className: "dsh-github-radio-card" + (updateMode === "off" ? " active" : ""),
+                    onClick: function () { setUpdateMode("off"); },
+                  },
+                    h("input", { type: "radio", className: "dsh-github-radio", checked: updateMode === "off", readOnly: true }),
+                    h("div", null,
+                      h("div", { style: { fontWeight: 600, fontSize: "13px" } }, "⛔ 不检查更新"),
+                      h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
+                        "关闭自动检查与新版提示横幅；/gh upgrade 命令与一键升级仍然可用。"
+                      )
+                    )
+                  )
+                ),
+                // 保存按钮 + 结果反馈
+                h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+                  h("button", {
+                    className: "dsh-github-btn-sm",
+                    style: {
+                      padding: "5px 14px",
+                      fontSize: "12px",
+                      background: "var(--dsw-alias-link, #0969da)",
+                      color: "#ffffff",
+                      borderColor: "var(--dsw-alias-link, #0969da)",
+                      fontWeight: 600,
+                    },
+                    disabled: updateBusy,
+                    onClick: handleUpdateSave,
+                  }, updateBusy ? "验证中..." : "💾 保存并全局应用"),
+                  updateMsg ? h("span", {
+                    style: {
+                      fontSize: "12px",
+                      lineHeight: "1.5",
+                      color: updateMsg.kind === "ok"
+                        ? "var(--dsw-alias-state-success, #2ea043)"
+                        : updateMsg.kind === "err"
+                          ? "var(--dsw-alias-state-error-primary, #cf222e)"
+                          : "var(--dsw-alias-label-secondary, #656d76)",
+                    },
+                  }, updateMsg.text) : null
                 )
               ) : h("div", null,
                 // 🌐 网络代理分区：设置保存即全局生效（驾驶舱/右侧栏/Agent 工具/升级链路），
@@ -2586,8 +2724,8 @@ body[data-ds-dark-theme] .dsh-github-radio {
               )
             )
           ),
-          // 底部操作条：sync 分区提供主保存动作；proxy 分区有自己的「保存并全局应用」，
-          // 底部统一为「完成」关闭弹窗，避免两个保存按钮的语义冲突。
+          // 底部操作条：sync 分区提供主保存动作；proxy/update 分区有自己的「保存并全局应用」，
+          // 底部统一为「完成」关闭弹窗，避免多个保存按钮的语义冲突。
           h("div", { className: "dsh-github-modal-footer" },
             activeSection === "sync" ? h("button", {
               className: "dsh-github-btn-sm",
@@ -2645,9 +2783,9 @@ body[data-ds-dark-theme] .dsh-github-radio {
 
       React.useEffect(function () { refreshProxyBadge(); }, [refreshProxyBadge]);
 
-      // gh 业务数据就绪后，闲时 1.5 秒异步静默检测升级，绝不影响首屏
+      // 检查更新与 gh 业务数据零依赖，挂载即并行发起（与右侧栏同策略）：
+      // 并发由服务端 inFlightPromise + 24h 缓存合流去重，无请求风暴风险。
       React.useEffect(() => {
-        if (!data) return;
         var timer = setTimeout(function () {
           fetch("/api/github/check-update")
             .then(function (res) { return res.json(); })
@@ -2657,9 +2795,9 @@ body[data-ds-dark-theme] .dsh-github-radio {
               }
             })
             .catch(function () {});
-        }, 1500);
+        }, 300);
         return function () { clearTimeout(timer); };
-      }, [data]);
+      }, []);
 
       var loadData = React.useCallback(async (forceRefresh = false) => {
         // 如果是纯手动模式，且非显式强制刷新，且本地已有旧数据，直接跳过后台拉取

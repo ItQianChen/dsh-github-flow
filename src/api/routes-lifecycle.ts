@@ -1,11 +1,12 @@
 /**
- * 生命周期类路由：版本检查 / 一键升级 / 升级状态轮询 / 认证轻量探针。
+ * 生命周期类路由：版本检查 / 一键升级 / 升级状态轮询 / 认证轻量探针 / 更新源设置。
  * 共同特征：服务插件自身状态而非 GitHub 业务数据，故障语义独立于概览链路。
  */
 import type { GhExecutor } from '../executor.js';
 import type { UpdateChecker } from '../updater.js';
 import type { UpgradeManager } from '../upgrade-manager.js';
-import { sendJson, type RouteDeps } from './route-helpers.js';
+import { loadUpdateSettings, saveUpdateSettings, isValidUpdateMode, describeUpdateMode } from '../update-settings.js';
+import { sendJson, readJsonBody, type RouteDeps } from './route-helpers.js';
 
 export function registerLifecycleRoutes(
   deps: RouteDeps,
@@ -45,8 +46,12 @@ export function registerLifecycleRoutes(
         return;
       }
       try {
+        // 一键升级是用户显式动作，不受 checkUpdate 配置熔断：check() 在禁用时
+        // 会返回 latestVersion 缺失的兜底态，此时回退 'latest' 让 pnpm 自行解析
+        // 最新版（与 UpgradeManager 自身的 targetVersion 可选语义一致）。
         const info = await checker.check(false);
-        const result = await upgrader.executeUpgrade(info.latestVersion);
+        const target = info.latestVersion || 'latest';
+        const result = await upgrader.executeUpgrade(target);
         sendJson(res, result.ok ? 200 : 500, result);
       } catch (err: any) {
         sendJson(res, 500, { ok: false, message: err.message || '执行自动升级异常' });
@@ -64,6 +69,52 @@ export function registerLifecycleRoutes(
         return;
       }
       sendJson(res, 200, { ok: true, data: upgrader.getStatus() });
+    },
+  });
+
+  // 5. 更新源设置：GET 读取（store 权威，缺省 official）/ POST 保存并立即用新源验证
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/update-settings',
+    handler: async (req: any, res: any) => {
+      if (req.method === 'GET') {
+        const mode = loadUpdateSettings();
+        sendJson(res, 200, { ok: true, data: { mode, description: describeUpdateMode(mode) } });
+        return;
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: '仅支持 GET / POST 请求' });
+        return;
+      }
+      try {
+        const body = await readJsonBody(req);
+        const mode = body?.mode;
+        if (!isValidUpdateMode(mode)) {
+          sendJson(res, 400, { ok: false, message: `非法更新源模式: ${String(mode)}（允许 official / mirror / off）` });
+          return;
+        }
+        // 写盘失败不阻断内存态生效（save 内部已 warn），返回携带 error 提示重启后需重设
+        const saved = saveUpdateSettings(mode);
+        checker.applySettings(mode);
+        // 非 off 模式：立即用新源真探一次，把结果带回前端展示（缓存已被 applySettings 失效）
+        let probe: { latestVersion?: string; hasUpdate?: boolean; checkedAt?: number } | null = null;
+        if (mode !== 'off') {
+          const info = await checker.check(true);
+          probe = { latestVersion: info.latestVersion, hasUpdate: info.hasUpdate, checkedAt: info.checkedAt };
+        }
+        sendJson(res, 200, {
+          ok: true,
+          data: {
+            mode,
+            description: describeUpdateMode(mode),
+            persisted: saved.ok,
+            persistError: saved.error,
+            probe,
+          },
+        });
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, message: err.message || '保存更新源设置失败' });
+      }
     },
   });
 

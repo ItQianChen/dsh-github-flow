@@ -10,7 +10,7 @@ import type { ProxyManager } from './proxy.js';
  * 3. 动态将当前 node 运行时所在目录 (path.dirname(process.execPath)) 及 Mac 常用包管理器路径注入 PATH 首端，
  *    彻底实现 macOS 与 Linux 环境下子进程对 npm / pnpm 命令的 100% 自愈发现。
  */
-export declare function buildCrossPlatformEnv(): NodeJS.ProcessEnv;
+export declare function buildCrossPlatformEnv(registryOverride?: string): NodeJS.ProcessEnv;
 /**
  * 探测 dsh CLI 是否对当前进程可达（PATH 或已知安装位置）。
  * 为什么必须预检：桌面端 GUI 启动时 dsh 常不在 PATH，旧实现用 '||' 兜底到
@@ -65,7 +65,18 @@ export declare class UpgradeManager {
     private logBuffer;
     /** 代理管理器（可选）：注入后一键升级的 npm/pnpm 子进程走用户代理 */
     private proxyManager?;
+    /** 更新源模式查询（可选）：一键升级的 NPM_CONFIG_REGISTRY 跟随用户在设置页选择的源 */
+    private getUpdateMode;
     attachProxyManager(manager: ProxyManager): void;
+    /** 注入更新源查询函数（而非静态值）：用户切换源后无需重新装配即实时生效 */
+    attachUpdateModeQuery(query: () => 'official' | 'mirror' | 'off' | null): void;
+    /**
+     * 按当前更新源推导 NPM_CONFIG_REGISTRY。
+     * 为什么跟随源而非写死：用户选官方源的理由（镜像同步滞后）对安装同样成立——
+     * 选镜像源装的可能是旧版。off 模式下一键升级仍可用（关提示不关能力），
+     * 其 registry 落官方源（能力路径取最权威的源）。
+     */
+    private resolveRegistry;
     /**
      * 探测当前插件是否是以本地 Git 源码软链接方式运行
      */

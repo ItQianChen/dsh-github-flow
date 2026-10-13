@@ -15,7 +15,11 @@ export interface PluginConfig {
   cacheTtlMs?: number;
   /** 查询列表默认限制条数，默认 20 */
   defaultListLimit?: number;
-  /** 是否开启新版本自动检查提示，默认 true */
+  /**
+   * 是否开启新版本自动检查提示，默认 true。
+   * false 时熔断全部版本探测入口（Web 横幅/启动日志/概览数据），用户显式
+   * 请求升级（如一键升级按钮）不受此限制——关闭的是「提示」，不是「能力」。
+   */
   checkUpdate?: boolean;
   /** 检查更新间隔毫秒数，默认 86,400,000 (24小时) */
   updateCheckIntervalMs?: number;

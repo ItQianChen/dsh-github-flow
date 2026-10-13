@@ -120,5 +120,58 @@ console.log('\n--- 5. frontend honest display ---');
   assert(cj.includes('"❌ " +'), '失败 toast 带 ❌ 前缀如实展示');
 }
 
+// ---- 6. 检查更新与 gh 链路并行化（不得被业务数据门控）----
+console.log('\n--- 6. update check parallelization ---');
+{
+  const cs = readFileSync('src/client.ts', 'utf8');
+  // 原缺陷：useEffect(..., [data]) + if (!data) return 导致 check-update 串行等待
+  // gh 概览（5~19s），且 gh 冷启动失败时 data 恒空、横幅永不出。修复后两处均应为空依赖挂载即触发。
+  const gates = cs.split('fetch("/api/github/check-update")').length - 1;
+  assert(gates === 2, `check-update 恰好两处触发点（实际: ${gates}）`);
+  const gatedPatterns = [
+    /if \(!data\) return;\s*\n\s*var timer = setTimeout\(function \(\) \{\s*\n\s*fetch\("\/api\/github\/check-update"\)/,
+  ];
+  for (const re of gatedPatterns) {
+    assert(!re.test(cs), `不再存在 data 门控的 check-update: ${re.source.slice(0, 50)}`);
+  }
+  // 空依赖挂载（[], 300ms 微延迟）形态应出现两次：fetch 后 ~275 字符处收尾 "}, 300);"（放宽至 350 容错）
+  const parallelCount = (cs.match(/fetch\("\/api\/github\/check-update"\)[\s\S]{0,350}?\}, 300\);/g) || []).length;
+  assert(parallelCount === 2, `两处 check-update 均为挂载即触发（实际: ${parallelCount}）`);
+  const mountDepCount = (cs.match(/\}, 300\);[\s\S]{0,80}?\}, \[\]\);/g) || []).length;
+  assert(mountDepCount === 2, `两处 effect 依赖均为空数组 []（实际: ${mountDepCount}）`);
+}
+
+// ---- 7. 更新设置分区 UI 锚点 ----
+console.log('\n--- 7. update settings section ---');
+{
+  const cs = readFileSync('src/client.ts', 'utf8');
+  // 三分区导航
+  assert(cs.includes('"⬆️ 更新设置"'), '设置弹窗含「⬆️ 更新设置」导航项');
+  // 三选项 radio
+  assert(cs.includes('"🌍 npm 官方源 (推荐)"'), '官方源选项存在');
+  assert(cs.includes('"🇨🇳 国内镜像 (npmmirror)"'), '镜像源选项存在');
+  assert(cs.includes('"⛔ 不检查更新"'), '不检查更新选项存在');
+  // 源区别提示（关键差异点：镜像同步延迟）
+  assert(cs.includes('同步存在分钟级延迟'), '镜像源提示同步延迟');
+  assert(cs.includes('刚发布的新版立即可见'), '官方源提示即时可见');
+  assert(cs.includes('国内直连可能较慢'), '官方源提示国内访问慢');
+  // off 能力保留说明
+  assert(cs.includes('/gh upgrade 命令与一键升级仍然可用'), 'off 模式能力保留说明');
+  // 代理联动提示
+  assert(cs.includes('遵循「🌐 网络代理」'), '更新设置提示遵循全局代理');
+  assert(cs.includes('socks5 代理下 npm 检测为直连'), 'socks5 边界如实提示');
+  // 保存走后端路由
+  assert(cs.includes('"/api/github/update-settings"'), '前端调用 update-settings 路由');
+  // 后端路由存在
+  const rl = readFileSync('src/api/routes-lifecycle.ts', 'utf8');
+  assert(rl.includes("path: '/api/github/update-settings'"), '后端注册 update-settings 路由');
+  assert(rl.includes('checker.applySettings(mode)'), '路由保存后热切换 checker');
+  // version.ts 与 package.json 同版（防假横幅回归——build.mjs 也拦，测试双保险）
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  const vt = readFileSync('src/version.ts', 'utf8');
+  const m = vt.match(/CURRENT_PLUGIN_VERSION\s*=\s*'([^']+)'/);
+  assert(m && m[1] === pkg.version, `version.ts(${m?.[1]}) 与 package.json(${pkg.version}) 同版`);
+}
+
 console.log(`\n===== Phase 7: ${pass}/${total} PASS =====`);
 if (fails.length) process.exit(1);

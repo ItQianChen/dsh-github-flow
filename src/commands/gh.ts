@@ -1,6 +1,7 @@
 import type { GhExecutor } from '../executor.js';
 import type { UpdateChecker } from '../updater.js';
 import { CURRENT_PLUGIN_VERSION, PLUGIN_PACKAGE_NAME, NPM_PACKAGE_URL } from '../version.js';
+import { loadUpdateSettings, describeUpdateMode, type UpdateSourceMode } from '../update-settings.js';
 
 export function registerGhCommand(commandsService: any, executor: GhExecutor, updateChecker?: UpdateChecker) {
   if (!commandsService || typeof commandsService.register !== 'function') return;
@@ -62,6 +63,12 @@ export function registerGhCommand(commandsService: any, executor: GhExecutor, up
 
         let md = `### 🚀 ${PLUGIN_PACKAGE_NAME} 插件升级指南\n\n`;
         md += `- **当前运行版本**: \`v${curVer}\`\n`;
+        // 当前更新源：排查「查不到新版」时（镜像同步滞后）用户需可见自己在用哪个源。
+        // 优先读 checker 内存态（store 写盘失败时磁盘是旧值，活实例才是事实源），
+        // 无 checker 或未初始化（sourceMode=null 的 legacy 路径）回落磁盘 store。
+        const liveMode: UpdateSourceMode | null = updateChecker?.getSourceMode?.() ?? null;
+        const effectiveMode: UpdateSourceMode = liveMode ?? loadUpdateSettings();
+        md += `- **当前更新源**: ${describeUpdateMode(effectiveMode)}\n`;
         md += `- **官方最新版本**: \`v${latestVer}\` ${hasUpdate ? '🔥 (有可用更新)' : '✅ (已是最新)'}\n`;
         md += `- **操作系统环境**: \`${platformName} (${process.platform})\`\n`;
         md += `- **npm 仓库地址**: [${NPM_PACKAGE_URL}](${NPM_PACKAGE_URL})\n\n`;

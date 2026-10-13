@@ -52,7 +52,65 @@ console.log('\n--- 2. upgradeCommand generation ---');
   }
 }
 
-// ---- 3. buildCrossPlatformEnv 的 dsh CLI PATH 自愈 ----
+// ---- 3. UpdateChecker enabled 熔断（checkUpdate: false 配置全链路生效）----
+console.log('\n--- 3. update checker enabled gate ---');
+{
+  const { UpdateChecker } = await import('../lib/updater.js');
+  const off = new UpdateChecker({ enabled: false });
+  const info = await off.check(false); // 自动探测被熔断：返回兜底态不发网络
+  assert(info.hasUpdate === false, '禁用状态下 check() 返回 hasUpdate:false');
+  assert(info.currentVersion && info.upgradeCommand.includes('--profile'), '禁用状态下兜底命令仍完整（命令文档语义保留）');
+  assert(info.checkedAt === 0, '禁用状态下不写 checkedAt 缓存（checkedAt=0）');
+  // force=true（用户显式 /gh upgrade）不熔断：会真发网络。此处仅断言它没有
+  // 走熔断早退——返回的 checkedAt>0 或 hasUpdate 为真实探测结果而非兜底 0。
+  const forced = await off.check(true).catch(() => null);
+  if (forced) {
+    assert(forced.checkedAt > 0, 'force 探测不受熔断影响（真实发起网络探测）');
+  }
+  const on = new UpdateChecker(); // 默认 enabled
+  const quick = on.getQuickStatus();
+  assert(quick.checkedAt === 0, '默认实例 quickStatus 未探测前 checkedAt=0');
+}
+
+// ---- 3b. 更新源设置：store 容灾 + applySettings 语义 + registry 跟随 ----
+console.log('\n--- 3b. update source settings ---');
+{
+  const us = await import('../lib/update-settings.js');
+  assert(us.isValidUpdateMode('official') && us.isValidUpdateMode('mirror') && us.isValidUpdateMode('off'), '三值白名单校验');
+  assert(!us.isValidUpdateMode('npm') && !us.isValidUpdateMode('') && !us.isValidUpdateMode(null), '非法值拒绝');
+  assert(us.describeUpdateMode('mirror') === '国内镜像 (npmmirror)', 'mirror 描述文案');
+  // loadUpdateSettings 容灾：坏 JSON/不存在文件回落 official（真实用户目录可能已有合法文件，
+  // 这里只断言「不抛错 + 返回合法三值」）
+  const loaded = us.loadUpdateSettings();
+  assert(us.isValidUpdateMode(loaded), `load 容灾返回合法模式（实际: ${loaded}）`);
+
+  const { UpdateChecker } = await import('../lib/updater.js');
+  // off 模式熔断（sourceMode 路径）
+  const c1 = new UpdateChecker();
+  c1.applySettings('off');
+  const r1 = await c1.check(false);
+  assert(r1.checkedAt === 0, 'off 模式自动探测熔断（不发网络）');
+  // 切源后缓存失效：mirror 探测一次后切 official，checkedAt 归零语义由 applySettings 内部保证——
+  // 通过 getSourceMode 断言模式切换生效
+  c1.applySettings('mirror');
+  assert(c1.getSourceMode() === 'mirror', 'applySettings 切换生效');
+  // 非法模式不落（TypeScript 层面防，运行时 applySettings 参数恒为三值）
+
+  // registry 跟随 mode：buildCrossPlatformEnv 注入
+  const um = await import('../lib/upgrade-manager.js');
+  const envOfficial = um.buildCrossPlatformEnv('https://registry.npmjs.org');
+  const envMirror = um.buildCrossPlatformEnv('https://registry.npmmirror.com');
+  assert(envOfficial.NPM_CONFIG_REGISTRY === 'https://registry.npmjs.org', '官方源 registry 注入');
+  assert(envMirror.NPM_CONFIG_REGISTRY === 'https://registry.npmmirror.com', '镜像源 registry 注入');
+  // resolveRegistry 默认（无 mode 注入时）走官方源
+  const um2 = new um.UpgradeManager();
+  const envDefault = um.buildCrossPlatformEnv.call(null, undefined);
+  assert(envDefault.NPM_CONFIG_REGISTRY === 'https://registry.npmjs.org', '默认 registry 为官方源');
+  assert(um2 && typeof um2.attachUpdateModeQuery === 'function', 'attachUpdateModeQuery 存在');
+  void um2;
+}
+
+// ---- 4. buildCrossPlatformEnv 的 dsh CLI PATH 自愈 ----
 console.log('\n--- 3. dsh CLI PATH self-healing ---');
 const { buildCrossPlatformEnv, probeDshCliAvailable } = await import('../lib/upgrade-manager.js');
 {
@@ -79,7 +137,7 @@ const { buildCrossPlatformEnv, probeDshCliAvailable } = await import('../lib/upg
   }
 }
 
-// ---- 4. 预检失败分支：不可达时返回带完整命令的指引 ----
+// ---- 4b. 预检失败分支：不可达时返回带完整命令的指引 ----
 console.log('\n--- 4. probe failure guidance ---');
 {
   // 坏 PATH 下探测应给出明确 hint；沙箱 EPERM 同样视为「给出了 hint」的失败路径

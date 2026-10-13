@@ -10,6 +10,7 @@ import {
   NPM_REGISTRY_OFFICIAL,
 } from './version.js';
 import type { UpdateInfo } from './types.js';
+import type { UpdateSourceMode } from './update-settings.js';
 
 /**
  * 检测当前 DSH 运行 profile 名（升级命令的 --profile 必填项，官方 CLI 语义：
@@ -102,13 +103,21 @@ export class UpdateChecker {
   private inFlightPromise: Promise<UpdateInfo> | null = null;
   private readonly intervalMs: number;
   private readonly customRegistry?: string;
+  /** 配置总开关（checkUpdate: false 时的自动探测熔断），见 check() 内注释 */
+  private readonly enabled: boolean;
+  /**
+   * 当前更新源模式。null = 未初始化（走 legacy 双源竞速，兼容 store 不存在
+   * 且无 Cordis registryUrl 的老安装）；一旦 UI 保存过任何 mode 即为权威。
+   */
+  private sourceMode: UpdateSourceMode | null = null;
 
-  constructor(options: { intervalMs?: number; customRegistry?: string } = {}) {
+  constructor(options: { intervalMs?: number; customRegistry?: string; enabled?: boolean } = {}) {
     // 默认缓存 24 小时，杜绝高频击穿 npm
     this.intervalMs = typeof options.intervalMs === 'number' && options.intervalMs > 0
       ? options.intervalMs
       : 86_400_000;
     this.customRegistry = options.customRegistry;
+    this.enabled = options.enabled !== false;
   }
 
   /**
@@ -118,6 +127,25 @@ export class UpdateChecker {
    */
   applyProxy(manager: { applyFetchDispatcher(): boolean } | null): void {
     if (manager) manager.applyFetchDispatcher();
+  }
+
+  /**
+   * 运行时切换更新源（UI 保存即调用，无需插件 reload）。
+   * 为什么必须失效缓存：24h 缓存里存的是旧源的结果，用户切源后若不清缓存，
+   * 首次 check() 仍返回旧源的 latestVersion——用户感知「切换无效」。
+   * 'off' 与 enabled 熔断独立并存：enabled 来自 Cordis 静态配置（缺省 true），
+   * off 来自 UI 持久化设置；任一为「关」都熔断自动探测。
+   */
+  applySettings(mode: UpdateSourceMode): void {
+    this.sourceMode = mode;
+    this.cachedInfo = null;
+    // 切换到 off 时，途中旧源的请求任其自然完成（结果已无人消费，无害）；
+    // 不 abort inFlightPromise：abort 会让并发等待方拿到异常，得不偿失。
+  }
+
+  /** 当前生效的更新源模式（供命令行/升级链路展示与对齐） */
+  getSourceMode(): UpdateSourceMode | null {
+    return this.sourceMode;
   }
 
   /**
@@ -151,6 +179,15 @@ export class UpdateChecker {
    * @param force 是否忽略 24h 缓存强制穿透探测
    */
   async check(force = false): Promise<UpdateInfo> {
+    // 自动探测熔断（两个独立开关，任一为「关」即熔断）：
+    // 1. enabled=false：Cordis 静态配置 checkUpdate: false；
+    // 2. sourceMode='off'：UI「更新设置」选择了不检查更新。
+    // 熔断语义统一为「关自动提示，不关能力」：force（/gh upgrade、设置页保存后的
+    // 即时验证）与一键升级路由不经过此门——用户显式动作必须真探。
+    if ((!this.enabled || this.sourceMode === 'off') && !force) {
+      return this.getQuickStatus();
+    }
+
     const now = Date.now();
 
     // 1. 命中有效缓存直接返回
@@ -176,9 +213,15 @@ export class UpdateChecker {
   private async performCheck(now: number): Promise<UpdateInfo> {
     const fallback = this.getQuickStatus();
 
-    // 双通道策略：用户自定义源 > 国内淘宝镜像 (2.5s极速) > 官方 npmjs 源 (3.5s兜底)
+    // 端点选择：UI 保存的源模式为权威（单源严格不互备——静默回落另一源等于
+    // 背叛用户选择：镜像同步滞后正是选官方的理由，反之亦然）；无 UI 设置时
+    // 走 legacy 行为（自定义源 > 镜像竞速官方兜底）保持老安装兼容。
     const endpoints: string[] = [];
-    if (this.customRegistry) {
+    if (this.sourceMode === 'official') {
+      endpoints.push(`${NPM_REGISTRY_OFFICIAL}/${PLUGIN_PACKAGE_NAME}/latest`);
+    } else if (this.sourceMode === 'mirror') {
+      endpoints.push(`${NPM_REGISTRY_MIRROR}/${PLUGIN_PACKAGE_NAME}/latest`);
+    } else if (this.customRegistry) {
       endpoints.push(`${this.customRegistry.replace(/\/$/, '')}/${PLUGIN_PACKAGE_NAME}/latest`);
     } else {
       endpoints.push(`${NPM_REGISTRY_MIRROR}/${PLUGIN_PACKAGE_NAME}/latest`);

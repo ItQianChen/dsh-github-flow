@@ -17,7 +17,7 @@ import type { ProxyManager } from './proxy.js';
  * 3. 动态将当前 node 运行时所在目录 (path.dirname(process.execPath)) 及 Mac 常用包管理器路径注入 PATH 首端，
  *    彻底实现 macOS 与 Linux 环境下子进程对 npm / pnpm 命令的 100% 自愈发现。
  */
-export function buildCrossPlatformEnv(): NodeJS.ProcessEnv {
+export function buildCrossPlatformEnv(registryOverride?: string): NodeJS.ProcessEnv {
   const currentPath = process.env.PATH || '';
   const extraPaths: string[] = [];
   const isMac = process.platform === 'darwin';
@@ -92,7 +92,7 @@ export function buildCrossPlatformEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
     PATH: uniquePaths.join(separator),
-    NPM_CONFIG_REGISTRY: 'https://registry.npmmirror.com', // 优先国内源加速
+    NPM_CONFIG_REGISTRY: registryOverride ?? 'https://registry.npmjs.org',
     LANG: 'zh_CN.UTF-8',
     LC_ALL: 'zh_CN.UTF-8',
   };
@@ -214,9 +214,28 @@ export class UpgradeManager {
   private logBuffer: string[] = [];
   /** 代理管理器（可选）：注入后一键升级的 npm/pnpm 子进程走用户代理 */
   private proxyManager?: ProxyManager;
+  /** 更新源模式查询（可选）：一键升级的 NPM_CONFIG_REGISTRY 跟随用户在设置页选择的源 */
+  private getUpdateMode: (() => 'official' | 'mirror' | 'off' | null) | null = null;
 
   attachProxyManager(manager: ProxyManager): void {
     this.proxyManager = manager;
+  }
+
+  /** 注入更新源查询函数（而非静态值）：用户切换源后无需重新装配即实时生效 */
+  attachUpdateModeQuery(query: () => 'official' | 'mirror' | 'off' | null): void {
+    this.getUpdateMode = query;
+  }
+
+  /**
+   * 按当前更新源推导 NPM_CONFIG_REGISTRY。
+   * 为什么跟随源而非写死：用户选官方源的理由（镜像同步滞后）对安装同样成立——
+   * 选镜像源装的可能是旧版。off 模式下一键升级仍可用（关提示不关能力），
+   * 其 registry 落官方源（能力路径取最权威的源）。
+   */
+  private resolveRegistry(): string {
+    const mode = this.getUpdateMode ? this.getUpdateMode() : null;
+    if (mode === 'mirror') return 'https://registry.npmmirror.com';
+    return 'https://registry.npmjs.org';
   }
 
   /**
@@ -434,7 +453,8 @@ export class UpgradeManager {
     //           自行补写 bundles，完全绕开 CLI 依赖；
     //   兜底：两者皆不可用 → 给官方「管理 dsh 命令」菜单指引（安装后重试即可）。
     // 注意：任何提前失败分支必须复位 isUpgrading（safeSettle 不经过这些路径）。
-    const probeEnv = { ...buildCrossPlatformEnv(), ...(this.proxyManager?.getEnv('package-manager') || {}) };
+    // registry 按用户「更新设置」选择的源解析（每次升级执行时实时取，切源后无需重新装配）。
+    const probeEnv = { ...buildCrossPlatformEnv(this.resolveRegistry()), ...(this.proxyManager?.getEnv('package-manager') || {}) };
     const dshProbe = await probeDshCliAvailable(probeEnv);
 
     let usePnpmFallback = false;
@@ -531,7 +551,7 @@ export class UpgradeManager {
       // 代理环境变量按 applyToPackageManager 开关合并：npm/pnpm 遵循 HTTPS_PROXY，
       // 与 gh 链路同一管理器，保证「设置代理后升级也走代理」的体验一致性。
       const childEnv = {
-        ...buildCrossPlatformEnv(),
+        ...buildCrossPlatformEnv(this.resolveRegistry()),
         ...(this.proxyManager?.getEnv('package-manager') || {}),
       };
 
