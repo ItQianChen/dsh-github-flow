@@ -10,8 +10,8 @@
 
 | # | 文件 | 位置 | 当前值 | 说明 |
 |---|---|---|---|---|
-| 1 | [package.json](../package.json) | 第 3 行 `"version": "0.2.0"` | `0.2.0` | npm 发布版本、CI 取版来源 |
-| 2 | [src/version.ts](../src/version.ts) | 第 9 行 `CURRENT_PLUGIN_VERSION = '0.2.0'` | `'0.2.0'` | 运行时版本比较基准（假横幅的教训来源） |
+| 1 | [package.json](../package.json) | 第 3 行 `"version": "0.2.1"` | `0.2.1` | npm 发布版本、CI 取版来源 |
+| 2 | [src/version.ts](../src/version.ts) | 第 9 行 `CURRENT_PLUGIN_VERSION = '0.2.1'` | `'0.2.1'` | 运行时版本比较基准（假横幅的教训来源） |
 
 **两处必须同值**。`pnpm run build` 会硬校验（[scripts/build.mjs](../scripts/build.mjs) 的
 `assertVersionConsistency`），不一致直接构建失败——但不要依赖拦截，发版前手动核对。
