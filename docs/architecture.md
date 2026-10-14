@@ -20,8 +20,10 @@
 │     │               GitHubService (ctx.github 原生服务)             │        │
 │     │   - checkAuth(cwd)      - getRepoMetadata(cwd)               │        │
 │     │   - run<T>(args, opts)  [execFile 数组隔离 + 24KB 智能截断]     │        │
-│     │                                                              │        │
-│     │   - UpdateChecker (源可选探测 + 24h 缓存 + Fail-Safe)        │        │
+│     │   - runGuarded({minVersion,fallback})  [gh 版本守卫降级链]      │        │
+│     │   - getGhVersion() [30s TTL 缓存·只存成功值]                    │        │
+│     │   - AI_AGENT=dsh 注入 [gh 官方 agent 识别·可配置开关]            │        │
+│     │   - UpdateChecker (源可选探测 + 24h 缓存 + Fail-Safe)          │        │
 │     │   - UpgradeManager (跨平台自适应 + 互斥锁 + macOS PATH 补全)   │        │
 │     │   - spawnWithStdin (密文通道: spawn+stdin.end + kill 超时)   │        │
 │     └──────┬───────────────────────┬────────────────────────┬──────┘        │
@@ -30,15 +32,22 @@
 │  ┌──────────────────┐    ┌──────────────────┐    ┌───────────────────────┐  │
 │  │  9 大 Agent 工具  │    │  人类 Slash 指令 │    │   Host HTTP WebServer │  │
 │  │  (defineTool DSL)│    │  /gh status      │    │ (Effect Disposer 清理)│  │
-│  │  - pr            │    │  /gh upgrade     │    │ - /api/github/overview│  │
-│  │  - issue         │    │  /gh help        │    │ - /api/github/action  │  │
-│  │  - run           │    └──────────────────┘    │ - /api/github/refresh │  │
-│  │  - repo          │                            │ - /check-update (并行)│  │
-│  │  - api (逃生门)  │                            │ - /upgrade (一键自动) │  │
-│  │  - release       │                            │ - /update-settings    │  │
-│  │  - secret (stdin)│                            │ - /proxy (全局代理)   │  │
-│  │  - skill         │                            │ - /auth (轻量探针)    │  │
-│  │  - help (元指南) │                            └──────────┬────────────┘  │
+│  │  - pr (+ready·   │    │  /gh upgrade     │    │ - /api/github/overview│  │
+│  │    revert·update)│    │  /gh help        │    │ - /api/github/action  │  │
+│  │  - issue (+delete│    └──────────────────┘    │ - /api/github/refresh │  │
+│  │    ·transfer·pin·│                            │ - /check-update (并行)│  │
+│  │    lock·status)  │                            │ - /upgrade (一键自动) │  │
+│  │  - run (+workflow│                            │ - /update-settings    │  │
+│  │    系列·download)│  (workflow_enable/disable │  │ - /proxy (全局代理)   │  │
+│  │  - repo (+search │   启停·list/view·download) │ - /auth (轻量探针)    │  │
+│  │    三域+read_    │                            └──────────┬────────────┘  │
+│  │    file &read_dir)│                                       │               │
+│  │  - api (逃生门)  │   (search 三域=issues/prs/commits；     │               │
+│  │  - release       │    read_file/read_dir 免clone读取)      │               │
+│  │  - secret (stdin │                                        │               │
+│  │    +variable 域) │                                        │               │
+│  │  - skill         │                                        │               │
+│  │  - help (元指南) │                                        │               │
 │  └────────┬─────────┘                                       │               │
 │           │                                                 │               │
 │           ▼                                                 │               │
@@ -86,11 +95,19 @@
 - 所有的 `gh` 查询原生采用 `--json <fields>` 结构化投影；
 - 对长文本输出（如大型 PR 的完整 `diff`、CI 失败步骤日志）设置安全截断阈值（默认 24KB），采用码点安全切割与二分查找字节截断，保留头尾关键上下文并添加显式截断标记，杜绝撑爆模型上下文；
 - 列表与详情输出经独立 Markdown 渲染引擎（`src/renderers/markdown.ts`）转化为高密度表格与卡片（带状态徽章、可点击超链接与竖线转义防护），实测 20 条 PR 列表输出压缩 70%+ Token；
-- 所有 Agent 工具的输出统一经过归一化，列表自动打包为 `{ items, count }`，标量打包为 `{ result }`，100% 严丝合缝契合 DSH 工具网关模式约束。
+- 所有 Agent 工具的输出统一经过归一化，列表自动打包为 `{ items, count }`，标量打包为 `{ result }`，100% 严丝合缝契合 DSH 工具网关模式约束；
+- **gh 版本守卫降级链（runGuarded）**：preview 命令与新特性按 `minVersion` 门槛路由——版本达标直通主命令、不足走 `fallback` 降级链路（结果携带 `degraded/degradedReason` 结构化标注，**降级不是静默的**，渲染层对 degraded 结果显式追加链路说明）、无降级时报错附平台升级指引；版本探测自身失败 fail-open 直通（守卫是路由优化不是安全边界）。版本比较采用数值分段（杜绝 `'2.96.0' > '2.100.0'` 字典序陷阱），探测结果 30s TTL 缓存且只缓存成功值；
+- **AI_AGENT 识别信号注入**：每次 gh 子进程启动注入 `AI_AGENT=dsh`（gh detect.go 最高优先级通用信号）——gh ≥2.99 自动切换 text-only spinner、≥2.100 命令误用时打印完整 help（模型可据此自我纠正）、telemetry 归因到 dsh；旧版 gh 忽略该变量零副作用。经 `agentEnvInjection` 配置开关（默认开启）可恢复 gh 原生行为。
 
 ### 2.3.1 高危操作确认与敏感值安全通道 (Safety Confirmation & Secret stdin Channel)
-- 不可逆写操作（`merge` / `close` / `release delete` / clobber 覆盖上传 / `secret delete` / `skill install`）强制要求 `confirm: true` 显式参数，未确认时仅返回影响评估卡片，不产生任何远端或本地副作用；
-- 密钥明文仅经子进程标准输入传递（`spawnWithStdin` 通道：`spawn` + `stdin.end(data)` 半关闭写入——`execFile` 的 `input` 选项在实测环境从不真正写入管道，密文通道此前从未生效过），全程不出现在命令行参数、进程列表与工具输出中；渲染层对 secret 输出采用独立实现，从结构上隔离「绝不渲染 value 字段」这条安全红线。
+- 不可逆写操作（`merge` / `close` / `issue delete`（物理删除）/ `issue transfer`（跨仓库迁移）/ `pr revert`（远端创建反向 PR）/ `release delete` / clobber 覆盖上传 / `secret delete` / `skill install`）强制要求 `confirm: true` 显式参数，未确认时仅返回影响评估卡片，不产生任何远端或本地副作用；
+- 密钥明文仅经子进程标准输入传递（`spawnWithStdin` 通道：`spawn` + `stdin.end(data)` 半关闭写入——`execFile` 的 `input` 选项在实测环境从不真正写入管道，密文通道此前从未生效过），全程不出现在命令行参数、进程列表与工具输出中；渲染层对 secret 输出采用独立实现，从结构上隔离「绝不渲染 value 字段」这条安全红线。secret 与 variable（CI 明文，get 可回显）的渲染走**两个物理独立的函数**——安全语义靠函数边界而非同一函数的分支隔离，防未来重构互相污染。
+
+### 2.3.2 产物落盘纪律 (Artifact Download Discipline)
+- **目录固定派生，永不暴露路径参数**：构建产物下载（`run download` 等）的落盘目录由插件从 `~/.dsh/data/dsh-github-flow/artifacts/<owner>/<repo>/<run_id>/` 三级固定派生，不向调用方暴露任何目录参数——这是 GHSA-39wj-f2f4-978v（gh <2.102 符号链接路径穿越）的核心防线：用户无法注入 `../` 或符号链接目标，攻击面收敛到唯一一个 `mkdirSync(recursive)` 调用点，且目录天然按仓库与 run 隔离、可整体清理；
+- **低版本安全提示而非硬拒绝**：gh <2.102 时下载仍可执行（受控仓库场景是合理需求），但返回值携带 `securityNote` 升级指引；需要自定义落盘位置的场景显式引导经 `github_api` 手动拉取；
+- **下载后零本地符号化操作**：插件对落盘产物仅做递归枚举（相对路径 + 大小清单），不执行链接、移动或执行类操作。
+未来任何新增下载类能力（如 gist 资产）必须引用本节纪律，而非各自重述。
 
 ### 2.4 原生浅色/深色主题自适应与快捷操作网格
 - 全面对齐 DSH 官方 DSW 语义设计变量，基于 `body[data-ds-dark-theme]` 驱动无闪烁双模式切换；

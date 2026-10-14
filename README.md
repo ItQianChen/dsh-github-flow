@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手和脚，为人机协作打造沉浸式 GitHub 工作台。</b><br>
-  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>9 大领域 Agent 核心工具</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
+  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>9 大领域 Agent 核心工具（76+ action，覆盖 PR/Issue/Actions 工作流治理/免 clone 读取任意文件/密钥与变量管理）</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
 </p>
 
 <p align="center">
@@ -91,6 +91,9 @@ dsh plugin --profile web add dsh-github-flow
   * `status`：🆕 查看当前分支关联 PR 的合并冲突状态（`CLEAN` / `CONFLICT`）；
   * `review`：提交代码审查意见（`APPROVE`, `REQUEST_CHANGES`, `COMMENT`）；
   * `merge`：自动执行合并（支持 `squash` / `merge` / `rebase`，可指定 `delete_branch`；需 `confirm: true` 二次确认）；
+  * `ready`：🆕 Draft ↔ Ready 切换（附 `undo: true` 可转回 Draft，完整可逆）；
+  * `revert`：🆕 创建反向提交（远端生成新 revert PR，需 `confirm: true`）；
+  * `update_branch`：🆕 将基准分支最新提交同步进 PR 分支——「分支落后需更新」CI 门禁失败的自愈动作；
   * `view_images`：🆕 下载 PR 讨论截图（正文+评论，支持 `image_urls` 精准提取与触顶续传清单）。
 
 ---
@@ -106,6 +109,10 @@ dsh plugin --profile web add dsh-github-flow
   * `list`：查看当前仓库的 Workflow 运行历史与结论（支持 `branch` / `status: failure` 快速锁定失败构建）；
   * `view`：查看指定 run_id 的详细阶段（Jobs & Steps）；
   * `trigger`：🆕 主动触发 `workflow_dispatch` 工作流（提交修复后立即验证远端 CI）；
+  * `workflow_list`：🆕 工作流清单查询（默认仅 active；`all: true` 含 disabled——排查「工作流为何不跑」时 disabled 状态本身就是答案）；
+  * `workflow_view`：🆕 工作流详情（名称/ID/文件名定位，含最近运行记录）；
+  * `workflow_enable` / `workflow_disable`：🆕 启停工作流（disable 会显式警告「下次 trigger 将静默失败」）；
+  * `download`：🆕 下载构建产物到插件管理目录（按仓库与 run 隔离，返回文件清单；低版本 gh 附安全升级提示）；
   * `rerun`：重新触发失败的 CI 运行；
   * `cancel`：取消在途的工作流。
 
@@ -126,6 +133,11 @@ dsh plugin --profile web add dsh-github-flow
   * `develop`：🆕 从 Issue 一键切出关联开发分支并本地检出，打通「读需求 → 写代码」闭环；
   * `comment`：在指定 Issue 中追加排查进展或评论；
   * `close`（需 `confirm: true`）/ `reopen`：开启或关闭 Issue；
+  * `delete`：🆕 **物理删除** Issue（需 `confirm: true`；编号永久消失、评论湮灭不可恢复——与 close 可 reopen 有本质区别，拦截级别更高）；
+  * `transfer`：🆕 跨仓库迁移 Issue（需 `confirm: true`；原 URL 301 重定向，归属不可静默撤回）；
+  * `pin` / `unpin`：🆕 置顶/取消置顶（可逆状态位）；
+  * `lock` / `unlock`：🆕 锁定/解锁对话（`lock_reason` 支持 off_topic/resolved/spam/too_heated）；
+  * `status`：🆕 账号维度的分配议题面板（Assigned / Mentioning 分段）；
   * `view_images`：🆕 下载 Issue 报障截图（正文+评论全量提取，支持 `image_urls` 按 URL 精准提取，触顶自动返回续传清单）。
 
 ---
@@ -141,7 +153,10 @@ dsh plugin --profile web add dsh-github-flow
   * `readme`：🆕 读取仓库 README 原文（支持指定分支，相对路径截图自动解析下载）；
   * `sync`：🆕 一键拉平 Fork 仓库与上游主干，解决贡献开源项目时 Fork 落后导致 CI 门禁失败；
   * `search_code`：跨仓库或当前仓库检索特定代码符号；
-  * `search_repos`：跨全站检索 GitHub 开源仓库。
+  * `search_repos`：跨全站检索 GitHub 开源仓库；
+  * `search_issues` / `search_prs` / `search_commits`：🆕 全站检索 Issue / PR / 提交记录（限定符直接写进 query，如 `repo:o/r state:open`；commits 必须含搜索文本）；
+  * `read_file`：🆕 **免 clone 读取任意路径单文件**（gh ≥2.95 直连，低版本自动降级 contents API 并显式标注降级链路；二进制文件拒绝并引导 `github_api`）；
+  * `read_dir`：🆕 免 clone 列出目录清单（dir 置顶 + 文件大小，降级链路同上）。
 
 ---
 
@@ -166,15 +181,17 @@ dsh plugin --profile web add dsh-github-flow
 
 ---
 
-### 7. `github_secret`：CI/CD 部署密钥安全管理 🆕
+### 7. `github_secret`：CI/CD 密钥与变量管理 🆕
 > **典型对话指令**：
 > - *"帮我把新的 NPM_TOKEN 更新到当前仓库的 Secrets 里"*
 > - *"看一下这个仓库配了哪些密钥"*
+> - *"把 DEPLOY_ENV 变量设为 staging，并回读确认"*
 
 * **支持操作 (`action`)**：
-  * `list`：查看密钥名称清单（仅名称与更新时间，GitHub API 设计上不允许读取密文）；
+  * `list`：查看密钥/变量名称清单（仅名称与更新时间，GitHub API 设计上不允许读取密文）；
   * `set`：设置/更新密钥值——**密文经子进程标准输入传递，绝不出现在命令行参数（防 `ps` 窃取），输出永不回显**；
   * `delete`（需 `confirm: true`）：删除密钥。
+  * 支持 `kind: 'variable'` 切换到 **Actions 明文变量**：`set` 走参数直传、`get` 可回显值（这正是变量与密钥的设计区别——secret 写入后 GitHub 侧加密，物理不可读取）；两类对象的安全语义在渲染层物理隔离。
   * 支持仓库 / 组织 (`org`) / 环境 (`env`) 三级作用域与 `actions` / `codespaces` / `dependabot` / `agents` 应用归属。
 
 ---
@@ -347,6 +364,7 @@ dsh plugin --profile web add dsh-github-flow
         defaultListLimit: 20      # 列表类查询默认返回条数（pr/issue/run/release/skill 通用）
         cacheTtlMs: 15000         # 单仓库概览缓存时长（毫秒，默认 15 秒）
         checkUpdate: true         # 是否开启新版本自动检查提示（默认开启；false 时熔断自动探测，显式升级不受限）
+        agentEnvInjection: true   # 向 gh 注入 AI_AGENT=dsh 识别信号（gh ≥2.99 自动适配 Agent 输出；false 恢复 gh 原生行为）
         updateCheckIntervalMs: 86400000 # 检查更新间隔（毫秒，默认 24 小时）
         registryUrl: ''           # 自定义私有 npm 镜像地址（留空走「更新设置」所选源，界面设置优先）
         proxyUrl: ''              # 代理地址预置默认值（如 'http://127.0.0.1:7890'；仅未在驾驶舱设置过时生效，界面设置优先）

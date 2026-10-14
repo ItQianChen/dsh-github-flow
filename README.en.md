@@ -72,7 +72,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ## 🤖 Core Agent Tools: Equipping Agents with Native GitHub Powers
 
-Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)** and **Zero-argument CWD auto-binding**.
+Consolidates scattered GitHub endpoints into **9 core domain tools (76+ actions covering PR/Issue/Actions workflow governance/clone-free file reads/secrets & variables)**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)** and **Zero-argument CWD auto-binding**.
 
 ### 1. `github_pr`: Pull Request Lifecycle & Automated Code Review
 > **Example Agent Prompts**:
@@ -91,6 +91,9 @@ Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring 
   * `status`: 🆕 Inspect merge conflict status (`CLEAN` / `CONFLICT`) for the current branch's PR;
   * `review`: Submit code reviews (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`);
   * `merge`: Merge pull requests (`squash` / `merge` / `rebase`, optional `delete_branch`; requires `confirm: true`);
+  * `ready`: 🆕 Toggle Draft ↔ Ready (`undo: true` converts back to Draft — fully reversible);
+  * `revert`: 🆕 Create a revert commit (generates a new revert PR on the remote; requires `confirm: true`);
+  * `update_branch`: 🆕 Sync the latest base-branch commits into the PR branch — the self-healing action for "branch is out-of-date" CI gate failures;
   * `view_images`: 🆕 Download PR discussion screenshots (body + comments; `image_urls` targeting with budget-overflow resume list).
 
 ---
@@ -106,6 +109,10 @@ Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring 
   * `list`: View recent workflow runs and conclusions (`branch` / `status: failure` filters to pin down broken builds);
   * `view`: Inspect jobs and steps for a specific run ID;
   * `trigger`: 🆕 Manually dispatch `workflow_dispatch` workflows to verify fixes immediately;
+  * `workflow_list`: 🆕 List workflows (active only by default; `all: true` includes disabled — when diagnosing "why didn't my workflow run", the disabled state itself is the answer);
+  * `workflow_view`: 🆕 Workflow details (locate by name/ID/filename, with recent runs);
+  * `workflow_enable` / `workflow_disable`: 🆕 Toggle workflows (disable explicitly warns "the next trigger will fail silently");
+  * `download`: 🆕 Download build artifacts to a plugin-managed directory (isolated per repo and run, returns file manifest; older gh versions get a security upgrade note);
   * `rerun`: Re-trigger failed CI runs;
   * `cancel`: Cancel in-progress workflows.
 
@@ -126,6 +133,11 @@ Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring 
   * `develop`: 🆕 Create a linked development branch from an issue and check it out locally;
   * `comment`: Append debugging updates or notes;
   * `close` (requires `confirm: true`) / `reopen`: Manage issue lifecycle states;
+  * `delete`: 🆕 **Permanently delete** an issue (requires `confirm: true`; the number is gone forever and comments are destroyed — fundamentally different from close, which can be reopened);
+  * `transfer`: 🆕 Transfer an issue to another repository (requires `confirm: true`; original URL 301-redirects, ownership cannot be silently reverted);
+  * `pin` / `unpin`: 🆕 Toggle issue pinning (reversible state flag);
+  * `lock` / `unlock`: 🆕 Lock/unlock conversation (`lock_reason` supports off_topic/resolved/spam/too_heated);
+  * `status`: 🆕 Account-level assigned-issues panel (Assigned / Mentioning sections);
   * `view_images`: 🆕 Download issue attachment screenshots (body + comments; `image_urls` targeting with resume list).
 
 ---
@@ -141,7 +153,10 @@ Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring 
   * `readme`: 🆕 Read repository README raw content (branch-selectable; relative-path screenshots auto-resolved and downloaded);
   * `sync`: 🆕 One-click fork sync with upstream to fix stale-fork CI gate failures;
   * `search_code`: Search code symbols in current or specified repositories;
-  * `search_repos`: Search open-source GitHub repositories globally.
+  * `search_repos`: Search open-source GitHub repositories globally;
+  * `search_issues` / `search_prs` / `search_commits`: 🆕 Global search over issues / PRs / commits (qualifiers go inline in the query, e.g. `repo:o/r state:open`; commits require search text);
+  * `read_file`: 🆕 **Clone-free single-file read at any path** (native on gh ≥2.95; older versions auto-degrade to the contents API with an explicit degraded-path note; binary files are rejected with `github_api` guidance);
+  * `read_dir`: 🆕 Clone-free directory listing (dirs first + file sizes, same degradation path).
 
 ---
 
@@ -166,15 +181,17 @@ Consolidates scattered GitHub endpoints into **9 core domain tools**, featuring 
 
 ---
 
-### 7. `github_secret`: CI/CD Secrets Management 🆕
+### 7. `github_secret`: CI/CD Secrets & Variables Management 🆕
 > **Example Agent Prompts**:
 > - *"Update the NPM_TOKEN secret for this repository."*
 > - *"Show which secrets are configured for this repo."*
+> - *"Set the DEPLOY_ENV variable to staging and read it back to confirm."*
 
 * **Supported Actions**:
-  * `list`: Show secret names and update times (the GitHub API never exposes secret values);
+  * `list`: Show secret/variable names and update times (the GitHub API never exposes secret values);
   * `set`: Set/update secret values — **passed via subprocess stdin, never on the command line (ps-safe), never echoed in output**;
   * `delete` (requires `confirm: true`): Remove a secret.
+  * Switch to **Actions plaintext variables** via `kind: 'variable'`: `set` passes the value directly as a flag and `get` can echo it back (that's the design difference from secrets — secrets are encrypted GitHub-side after write and physically unreadable); the two security semantics are physically isolated in the rendering layer.
   * Supports repository / organization (`org`) / environment (`env`) scopes across `actions` / `codespaces` / `dependabot` / `agents` apps.
 
 ---
@@ -348,6 +365,7 @@ Works out of the box, with optional tweaks in `cordis.patch.yml` or your profile
         defaultListLimit: 20      # Default list size for pr/issue/run/release/skill queries
         cacheTtlMs: 15000         # Repository overview cache TTL (default 15s)
         checkUpdate: true         # Enable automatic update checks (default true)
+        agentEnvInjection: true   # Inject AI_AGENT=dsh identity into gh (auto agent-friendly output on gh ≥2.99; false restores native gh behavior)
         updateCheckIntervalMs: 86400000 # Check interval in ms (default 24h)
         registryUrl: ''           # Custom private npm registry URL
         proxyUrl: ''              # Preset proxy default (e.g. 'http://127.0.0.1:7890'; only applies before the cockpit setting is saved — UI setting takes precedence)
