@@ -470,6 +470,59 @@ async function runTests() {
     assert(rec.at(-1).cmd.includes('-n') && rec.at(-1).cmd[rec.at(-1).cmd.indexOf('-n') + 1] === 'build-artifact', 'name filter passes -n');
   }
 
+  // --- 11. help 映射表防漂移（S4：mapping 主题与工具实际枚举一致性）---
+  console.log('\n--- 11. help mapping anti-drift ---');
+  {
+    const { createHelpTool } = await import('../lib/tools/help.js');
+    const mockExec = { async run(cmd) { return { ok: true, rawOutput: 'gh-help-text' }; } };
+    const helpTool = createHelpTool(mockExec);
+
+    // 11.1 topic 枚举含 mapping，且真实调用返回三段式内容
+    const topics = helpTool.parameters.properties.topic.enum;
+    assert(topics.includes('mapping'), 'topic enum includes mapping');
+    const r = await helpTool.execute({ topic: 'mapping' }, {});
+    assert(typeof r.result === 'string' && r.result.includes('已覆盖域映射') && r.result.includes('归属提示') && r.result.includes('未覆盖域引导'), 'mapping topic returns three-section structure');
+    assert(r.result.includes('github_api') && r.result.includes('repos/{o}/{r}/labels'), 'uncovered-section carries REST endpoint guidance');
+
+    // 11.2 核心防漂移：9 工具实际 action enum 逐一在 mapping 文本中有对应
+    const toolFactories = {
+      pr: (await import('../lib/tools/pr.js')).createPrTool,
+      issue: (await import('../lib/tools/issue.js')).createIssueTool,
+      run: (await import('../lib/tools/run.js')).createRunTool,
+      repo: (await import('../lib/tools/repo.js')).createRepoTool,
+      release: (await import('../lib/tools/release.js')).createReleaseTool,
+      secret: (await import('../lib/tools/secret.js')).createSecretTool,
+      skill: (await import('../lib/tools/skill.js')).createSkillTool,
+    };
+    const text = r.result;
+    let missing = [];
+    // 匹配两种合法形态：引号式（'ready'）或斜杠压缩链（list/view/create 中的 view）
+    const covered = (a) => text.includes(`'${a}'`) || new RegExp(`(^|[^a-z_])${a}(/|$|[^a-z_])`).test(text) && new RegExp(`${a}`).test(text);
+    for (const [key, factory] of Object.entries(toolFactories)) {
+      const tool = factory(mockExec);
+      const actions = tool.parameters.properties.action.enum;
+      for (const a of actions) {
+        if (!covered(a)) missing.push(`${key}:${a}`);
+      }
+    }
+    assert(missing.length === 0, `every real action appears in mapping text${missing.length ? ' — missing: ' + missing.join(', ') : ''}`);
+
+    // 11.3 五主题刷新抽查：新 action 关键词进主题
+    for (const [topic, kw] of [['pr', 'update_branch'], ['issue', 'lock_reason'], ['run', 'workflow_disable'], ['repo', 'read_file'], ['secret', "kind: 'variable'"]]) {
+      const t = await helpTool.execute({ topic }, {});
+      assert(t.result.includes(kw), `topic '${topic}' mentions ${kw} (refreshed for new actions)`);
+    }
+
+    // 11.4 overview 含 mapping 入口
+    const ov = await helpTool.execute({ topic: 'overview' }, {});
+    assert(ov.result.includes("topic: 'mapping'"), 'overview links to mapping entry');
+
+    // 11.5 静态文本健康：面向 Agent 的运行时文本不携带内部阶段术语
+    for (const [topic, content] of Object.entries({ ov: ov.result, map: text })) {
+      assert(!/(阶段[一二三S0-9]|S[1-5]\b)/.test(content), `help text '${topic}' free of internal stage jargon`);
+    }
+  }
+
   console.log('\n========================================');
   console.log(`Phase 10 Test Result: ${passed}/${total} assertions PASSED!`);
   console.log('========================================');
