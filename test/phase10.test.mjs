@@ -168,6 +168,159 @@ async function runTests() {
     }
   }
 
+  // --- 5. search 三缺口（命令构造钉死字段集——字段漂移即断言失败）---
+  console.log('\n--- 5. search actions command construction ---');
+  {
+    const recorded = [];
+    const mock = {
+      defaultListLimit: 20,
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
+      async run(cmd, opts) { recorded.push(cmd); return { ok: true, data: [], rawOutput: '[]' }; },
+      async runGuarded(cmd, opts) { return this.run(cmd, opts); },
+    };
+    const { createRepoTool } = await import('../lib/tools/repo.js');
+    const repoTool = createRepoTool(mock);
+
+    await repoTool.execute({ action: 'search_issues', query: 'is:open label:bug', repo: 'o/r' }, {});
+    assert(recorded.at(-1).join(' ').includes('search issues is:open label:bug --repo o/r --json number,title,state,author,labels,updatedAt,url -L 20'), 'search_issues pins 7-field set with query qualifiers inline');
+
+    await repoTool.execute({ action: 'search_prs', query: 'is:pr', repo: 'o/r' }, {});
+    assert(recorded.at(-1).join(' ').includes('--json number,title,state,author,labels,isDraft,updatedAt,url'), 'search_prs adds isDraft (8 fields)');
+
+    await repoTool.execute({ action: 'search_commits', query: 'fix', repo: 'o/r' }, {});
+    assert(recorded.at(-1).join(' ').includes('search commits fix --repo o/r --json sha,commit,author,repository,url'), 'search_commits pins 5-field set');
+
+    let threw = false;
+    try { await repoTool.execute({ action: 'search_issues' }, {}); } catch { threw = true; }
+    assert(threw, 'search_issues without query throws');
+
+    await repoTool.execute({ action: 'search_issues', query: 'x' }, {}); // 无 repo 参数
+    assert(!recorded.at(-1).includes('--repo'), 'search without repo flag omits --repo (global search)');
+  }
+
+  // --- 6. read_file / read_dir（守卫路由 + 降级 + TSV 解析 + 渲染标注）---
+  console.log('\n--- 6. read_file/read_dir guarded paths ---');
+  {
+    const { createRepoTool } = await import('../lib/tools/repo.js');
+    const { renderRepoMarkdown, appendDegradedNote } = await import('../lib/renderers/markdown.js');
+
+    // 6.1 主链路：runGuarded 被调且 minVersion 正确、命令数组正确
+    const guardCalls = [];
+    class GuardRecorder {
+      defaultListLimit = 20;
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
+      async run(cmd, opts) { return { ok: true, rawOutput: 'file-body' }; }
+      async runGuarded(cmd, opts) { guardCalls.push({ cmd, opts }); return { ok: true, rawOutput: 'file-body' }; }
+    }
+    const t1 = createRepoTool(new GuardRecorder());
+    const r1 = await t1.execute({ action: 'read_file', path: 'package.json' }, {});
+    assert(guardCalls.length === 1 && guardCalls[0].opts.minVersion === '2.95.0' && guardCalls[0].opts.capability === 'gh repo read-file', 'read_file routes through runGuarded with 2.95.0 gate');
+    assert(guardCalls[0].cmd.join(' ') === 'repo read-file package.json -R owner/test', 'read_file main command array exact');
+    assert(r1.content === 'file-body' && r1.size === 'file-body'.length, 'read_file returns content+size from stdout');
+
+    // 6.2 ref 透传
+    const t2 = createRepoTool(new GuardRecorder());
+    await t2.execute({ action: 'read_file', path: 'a.txt', ref: 'dev' }, {});
+    assert(guardCalls.at(-1).cmd.join(' ').endsWith('--ref dev'), 'read_file ref passes through as --ref');
+
+    // 6.3 降级链：版本不足 → fallback 被调 → degraded 标注 + 渲染可见
+    const apiCalls = [];
+    class OldGhExecutor {
+      defaultListLimit = 20;
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
+      async getGhVersion() { return '2.94.0'; }
+      async run(cmd, opts) { apiCalls.push(cmd); return { ok: true, rawOutput: 'api-body' }; }
+      async runGuarded(cmd, opts) {
+        const { minVersion, fallback, capability, ...rest } = opts;
+        // 复刻真实守卫的降级分支（真实逻辑已在组 2 钉死，这里只测工具侧 fallback 闭包）
+        return { ...(await fallback()), degraded: true, degradedReason: `当前 gh 2.94.0 低于 ${capability} 所需版本 ${minVersion}，已切换 API 降级链路` };
+      }
+    }
+    const t3 = createRepoTool(new OldGhExecutor());
+    const r3 = await t3.execute({ action: 'read_file', path: 'src/中文 名.ts' }, {});
+    assert(apiCalls.at(-1)[0] === 'api' && apiCalls.at(-1)[1] === 'repos/owner/test/contents/src/%E4%B8%AD%E6%96%87%20%E5%90%8D.ts', 'fallback encodes CJK/space path segments');
+    assert(r3.content === 'api-body' && r3.degraded === true, 'degraded result carries content + flag');
+    // ref 走 URL query 而非 -f（gh api 带 -f 会把 GET 隐式改写成 POST → contents 端点 404）
+    await t3.execute({ action: 'read_file', path: 'a.txt', ref: 'dev' }, {});
+    assert(apiCalls.at(-1)[1] === 'repos/owner/test/contents/a.txt?ref=dev' && !apiCalls.at(-1).includes('-f'), 'fallback ref goes via URL query string, never -f (GET→POST rewrite trap)');
+    const rendered3 = renderRepoMarkdown({ action: 'read_file' }, r3);
+    assert(rendered3.includes('⚠️') && rendered3.includes('降级链路'), 'degraded note visible in render (S1 contract fulfilled)');
+    assert(appendDegradedNote({ degraded: false }) === '' && appendDegradedNote(null) === '', 'appendDegradedNote silent when not degraded');
+
+    // 6.4 read_dir 主链路 TSV 解析
+    class DirExecutor {
+      defaultListLimit = 20;
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
+      async runGuarded(cmd, opts) { return { ok: true, rawOutput: 'dir\t.github\t040000\t0\nfile\tREADME.md\t100644\t25050\nfile\tLICENSE\t100644\t1072' }; }
+    }
+    const t4 = createRepoTool(new DirExecutor());
+    const r4 = await t4.execute({ action: 'read_dir' }, {});
+    assert(r4.count === 3 && r4.items[0].type === 'dir' && r4.items[0].name === '.github' && r4.items[2].size === 1072, 'read_dir parses TSV 4-col into items');
+
+    // 6.5 read_dir 降级链：contents JSON 数组归一
+    class DirApiExecutor {
+      defaultListLimit = 20;
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
+      async run(cmd) { return { ok: true, data: [{ type: 'dir', name: 'src', size: 0 }, { type: 'file', name: 'x.ts', size: 12 }] }; }
+      async runGuarded(cmd, opts) { return { ...(await opts.fallback()), degraded: true, degradedReason: 'x' }; }
+    }
+    const t5 = createRepoTool(new DirApiExecutor());
+    const r5 = await t5.execute({ action: 'read_dir', path: 'lib' }, {});
+    assert(r5.items.length === 2 && r5.items[1].name === 'x.ts' && r5.items[1].size === 12 && r5.items[0].mode === '-', 'read_dir fallback normalizes contents JSON array');
+
+    // 6.6 二进制防线：NUL 字节拒绝并引导 github_api
+    class BinExecutor {
+      defaultListLimit = 20;
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
+      async runGuarded() { return { ok: true, rawOutput: 'abc\u0000def' }; }
+    }
+    const t6 = createRepoTool(new BinExecutor());
+    let binThrew = false;
+    try { await t6.execute({ action: 'read_file', path: 'logo.png' }, {}); } catch (e) { binThrew = /二进制/.test(String(e.message)); }
+    assert(binThrew, 'read_file rejects NUL-byte content with github_api guidance');
+  }
+
+  // --- 7. workflow 查询（字段集勘误钉 + 头部抽取）---
+  console.log('\n--- 7. workflow query actions ---');
+  {
+    const recorded = [];
+    const mock = {
+      defaultListLimit: 20,
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
+      async run(cmd, opts) { recorded.push({ cmd, opts }); return { ok: true, data: [], rawOutput: '[]' }; },
+      async runGuarded(cmd, opts) { return this.run(cmd, opts); },
+    };
+    const { createRunTool } = await import('../lib/tools/run.js');
+    const runTool = createRunTool(mock);
+
+    await runTool.execute({ action: 'workflow_list', repo: 'o/r' }, {});
+    assert(recorded.at(-1).cmd.join(' ') === 'workflow list -R o/r --json id,name,path,state -L 20', 'workflow_list pins exact 4-field set (勘误 E1: no updatedAt)');
+
+    await runTool.execute({ action: 'workflow_list', repo: 'o/r', all: true }, {});
+    assert(recorded.at(-1).cmd.at(-1) === '--all', 'workflow_list all:true appends --all');
+
+    // workflow_view：rawText + 头部抽取（实测样本）
+    const sample = 'Release & Publish to npm - npm-publish.yml\nID: 374382120\n\nTotal runs 12\nRecent runs\ncompleted\tsuccess\tchore(release): v0.2.1\tRelease & Publish to npm\tv0.2.1\tpush\t31s\t38417584979';
+    const viewMock = {
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
+      async run(cmd, opts) { recorded.push({ cmd, opts }); return { ok: true, rawOutput: sample }; },
+    };
+    const t7 = createRunTool(viewMock);
+    const r7 = await t7.execute({ action: 'workflow_view', workflow: 'npm-publish.yml', repo: 'o/r' }, {});
+    assert(recorded.at(-1).opts.rawText === true, 'workflow_view uses rawText (gh has no --json, 勘误 E2)');
+    assert(r7.id === '374382120' && r7.totalRuns === '12', 'workflow_view extracts ID and totalRuns');
+    assert(r7.workflow.includes('npm-publish.yml') && r7.recentRuns.startsWith('Recent runs'), 'workflow_view keeps first line + recentRuns block');
+
+    let wfThrew = false;
+    try { await runTool.execute({ action: 'workflow_view' }, {}); } catch { wfThrew = true; }
+    assert(wfThrew, 'workflow_view without workflow throws');
+
+    // 渲染：workflow_list 空态区分 all 与否
+    const { renderRunMarkdown } = await import('../lib/renderers/markdown.js');
+    const emptyActive = renderRunMarkdown({ action: 'workflow_list' }, { items: [] });
+    assert(emptyActive.includes('all: true'), 'empty active list hints at all:true (disabled trap)');
+  }
+
   console.log('\n========================================');
   console.log(`Phase 10 Test Result: ${passed}/${total} assertions PASSED!`);
   console.log('========================================');

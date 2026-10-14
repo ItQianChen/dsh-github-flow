@@ -61,6 +61,18 @@ export function formatConflictBadge(status?: string): string {
   return s;
 }
 
+/**
+ * 降级链路可见标注（runGuarded 契约的渲染兑现）。
+ * 为什么必须可见：降级若是静默的，Agent 就无法感知能力边界（同一 action 在
+ * 不同 gh 版本上走不同链路）；一条 blockquote 注释成本一行，换链路透明。
+ */
+export function appendDegradedNote(value: any): string {
+  if (value && value.degraded === true && value.degradedReason) {
+    return `\n\n> ⚠️ ${value.degradedReason}`;
+  }
+  return '';
+}
+
 // -------------------------------------------------------------
 // 1. PR 渲染器
 // -------------------------------------------------------------
@@ -271,7 +283,35 @@ export function renderRunMarkdown(args: any, value: any): string {
     ].join('\n');
   }
 
-  // 3.2 Run View 详情
+  // 3.2 Workflow 清单（字段集为 gh 2.96 实测合法全集 4 个）
+  if (Array.isArray(value.items) && args?.action === 'workflow_list') {
+    const list = value.items.filter(Boolean);
+    if (list.length === 0) return args?.all === true ? '📭 该仓库没有任何工作流。' : '📭 暂无 active 工作流（可能全部 disabled，传 all: true 查看）。';
+    const rows = list.map((w: any) => {
+      const badge = w.state === 'active' ? '🟢 active' : (w.state === 'disabled' ? '🔴 disabled' : String(w.state || '-'));
+      return `| \`${w.id}\` | ${sanitizeCell(w.name, 40)} | ${badge} | \`${sanitizeCell(w.path, 45)}\` |`;
+    });
+    return [
+      `**工作流清单 (${list.length} 个${args?.all === true ? '，含 disabled' : ''}):**\n`,
+      '| ID | 名称 | 状态 | 文件 |',
+      '| :--- | :--- | :--- | :--- |',
+      ...rows,
+    ].join('\n');
+  }
+
+  // 3.3 Workflow 详情（gh 无 --json，头部结构化 + Recent runs 原文引用块——D4 决策）
+  if (args?.action === 'workflow_view' && value.workflow) {
+    const lines = [
+      `### 🔄 ${value.workflow}`,
+      `- **ID**: \`${value.id || '-'}\`${value.totalRuns ? ` | **累计运行**: ${value.totalRuns} 次` : ''}`,
+    ];
+    if (value.recentRuns) {
+      lines.push('', '**最近运行:**', '```', value.recentRuns, '```');
+    }
+    return lines.join('\n');
+  }
+
+  // 3.4 Run View 详情
   if (args?.action === 'view' && value.databaseId) {
     const idLink = value.url ? `[${value.databaseId}](${value.url})` : `\`${value.databaseId}\``;
     const badge = formatCiBadge(value.status, value.conclusion);
@@ -367,6 +407,76 @@ export function renderRepoMarkdown(args: any, value: any): string {
       '| :--- | :--- |',
       ...rows,
     ].join('\n');
+  }
+
+  // 4.4 Issue/PR 搜索列表（search_issues / search_prs 共用，字段同构）
+  if (Array.isArray(value.items) && (args?.action === 'search_issues' || args?.action === 'search_prs')) {
+    if (value.items.length === 0) return '未找到匹配的结果。';
+    const kind = args.action === 'search_prs' ? 'PR' : 'Issue';
+    const rows = value.items.map((it: any) => {
+      const num = it.number ?? '-';
+      const repo = it.repository?.nameWithOwner || it.repository?.fullName || '-';
+      const link = it.url ? `[#${num}](${it.url})` : `#${num}`;
+      const badge = formatStateBadge(it.state, it.isDraft);
+      const author = it.author?.login || '-';
+      const date = it.updatedAt ? String(it.updatedAt).slice(0, 10) : '-';
+      return `| ${link} | ${sanitizeCell(it.title, 45)} | ${badge} | ${repo} | ${author} | ${date} |`;
+    });
+    return [
+      `**${kind} 检索结果 (${value.items.length} 条):**\n`,
+      '| 编号 | 标题 | 状态 | 仓库 | 作者 | 更新日期 |',
+      '| :--- | :--- | :--- | :--- | :--- | :--- |',
+      ...rows,
+    ].join('\n');
+  }
+
+  // 4.5 Commit 搜索列表（嵌套 commit.commit.message 取首行）
+  if (Array.isArray(value.items) && args?.action === 'search_commits') {
+    if (value.items.length === 0) return '未找到匹配的提交。';
+    const rows = value.items.map((c: any) => {
+      const sha = `\`${String(c.sha || '').slice(0, 7)}\``;
+      const msg = sanitizeCell(String(c.commit?.message || '').split('\n')[0], 50);
+      const author = c.commit?.author?.name || c.author?.login || '-';
+      const repo = c.repository?.fullName || '-';
+      return `| ${sha} | ${msg} | ${author} | ${repo} |`;
+    });
+    return [
+      `**提交检索结果 (${value.items.length} 条):**\n`,
+      '| SHA | 提交信息 | 作者 | 仓库 |',
+      '| :--- | :--- | :--- | :--- |',
+      ...rows,
+    ].join('\n');
+  }
+
+  // 4.6 目录清单（read_dir：dir 置顶 + size 人性化；mode 八进制是 Git 内部语义不展示）
+  if (args?.action === 'read_dir' && Array.isArray(value.items)) {
+    if (value.items.length === 0) return `**${value.path || '/'}** 为空目录。` + appendDegradedNote(value);
+    const sorted = [...value.items].sort((a: any, b: any) => (a.type === b.type ? String(a.name).localeCompare(String(b.name)) : a.type === 'dir' ? -1 : 1));
+    const rows = sorted.map((e: any) => {
+      const icon = e.type === 'dir' ? '📁' : '📄';
+      const size = e.type === 'dir' ? '-' : (typeof e.size === 'number' ? (e.size > 1024 ? `${(e.size / 1024).toFixed(1)}KB` : `${e.size}B`) : '-');
+      return `| ${icon} \`${sanitizeCell(e.name, 60)}\` | ${size} |`;
+    });
+    return [
+      `**目录 ${value.path || '/'}（${value.items.length} 项）:**\n`,
+      '| 名称 | 大小 |',
+      '| :--- | :--- |',
+      ...rows,
+      appendDegradedNote(value),
+    ].filter((l) => l !== '').join('\n');
+  }
+
+  // 4.7 文件内容（read_file：代码块 + 元信息行）
+  if (args?.action === 'read_file' && typeof value.content === 'string') {
+    const ext = (value.path || '').split('.').pop() || '';
+    const size = typeof value.size === 'number' ? (value.size > 1024 ? `${(value.size / 1024).toFixed(1)}KB` : `${value.size}B`) : '-';
+    return [
+      `**📄 \`${value.path}\`** (${size}${value.ref ? ` @ ${value.ref}` : ''})\n`,
+      '```' + ext,
+      value.content,
+      '```',
+      appendDegradedNote(value),
+    ].filter((l) => l !== '').join('\n');
   }
 
   // 兜底降级

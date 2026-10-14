@@ -20,6 +20,12 @@ export declare function formatStateBadge(state?: string, isDraft?: boolean): str
 export declare function formatCiBadge(status?: string, conclusion?: string): string;
 /** 格式化合并冲突状态 */
 export declare function formatConflictBadge(status?: string): string;
+/**
+ * 降级链路可见标注（runGuarded 契约的渲染兑现）。
+ * 为什么必须可见：降级若是静默的，Agent 就无法感知能力边界（同一 action 在
+ * 不同 gh 版本上走不同链路）；一条 blockquote 注释成本一行，换链路透明。
+ */
+export declare function appendDegradedNote(value: any): string;
 export declare function renderPrMarkdown(args: any, value: any): string;
 export declare function renderIssueMarkdown(args: any, value: any): string;
 export declare function renderRunMarkdown(args: any, value: any): string;
