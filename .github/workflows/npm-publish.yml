@@ -56,6 +56,18 @@ jobs:
           test -f lib/client.js || { echo "❌ 缺少 lib/client.js"; exit 1; }
           echo "✅ 核心产物文件校验通过"
 
+      # 离线安装包：npm pack 产物与 npm 发布包内容同源（同一份 lib/ 构建产物，
+      # 按 package.json files 字段打包），供 Release 页下载后
+      # `dsh plugin add ./xxx.tgz` 免构建直接安装——
+      # 解决 pnpm≥10 Git 安装授权拦截与 npm 镜像 24h 同步滞后两类场景。
+      # dry_run 模式同样执行：顺带验证 files 字段完整性（缺文件时 pack 产物可目检）。
+      - name: 打包离线安装包 (npm pack)
+        run: |
+          pnpm pack
+          TGZ=$(ls dsh-github-flow-*.tgz)
+          sha256sum "$TGZ" > "$TGZ.sha256"
+          echo "📦 已生成: $TGZ ($(du -h "$TGZ" | cut -f1)) + 校验文件"
+
       - name: 提取版本号与 Release 标签
         id: meta
         run: |
@@ -103,6 +115,11 @@ jobs:
           name: dsh-github-flow ${{ steps.meta.outputs.tag }}
           tag_name: ${{ steps.meta.outputs.tag }}
           body_path: ${{ steps.changelog.outputs.notes_path }}
+          # 离线安装包与校验文件随 Release 发布（GitHub 自动生成的 Source code
+          # zip/tar.gz 是源码快照不可直接安装；.tgz 是编译产物包）
+          files: |
+            dsh-github-flow-*.tgz
+            dsh-github-flow-*.tgz.sha256
           draft: false
           prerelease: false
         env:

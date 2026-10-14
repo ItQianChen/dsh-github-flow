@@ -1,5 +1,7 @@
 node_modules/
 *.log
+*.tgz
+*.tgz.sha256
 .DS_Store
 Thumbs.db
 .idea/

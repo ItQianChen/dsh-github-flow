@@ -66,8 +66,19 @@ git push origin master --tags
 **推送完成后**：
 - GitHub Actions 会在 5 秒内自动感知到 `v0.1.1` 标签被创建；
 - 启动 Ubuntu runner，全自动执行：
-  `检出代码 ➔ 安装 pnpm ➔ 安装依赖 ➔ pnpm run build (编译 + 清理) ➔ 产物完整性校验 ➔ 带 Provenance 签名发布到 npm ➔ 自动创建并发布对应 GitHub Release`；
+  `检出代码 ➔ 安装 pnpm ➔ 安装依赖 ➔ pnpm run build (编译 + 清理) ➔ 产物完整性校验 ➔ pnpm pack 打离线包 ➔ 带 Provenance 签名发布到 npm ➔ 自动创建并发布对应 GitHub Release（含离线安装包资产）`；
 - 约 1 分钟后，npm 官网版本与 GitHub 仓库 Releases 页面同步更新！
+
+### Release 离线安装包资产
+
+每个 Release 会附带两个资产文件（与 npm 发布包**内容同源**：同一份 lib/ 构建产物，按 package.json `files` 字段打包）：
+
+| 资产 | 用途 |
+| :--- | :--- |
+| `dsh-github-flow-<版本>.tgz` | **离线/免构建安装包**：下载后执行 `dsh plugin --profile <名称> add ./dsh-github-flow-<版本>.tgz` 直接安装，无需网络与本地构建。适用场景：pnpm ≥ 10 从 Git 安装的构建授权拦截、npm 镜像同步滞后 24h（Q3 场景的零等待替代）、内网/离线环境分发 |
+| `dsh-github-flow-<版本>.tgz.sha256` | 下载完整性校验（`sha256sum -c` / `Get-FileHash` 比对），供应链信任基线 |
+
+> 注：Release 页 GitHub 自动生成的 `Source code (zip/tar.gz)` 是**源码快照**（TypeScript 源码，不可直接安装）；`.tgz` 资产才是**编译产物包**（lib/ 已构建），两者用途不同。
 
 ---
 
