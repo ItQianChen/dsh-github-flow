@@ -15,6 +15,92 @@ window.__ModuleLoader__.load({
 
     var React = require("react");
 
+    // ============================================================
+    // 面板公共工具函数（纯函数，可被单元测试直接覆盖）
+    // ============================================================
+
+    /**
+     * ISO 时间 → 人性化相对时间（"刚刚"/"N分钟前"/"N小时前"/"N天前"/日期回退）。
+     * 为什么需要：PR/Issue/Run 的时间字段原始 ISO 串在窄面板不可读，相对时间
+     * 一眼判断「还活跃吗」；hover 场景由调用方把绝对时间放进 title。
+     */
+    function formatRelativeTime(iso: any): string {
+      if (!iso || typeof iso !== "string") return "";
+      var t = Date.parse(iso);
+      if (isNaN(t)) return "";
+      var diff = Date.now() - t;
+      if (diff < 0) return "刚刚"; // 时钟轻微漂移容错
+      var MIN = 60 * 1000, HOUR = 60 * MIN, DAY = 24 * HOUR;
+      if (diff < MIN) return "刚刚";
+      if (diff < HOUR) return Math.floor(diff / MIN) + "分钟前";
+      if (diff < DAY) return Math.floor(diff / HOUR) + "小时前";
+      if (diff < 7 * DAY) return Math.floor(diff / DAY) + "天前";
+      var d = new Date(t);
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+
+    /**
+     * statusCheckRollup 聚合为单枚举 CI 徽章状态（"pass" | "fail" | "pending" | null）。
+     * 归约顺序刻意 fail > pending > pass：用户扫一眼要看到的是「有没有问题」，
+     * 而非「有多少通过」——一个 fail 淹没在 9 个 pass 里就是漏报。
+     */
+    function rollupCiStatus(checks: any): "pass" | "fail" | "pending" | null {
+      if (!Array.isArray(checks) || checks.length === 0) return null;
+      var hasFail = false, hasPending = false;
+      for (var i = 0; i < checks.length; i++) {
+        var c = checks[i] || {};
+        var status = String(c.status || "").toLowerCase();
+        var conclusion = String(c.conclusion || "").toLowerCase();
+        if (conclusion === "failure" || conclusion === "timed_out" || conclusion === "cancelled") hasFail = true;
+        else if (conclusion === "success" || conclusion === "skipped" || conclusion === "neutral") { /* 通过族 */ }
+        else if (status === "in_progress" || status === "queued" || conclusion === "pending" || (!conclusion && status)) hasPending = true;
+      }
+      if (hasFail) return "fail";
+      if (hasPending) return "pending";
+      return "pass";
+    }
+
+    /**
+     * reviewDecision → 展示态（徽章文案与色彩键）。无判定返回 null 不渲染。
+     */
+    function reviewDecisionBadge(decision: any): { text: string; kind: "green" | "red" | "yellow" } | null {
+      var d = String(decision || "").toUpperCase();
+      if (d === "APPROVED") return { text: "✔ 已批准", kind: "green" };
+      if (d === "CHANGES_REQUESTED") return { text: "✋ 需修改", kind: "red" };
+      if (d === "REVIEW_REQUIRED") return { text: "👀 待审查", kind: "yellow" };
+      return null;
+    }
+
+    /**
+     * Actions event → 触发方式短标签。
+     */
+    function eventLabel(event: any): string {
+      var e = String(event || "");
+      if (e === "push") return "⇡ push";
+      if (e === "schedule") return "⏰ 定时";
+      if (e === "workflow_dispatch") return "▶ 手动";
+      if (e === "pull_request") return "🔀 PR";
+      return e || "";
+    }
+
+    /**
+     * 按容器记录的 Tab 键应用互斥显示状态（hidden 页 + active 按钮）。
+     * 模块级纯 DOM 操作：渲染函数（switchTab 点击路径）与宿主组件的 effect
+     * （SWR 重渲染校正路径）共用——后者是必须的：React 重渲染会按 VDOM 初值
+     * 重设 hidden/active，用户手动切的 Tab 会被一次后台数据同步拽回默认页。
+     */
+    function applyTabState(container: HTMLElement, tabKey: string) {
+      var pages = container.querySelectorAll("[data-tab-page]");
+      pages.forEach(function (page) {
+        (page as HTMLElement).hidden = page.getAttribute("data-tab-page") !== tabKey;
+      });
+      var btns = container.querySelectorAll("[data-tab-btn]");
+      btns.forEach(function (btn) {
+        var on = btn.getAttribute("data-tab-btn") === tabKey;
+        btn.className = "dsh-github-tab-btn" + (on ? " active" : "");
+      });
+    }
+
     // 面板样式（内联维护）：DSH 客户端加载器以经典脚本语义执行本产物（build.mjs 剥除
     // export 声明即为佐证），模块级 import 在该语境是 SyntaxError。曾尝试把 CSS 拆为
     // 独立模块经 import 引入，导致 DSH 重启时客户端加载崩溃并触发插件批量卸载——
@@ -1150,6 +1236,48 @@ body[data-ds-dark-theme] .dsh-github-primary-btn:hover {
 body[data-ds-dark-theme] .dsh-github-radio {
   accent-color: #58a6ff;
 }
+
+/* 17. 提交详情原生模态弹窗 (<dialog>) */
+#dsh-github-commit-dialog {
+  max-width: 600px;
+  width: calc(100vw - 48px);
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  border-radius: 12px;
+  padding: 0;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  color: var(--dsw-alias-label-primary, #1f2328);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+  font-family: var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+}
+#dsh-github-commit-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+}
+body[data-ds-dark-theme] #dsh-github-commit-dialog {
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  color: var(--dsw-alias-label-primary, #ececec);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+}
+.dsh-github-commit-row {
+  transition: background 0.15s ease;
+}
+.dsh-github-commit-row:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.05));
+}
+body[data-ds-dark-theme] .dsh-github-commit-row:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
+}
+body[data-ds-dark-theme] .dsh-github-commit-pre {
+  background: var(--dsw-alias-bg-base, #151517) !important;
+  color: #ececec !important;
+  border: 1px solid #30363d !important;
+}
+.dsh-github-dialog-close-btn:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.08)) !important;
+  opacity: 1 !important;
+}
 `;
 
 
@@ -1182,6 +1310,23 @@ body[data-ds-dark-theme] .dsh-github-radio {
           fillRule: "evenodd",
           clipRule: "evenodd",
           d: "M8 0C3.58 0 0 3.58 0 8C0 11.54 2.29 14.53 5.47 15.59C5.87 15.66 6.02 15.42 6.02 15.21C6.02 15.02 6.01 14.39 6.01 13.72C4 14.09 3.48 13.23 3.32 12.78C3.23 12.55 2.84 11.84 2.5 11.65C2.22 11.5 1.82 11.13 2.49 11.12C3.12 11.11 3.57 11.7 3.72 11.94C4.44 13.15 5.59 12.81 6.05 12.6C6.12 12.08 6.33 11.72 6.56 11.52C4.78 11.32 2.92 10.63 2.92 7.58C2.92 6.71 3.23 5.99 3.74 5.43C3.66 5.23 3.38 4.41 3.82 3.31C3.82 3.31 4.49 3.1 6.02 4.13C6.66 3.95 7.34 3.86 8.02 3.86C8.7 3.86 9.38 3.95 10.02 4.13C11.55 3.09 12.22 3.31 12.22 3.31C12.66 4.41 12.38 5.23 12.3 5.43C12.81 5.99 13.12 6.7 13.12 7.58C13.12 10.65 11.25 11.32 9.47 11.52C9.76 11.77 10.01 12.25 10.01 13C10.01 14.08 10 14.95 10 15.21C10 15.42 10.15 15.67 10.55 15.59C13.71 14.53 16 11.53 16 8C16 3.58 12.42 0 8 0Z"
+        })
+      );
+    }
+
+    // Git 官方菱形分支矢量组件 (viewBox 0 0 1024 1024，经典 #1296db 配色)
+    function renderGitIcon(size = 14, color = "#1296db") {
+      return React.createElement(
+        "svg",
+        {
+          viewBox: "0 0 1024 1024",
+          width: size,
+          height: size,
+          style: { flexShrink: 0, display: "inline-block", verticalAlign: "middle" }
+        },
+        React.createElement("path", {
+          fill: color,
+          d: "M943.078 472.342L551.076 80.34c-21.859-21.859-57.626-21.859-79.485 0L79.589 472.342c-21.859 21.859-21.859 57.626 0 79.485l392.002 392.002c21.859 21.859 57.626 21.859 79.485 0l392.002-392.002c21.858-21.858 21.858-57.626 0-79.485z m-249.083 113.12c-37.939 0-68.693-30.755-68.693-68.693a68.532 68.532 0 0 1 4.136-23.521l-86.88-86.88v237.369c21.391 11.639 35.908 34.313 35.908 60.378 0 37.939-30.755 68.693-68.693 68.693s-68.693-30.755-68.693-68.693c0-27.314 15.944-50.903 39.03-61.973v-250.25c-23.022-10.642-39.03-33.879-39.03-60.907 0-7.808 1.401-15.272 3.853-22.243L344.061 207.871l44.159-44.159L490.738 266.23c5.58-1.503 11.418-2.378 17.473-2.378 37.076 0 67.132 30.056 67.132 67.132 0 6.055-0.875 11.893-2.378 17.473l102.241 102.241a68.68 68.68 0 0 1 18.789-2.623c37.939 0 68.693 30.755 68.693 68.693s-30.754 68.694-68.693 68.694z"
         })
       );
     }
@@ -1783,7 +1928,10 @@ body[data-ds-dark-theme] .dsh-github-radio {
       updateInfo: any = null,
       syncStatus: string = "",
       lastSyncedAt: number = 0,
-      onOpenSettings: (() => void) | null = null
+      onOpenSettings: (() => void) | null = null,
+      cwd: string | null = null,
+      onSelectCommit: ((c: any) => void) | null = null,
+      gitLogPagination: any = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -1834,7 +1982,10 @@ body[data-ds-dark-theme] .dsh-github-radio {
         )
       );
 
-      // 仓库基础卡片
+      // 仓库基础卡片（Tab 化后回归纯身份信息——git/PR/Release 细节移入「Git 记录」Tab 页）
+      var gitSt = data && data.gitStatus;
+      var relInfo = data && data.releaseInfo;
+      var branchPr = data && data.branchPr;
       var repoCardEl = h(
         "div",
         { className: "dsh-github-card" },
@@ -1856,6 +2007,213 @@ body[data-ds-dark-theme] .dsh-github-radio {
         !repo
           ? h("div", { className: "dsh-github-card-subtext" }, "若本地已有 git 仓库，请运行 `git remote add github <url>` 或 `git remote add origin <url>` 关联远程仓库。")
           : null
+      );
+
+      // ============ 「Git 记录」Tab 页：提交记录 + 本地↔远程差异 ============
+      // 用户核心诉求：具体的提交内容（谁/何时/什么信息）+ 远程与本地的区别。
+      // 三段视图：待推送（本地领先）/ 待拉取（远程领先，快照口径）/ 最近提交；
+      // 分支同步摘要行保留为上下文锚点。
+      var commitLog = data && data.commitLog;
+      var renderCommitRow = function (c: any, tone: string) {
+        return h(
+          "div",
+          {
+            style: { display: "flex", alignItems: "baseline", gap: "8px", padding: "3px 6px", fontSize: "12px", cursor: "pointer", borderRadius: "4px" },
+            className: "dsh-github-commit-row",
+            // 行级悬浮：完整 subject + 作者 + 时间 + 点击提示
+            title: `${c.subject}\n— ${c.author} · ${c.relative} · ${c.sha}\n（点击查看提交详情）`,
+            onClick: function () {
+              if (typeof onSelectCommit === "function") {
+                onSelectCommit(c);
+              }
+            },
+          },
+          h("span", {
+            style: {
+              fontFamily: "monospace",
+              fontSize: "11px",
+              color: tone === "ahead" ? "var(--dsw-alias-state-success-primary, #1a7f37)"
+                : tone === "behind" ? "var(--dsw-alias-state-attention-primary, #9a6700)"
+                : "var(--dsw-alias-label-secondary, #656d76)",
+              flexShrink: 0,
+            },
+          }, c.sha),
+          // subject 单行截断：溢出省略号，全文走悬浮与点击弹窗
+          h("span", {
+            style: {
+              flex: 1,
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            },
+          }, c.subject),
+          h("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", whiteSpace: "nowrap", flexShrink: 0 } }, `${c.author} · ${c.relative}`)
+        );
+      };
+      var gitSectionEl = h(
+        "div",
+        { className: "dsh-github-section" },
+        // section header + Release 右上角小徽章（flex 两端对齐；hover title 显详情，
+        // 点击直达 Release 页——从尾部大块降为角落锚点，节省一整行卡片空间）
+        h(
+          "div",
+          { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" } },
+          h("h3", { style: { margin: 0, display: "flex", alignItems: "center", gap: "6px" } }, renderGitIcon(16, "#1296db"), "Git 记录"),
+          relInfo
+            ? h(
+                relInfo.url ? "a" : "span",
+                {
+                  ...(relInfo.url ? { href: relInfo.url, target: "_blank" } : {}),
+                  className: "dsh-github-badge" + (relInfo.isPrerelease ? " dsh-badge-purple" : " dsh-badge-green"),
+                  style: { fontSize: "10px", textDecoration: "none", flexShrink: 0 },
+                  title: `最新 Release: ${relInfo.tagName}${relInfo.isPrerelease ? "（预发布）" : ""}${formatRelativeTime(relInfo.publishedAt) ? ` · ${formatRelativeTime(relInfo.publishedAt)}发布` : ""}\n点击打开 Release 页`,
+                },
+                `🏷️ ${relInfo.tagName}`
+              )
+            : null
+        ),
+        // 分支同步摘要（上下文锚点，含快照语义提示）
+        gitSt
+          ? h(
+              "div",
+              {
+                style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", fontSize: "13px", marginBottom: "8px" },
+                title: "ahead/behind 相对上次 git fetch 的快照（非实时）",
+              },
+              h("span", { style: { fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "5px" } }, renderGitIcon(13, "#1296db"), gitSt.branch),
+              gitSt.hasUpstream
+                ? h("span", null, `${gitSt.ahead > 0 ? "↑" + gitSt.ahead + " " : ""}${gitSt.behind > 0 ? "↓" + gitSt.behind : ""}${gitSt.ahead === 0 && gitSt.behind === 0 ? "✓ 与远程同步" : ""}`)
+                : h("span", { style: { opacity: 0.7 } }, "↑? ↓?（无 upstream）"),
+              gitSt.dirtyCount > 0
+                ? h("span", null, `· ${gitSt.dirtyCount} 文件未提交`)
+                : h("span", null, "· 工作区干净")
+            )
+          : null,
+        // 段 1：本地领先远程（待推送的具体提交）
+        commitLog && commitLog.aheadCommits && commitLog.aheadCommits.length > 0
+          ? h(
+              "div",
+              { style: { marginBottom: "10px" } },
+              h("div", { style: { fontSize: "12px", fontWeight: 600, marginBottom: "4px", color: "var(--dsw-alias-state-success-primary, #1a7f37)" } }, `↑ 本地领先远程 ${commitLog.aheadCommits.length} 个提交（待 push）`),
+              commitLog.aheadCommits.map(function (c: any, i: number) { return h("div", { key: "a" + i }, renderCommitRow(c, "ahead")); })
+            )
+          : null,
+        // 段 2：远程领先本地（待拉取的具体提交——上次 fetch 快照口径）
+        commitLog && commitLog.behindCommits && commitLog.behindCommits.length > 0
+          ? h(
+              "div",
+              { style: { marginBottom: "10px" } },
+              h("div", { style: { fontSize: "12px", fontWeight: 600, marginBottom: "4px", color: "var(--dsw-alias-state-attention-primary, #9a6700)" } }, `↓ 远程领先本地 ${commitLog.behindCommits.length} 个提交（待 pull · 快照口径）`),
+              commitLog.behindCommits.map(function (c: any, i: number) { return h("div", { key: "b" + i }, renderCommitRow(c, "behind")); })
+            )
+          : null,
+        // 段 3：最近提交（常态锚定——即使完全同步也有内容可看；支持分页加载更多）
+        (() => {
+          var baseRecent = (commitLog && commitLog.recent) || [];
+          var extraRecent = (gitLogPagination && gitLogPagination.extraCommits) || [];
+          var allRecentCommits = baseRecent.concat(extraRecent);
+          var totalCommits = commitLog && commitLog.totalCount;
+          var loadingMore = Boolean(gitLogPagination && gitLogPagination.loadingMore);
+          var hasMore = Boolean(gitLogPagination && gitLogPagination.hasMore);
+          var onLoadMore = gitLogPagination ? gitLogPagination.onLoadMore : null;
+
+          if (allRecentCommits.length === 0) return null;
+          return h(
+            "div",
+            null,
+            h(
+              "div",
+              { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" } },
+              h("div", { style: { fontSize: "12px", fontWeight: 600, opacity: 0.85 } }, "🕘 最近提交"),
+              totalCommits
+                ? h("div", { style: { fontSize: "11px", opacity: 0.6 } }, `${allRecentCommits.length} / ${totalCommits}`)
+                : null
+            ),
+            allRecentCommits.map(function (c: any, i: number) { return h("div", { key: "r" + (c.sha || i) }, renderCommitRow(c, "recent")); }),
+            // 下滑或点击加载更多
+            h(
+              "div",
+              { style: { marginTop: "10px", textAlign: "center" } },
+              loadingMore
+                ? h("div", { style: { fontSize: "11px", opacity: 0.75, padding: "6px 0" } }, "⏳ 正在加载更多提交…")
+                : (hasMore && onLoadMore)
+                ? h(
+                    "button",
+                    {
+                      className: "dsh-github-btn-sm",
+                      style: {
+                        cursor: "pointer",
+                        padding: "4px 14px",
+                        borderRadius: "14px",
+                        border: "1px solid var(--dsw-alias-border-l2, #d0d7de)",
+                        background: "var(--dsw-alias-bg-module-platform, #f6f8fa)",
+                        color: "inherit",
+                        fontSize: "11px",
+                        lineHeight: "1.6",
+                      },
+                      onClick: onLoadMore,
+                    },
+                    `⬇️ 下滑或点击加载更多 (${allRecentCommits.length}${totalCommits ? " / " + totalCommits : ""})`
+                  )
+                : (allRecentCommits.length >= 15)
+                ? h("div", { style: { fontSize: "11px", opacity: 0.5, padding: "4px 0" } }, `✓ 已加载全部 ${allRecentCommits.length} 条提交`)
+                : null
+            )
+          );
+        })(),
+        !commitLog || ((commitLog.aheadCommits || []).length === 0 && (commitLog.behindCommits || []).length === 0 && (commitLog.recent || []).length === 0)
+          ? h("div", { className: "dsh-github-empty" }, "无提交记录")
+          : null,
+        // 分支关联 PR 与 Release 锚定（保留）
+        branchPr
+          ? h(
+              "div",
+              { className: "dsh-github-item", style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginTop: "8px" } },
+              h("span", null, "🔀"),
+              branchPr.url
+                ? h("a", { className: "dsh-github-item-title", href: branchPr.url, target: "_blank" }, `PR #${branchPr.number} ${branchPr.title}`)
+                : h("span", { className: "dsh-github-item-title" }, `PR #${branchPr.number} ${branchPr.title}`),
+              branchPr.isDraft ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "DRAFT") : null
+            )
+          : null
+      );
+
+      // ============ 「未提交清单」Tab 页（全宽列表，原 details 折叠平移） ============
+      var dirtySectionEl = h(
+        "div",
+        { className: "dsh-github-section" },
+        h("div", { className: "dsh-github-section-header" }, h("h3", null, `📁 未提交清单 (${gitSt ? gitSt.dirtyCount : 0})`)),
+        !gitSt || gitSt.dirtyCount === 0
+          ? h("div", { className: "dsh-github-empty" }, "工作区干净，没有未提交的变更 ✓")
+          : h(
+              "div",
+              { style: { fontSize: "12px", lineHeight: "1.9" } },
+              (gitSt.dirtyFiles || []).map(function (f: any, i: number) {
+                return h(
+                  "div",
+                  { key: i, style: { display: "flex", gap: "8px", padding: "2px 4px", borderRadius: "4px" } },
+                  h("span", {
+                    style: {
+                      minWidth: "24px",
+                      textAlign: "center",
+                      opacity: 0.75,
+                      fontSize: "11px",
+                      fontFamily: "monospace",
+                      // 状态码配色：?? 新增(绿) / D 删除(红) / M 修改(黄) / 其他中性
+                      color: f.status === "??" ? "var(--dsw-alias-state-success-primary, #1a7f37)"
+                        : f.status.indexOf("D") >= 0 ? "var(--dsw-alias-state-error-primary, #cf222e)"
+                        : f.status.indexOf("M") >= 0 || f.status.indexOf("R") >= 0 ? "var(--dsw-alias-state-attention-primary, #9a6700)"
+                        : "inherit",
+                    },
+                  }, f.status === "??" ? "??" : f.status),
+                  h("span", { style: { wordBreak: "break-all" } }, f.path)
+                );
+              }),
+              gitSt.dirtyCount > (gitSt.dirtyFiles || []).length
+                ? h("div", { style: { opacity: 0.6, marginTop: "6px" } }, `…共 ${gitSt.dirtyCount} 个变更（仅列前 ${(gitSt.dirtyFiles || []).length}）`)
+                : null
+            )
       );
 
       // 快捷操作栏 (方案 1: 官方黄金功能直达)
@@ -1944,21 +2302,41 @@ body[data-ds-dark-theme] .dsh-github-radio {
           : h(
               "div",
               { className: "dsh-github-list" },
-              prs.map((pr: any) =>
-                h(
+              prs.map((pr: any) => {
+                // CI 聚合（归约顺序 fail>pending>pass——问题优先于通过）与 Review 判定
+                var ci = rollupCiStatus(pr.statusCheckRollup);
+                var rv = reviewDecisionBadge(pr.reviewDecision);
+                var relTime = formatRelativeTime(pr.updatedAt);
+                return h(
                   "div",
                   { key: pr.number, className: "dsh-github-item" },
-                  h("a", { className: "dsh-github-item-title", href: pr.url, target: "_blank" }, `#${pr.number} ${pr.title}`),
+                  h("a", {
+                    className: "dsh-github-item-title",
+                    href: pr.url,
+                    target: "_blank",
+                    title: relTime ? `更新于 ${pr.updatedAt}` : undefined,
+                  }, `${pr.isDraft ? "⚪ " : ""}#${pr.number} ${pr.title}`),
                   h(
                     "div",
                     { className: "dsh-github-item-meta" },
                     h("span", null, `${pr.headRefName} → ${pr.baseRefName}`),
                     pr.mergeable === "CONFLICTING"
                       ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "代码冲突")
-                      : h("span", { className: "dsh-github-badge dsh-badge-green" }, "可合并")
+                      : h("span", { className: "dsh-github-badge dsh-badge-green" }, "可合并"),
+                    ci === "fail"
+                      ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "❌ CI 失败")
+                      : ci === "pending"
+                      ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "⏳ CI 运行中")
+                      : ci === "pass"
+                      ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "✅ CI 通过")
+                      : null,
+                    rv
+                      ? h("span", { className: `dsh-github-badge dsh-badge-${rv.kind}` }, rv.text)
+                      : null,
+                    relTime ? h("span", null, relTime) : null
                   )
-                )
-              )
+                );
+              })
             )
       );
 
@@ -2045,17 +2423,32 @@ body[data-ds-dark-theme] .dsh-github-radio {
                 h(
                   "div",
                   { key: r.databaseId, className: "dsh-github-item" },
-                  h("a", { className: "dsh-github-item-title", href: r.url, target: "_blank" }, r.name),
+                  h("a", {
+                    className: "dsh-github-item-title",
+                    href: r.url,
+                    target: "_blank",
+                    title: r.createdAt ? `始于 ${r.createdAt}` : undefined,
+                  }, r.name),
                   h(
                     "div",
                     { className: "dsh-github-item-meta" },
                     h("span", null, `分支: ${r.headBranch}`),
+                    r.event ? h("span", null, eventLabel(r.event)) : null,
+                    formatRelativeTime(r.createdAt) ? h("span", null, formatRelativeTime(r.createdAt)) : null,
                     r.conclusion === "success"
                       ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "✓ 成功")
                       : r.conclusion === "failure"
                       ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "✕ 失败")
                       : h("span", { className: "dsh-github-badge dsh-badge-yellow" }, r.status)
-                  )
+                  ),
+                  // 失败自愈引导：把面板从「展示」升级为「引导 Agent 定位」——
+                  // run_id 直接嵌入文案，Agent 看到即可发起 log_failed 调用
+                  r.conclusion === "failure"
+                    ? h("div", {
+                        className: "dsh-github-card-subtext",
+                        style: { fontSize: "11px", marginTop: "2px" },
+                      }, `💡 让 Agent 调用 github_run(action:'log_failed', run_id:'${r.databaseId}') 提取失败日志定位原因`)
+                    : null
                 )
               )
             )
@@ -2065,7 +2458,69 @@ body[data-ds-dark-theme] .dsh-github-radio {
         ? h(AuthGuideCard, { auth, onRefresh, isRightbar })
         : null;
 
-      return [headerEl, upgradeBannerEl, authGuideEl, repoCardEl, actionsBarEl, prSectionEl, issueSectionEl, runSectionEl].filter(Boolean);
+      // ============ 内容区 Tab 化（五页互斥，DOM 级状态） ============
+      // 为什么 Tab 状态存 DOM 而非 React state / 模块变量：renderGithubRepoView
+      // 是普通渲染函数（非组件，不能 useState）；模块级可变状态在多宿主双挂载时
+      // 会串扰。data-active-tab 属性挂在每实例容器上，各实例独立记忆各自 Tab。
+      var TAB_DEFS: Array<{ key: string; label: string; count: number | null; icon?: any }> = [
+        { key: "git", label: "Git", count: null, icon: renderGitIcon(13, "#1296db") },
+        { key: "dirty", label: "📁 未提交", count: gitSt ? gitSt.dirtyCount : null },
+        { key: "prs", label: "🔀 PR", count: prs.length },
+        { key: "issues", label: "📋 Issues", count: issues.length },
+        { key: "runs", label: "⚡ Actions", count: runs.length },
+      ].filter(function (t) {
+        // 无 gitStatus（非 Git 工作区/探测失败）时 Git 与未提交两页隐藏——
+        // 数据缺失是常态而非禁用态，隐藏比置灰诚实
+        if ((t.key === "git" || t.key === "dirty") && !gitSt) return false;
+        return true;
+      });
+      // 默认 Tab：Git 记录（工作区状态是会话最常查的上下文）；非 Git 工作区
+      // 降级为 PR，空 PR + 有 Issue 再降 Issues
+      var defaultTab = gitSt ? "git" : (prs.length === 0 && issues.length > 0 ? "issues" : "prs");
+
+      var switchTab = function (container: HTMLElement, tabKey: string) {
+        // data-active-tab 是每实例的 Tab 记忆载体（DOM 属性）；互斥显示逻辑
+        // 提升为模块级 applyTabState（与宿主组件的 SWR 校正 effect 共用）
+        container.setAttribute("data-active-tab", tabKey);
+        applyTabState(container, tabKey);
+      };
+
+      var tabsBarEl = h(
+        "div",
+        { className: "dsh-github-tabs", style: { marginBottom: "12px" } },
+        ...TAB_DEFS.map(function (t) {
+          var labelText = t.count !== null ? `${t.label} (${t.count})` : t.label;
+          return h(
+            "button",
+            {
+              key: t.key,
+              // React 无受控状态——className 初值按默认 Tab 计算，切换由 switchTab 直接改 DOM
+              className: "dsh-github-tab-btn" + (t.key === defaultTab ? " active" : ""),
+              "data-tab-btn": t.key,
+              style: t.icon ? { display: "inline-flex", alignItems: "center", gap: "5px" } : undefined,
+              onClick: function (e: any) {
+                var container = (e.target as HTMLElement).closest("[data-active-tab]");
+                if (container) switchTab(container as HTMLElement, t.key);
+              },
+            },
+            t.icon ? [t.icon, " ", labelText] : labelText
+          );
+        })
+      );
+
+      var tabbedContentEl = h(
+        "div",
+        { "data-active-tab": defaultTab },
+        tabsBarEl,
+        // 五个页面：hidden 初值按默认 Tab；原三区块内部渲染零改动，仅加包裹属性
+        h("div", { "data-tab-page": "prs", hidden: defaultTab !== "prs" }, prSectionEl),
+        h("div", { "data-tab-page": "issues", hidden: defaultTab !== "issues" }, issueSectionEl),
+        h("div", { "data-tab-page": "runs", hidden: defaultTab !== "runs" }, runSectionEl),
+        gitSt ? h("div", { "data-tab-page": "git", hidden: defaultTab !== "git" }, gitSectionEl) : null,
+        gitSt ? h("div", { "data-tab-page": "dirty", hidden: defaultTab !== "dirty" }, dirtySectionEl) : null
+      );
+
+      return [headerEl, upgradeBannerEl, authGuideEl, repoCardEl, actionsBarEl, tabbedContentEl].filter(Boolean);
     }
 
     // 全局持久化缓存与偏好配置键名
@@ -2355,6 +2810,16 @@ body[data-ds-dark-theme] .dsh-github-radio {
       // （原定时轮询调度已随 'interval' 策略一并移除：前端 setInterval 受浏览器
       //  后台节流且随组件卸载销毁，无法兑现「定时自动更新」承诺）
 
+      // Tab 状态校正：SWR 后台同步触发 data 重渲染时，renderGithubRepoView 的
+      // hidden/active 按默认 Tab 重算——用户手动切换的选择会被拽回。此 effect
+      // 在每次 data 变化后按容器记录的 data-active-tab（用户最后选择）重新应用。
+      React.useEffect(() => {
+        var container = containerRef.current;
+        if (!container) return;
+        var active = container.getAttribute("data-active-tab");
+        if (active) applyTabState(container, active);
+      }, [data]);
+
       // 窗口切回自动探测自愈：优先轻量快速探针，检测到已登录立即自愈
       React.useEffect(() => {
         var onFocus = () => {
@@ -2378,7 +2843,66 @@ body[data-ds-dark-theme] .dsh-github-radio {
       var [aboutModalOpen, setAboutModalOpen] = React.useState(false);
       var [rightbarModalOpen, setRightbarModalOpen] = React.useState(false);
       var [rightbarModalSection, setRightbarModalSection] = React.useState("sync");
+      var [selectedCommit, setSelectedCommit] = React.useState(null as any);
+      var [extraCommits, setExtraCommits] = React.useState([] as any[]);
+      var [loadingMore, setLoadingMore] = React.useState(false);
+      var [hasMoreCommits, setHasMoreCommits] = React.useState(true);
       var containerRef = React.useRef(null as any);
+
+      // 工作区路径切换或刷新数据时重置分页状态
+      React.useEffect(function () {
+        setExtraCommits([]);
+        setHasMoreCommits(true);
+      }, [cwd, data]);
+
+      var loadMoreCommits = function () {
+        if (loadingMore || !hasMoreCommits) return;
+        var baseCount = (data?.commitLog?.recent?.length || 0);
+        var currentCount = baseCount + extraCommits.length;
+        var total = data?.commitLog?.totalCount;
+        if (total !== undefined && currentCount >= total) {
+          setHasMoreCommits(false);
+          return;
+        }
+        setLoadingMore(true);
+        var url = "/api/github/git-log?limit=15&skip=" + currentCount + (cwd ? "&cwd=" + encodeURIComponent(cwd) : "");
+        fetch(url)
+          .then(function (r: any) { return r.json(); })
+          .then(function (j: any) {
+            setLoadingMore(false);
+            if (j && j.ok && j.data && Array.isArray(j.data.commits)) {
+              if (j.data.commits.length === 0) {
+                setHasMoreCommits(false);
+              } else {
+                setExtraCommits(function (prev: any[]) { return prev.concat(j.data.commits); });
+                if (j.data.totalCount !== undefined && (currentCount + j.data.commits.length) >= j.data.totalCount) {
+                  setHasMoreCommits(false);
+                }
+              }
+            } else {
+              setHasMoreCommits(false);
+            }
+          })
+          .catch(function () {
+            setLoadingMore(false);
+          });
+      };
+
+      // 监听右侧栏容器滚动触底：下滑时自动加载更多提交
+      React.useEffect(function () {
+        var el = containerRef.current;
+        if (!el) return;
+        var onScroll = function () {
+          var activeTab = el.getAttribute("data-active-tab");
+          if (activeTab && activeTab !== "git") return;
+          var threshold = 80;
+          if (el.scrollHeight - el.scrollTop - el.clientHeight < threshold) {
+            loadMoreCommits();
+          }
+        };
+        el.addEventListener("scroll", onScroll, { passive: true });
+        return function () { el.removeEventListener("scroll", onScroll); };
+      }, [data, extraCommits, loadingMore, hasMoreCommits, cwd]);
       React.useEffect(() => {
         // 多宿主同挂载防叠层：全景主页与右侧栏可能同时在 DOM 中，徽标事件若被
         // 两处同时响应会出现双层弹窗。只有「自身容器可见」的宿主才响应——
@@ -2402,7 +2926,26 @@ body[data-ds-dark-theme] .dsh-github-radio {
       return h(
         "div",
         { className: "dsh-github-rightbar-container", ref: containerRef },
-        ...renderGithubRepoView(h, data, loading, error, () => loadData(true), true, updateInfo, syncStatus, lastSyncedAt, openRightbarSettings),
+        ...renderGithubRepoView(
+          h,
+          data,
+          loading,
+          error,
+          () => loadData(true),
+          true,
+          updateInfo,
+          syncStatus,
+          lastSyncedAt,
+          openRightbarSettings,
+          cwd,
+          (c: any) => setSelectedCommit(c),
+          {
+            extraCommits: extraCommits,
+            loadingMore: loadingMore,
+            hasMore: hasMoreCommits,
+            onLoadMore: loadMoreCommits,
+          }
+        ),
         // 弹窗一：插件徽标触发的「关于」单页展示
         h(GlobalSyncSettingsModal, {
           isOpen: aboutModalOpen,
@@ -2424,7 +2967,15 @@ body[data-ds-dark-theme] .dsh-github-radio {
             setLastSyncedAt(0);
             setSyncStatus("loading");
           },
-        })
+        }),
+        // 弹窗三：点击 Git 提交记录行的详情模态弹窗（与设置弹窗同构，在右侧栏容器内天然居中）
+        selectedCommit
+          ? h(CommitDetailModal, {
+              commit: selectedCommit,
+              onClose: function () { setSelectedCommit(null); },
+              cwd: cwd,
+            })
+          : null
       );
     }
 
@@ -2459,6 +3010,156 @@ body[data-ds-dark-theme] .dsh-github-radio {
             className: "dsh-github-icon-inner" + (active ? " active" : "")
           },
           renderOctocat(18, "currentColor")
+        )
+      );
+    }
+
+    // 提交详情模态弹窗组件（与设置弹窗同构：使用相同的 modal-overlay 与 modal-dialog，
+    // 在右侧栏宿主内天然居中展示，不突破右侧容器边界）。
+    // 数据源优先来自本地 git 预取（c.sha/fullSha/author/date/subject/body/stat，0ms 纯本地秒开），
+    // 缺失时静默向后端拉取 git show 原文补充，弹窗内完整支持上下滚动浏览超长提交说明。
+    function CommitDetailModal(props: { commit: any; onClose: () => void; cwd?: string | null }) {
+      if (!props.commit) return null;
+      var c = props.commit;
+      var h = React.createElement;
+      var [fetchedDetail, setFetchedDetail] = React.useState(null as string | null);
+      var [fetchingDetail, setFetchingDetail] = React.useState(false);
+
+      React.useEffect(function () {
+        var onKeyDown = function (e: any) {
+          if (e.key === "Escape" || e.keyCode === 27) props.onClose();
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return function () { window.removeEventListener("keydown", onKeyDown); };
+      }, [props.onClose]);
+
+      // 兜底补全机制：若内存中无 body/stat（如 DSH 尚未重启加载新解析逻辑），静默单查
+      React.useEffect(function () {
+        setFetchedDetail(null);
+        if (c.body || c.stat) return;
+        setFetchingDetail(true);
+        var url = "/api/github/commit-detail?sha=" + encodeURIComponent(c.sha) + (props.cwd ? "&cwd=" + encodeURIComponent(props.cwd) : "");
+        fetch(url)
+          .then(function (r: any) { return r.json(); })
+          .then(function (j: any) {
+            setFetchingDetail(false);
+            if (j && j.ok && j.detail) setFetchedDetail(j.detail);
+          })
+          .catch(function () { setFetchingDetail(false); });
+      }, [c.sha, props.cwd]);
+
+      var effectiveBody = c.body;
+      var effectiveStat = c.stat;
+      if (!effectiveBody && !effectiveStat && fetchedDetail) {
+        effectiveStat = fetchedDetail;
+      }
+
+      return h(
+        "div",
+        {
+          className: "dsh-github-modal-overlay",
+          onClick: props.onClose,
+          style: { zIndex: 100000 },
+        },
+        h(
+          "div",
+          {
+            className: "dsh-github-modal-dialog",
+            style: { width: "94%", maxWidth: "460px", maxHeight: "84vh", display: "flex", flexDirection: "column", overflow: "hidden" },
+            onClick: function (e: any) { e.stopPropagation(); },
+          },
+          h(
+            "div",
+            { className: "dsh-github-modal-header", style: { flexShrink: 0 } },
+            h(
+              "div",
+              { style: { display: "flex", alignItems: "center", gap: "8px" } },
+              renderGitIcon(15, "#1296db"),
+              h("h3", { style: { margin: 0, fontSize: "14px", fontWeight: 600 } }, "提交详情")
+            ),
+            h(
+              "button",
+              {
+                style: { background: "none", border: "none", cursor: "pointer", fontSize: "18px", color: "var(--dsw-alias-label-secondary, #656d76)", padding: "0 4px" },
+                onClick: props.onClose,
+                title: "关闭 (Esc)",
+              },
+              "✕"
+            )
+          ),
+          h(
+            "div",
+            {
+              className: "dsh-github-modal-body",
+              style: { padding: "16px", overflowY: "auto", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "12px", boxSizing: "border-box" },
+            },
+            h(
+              "div",
+              { style: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11px", opacity: 0.85 } },
+              h("span", { style: { fontFamily: "monospace", fontWeight: 600, userSelect: "all" }, title: "完整 SHA: " + (c.fullSha || c.sha) }, c.fullSha || c.sha),
+              h("span", null, c.relative)
+            ),
+            h(
+              "div",
+              { style: { fontSize: "13px", fontWeight: 600, color: "var(--dsw-alias-label-primary, #1f2328)", wordBreak: "break-word", lineHeight: "1.45" } },
+              c.subject
+            ),
+            h(
+              "div",
+              { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)" } },
+              `提交者: ${c.author}${c.email ? ` <${c.email}>` : ""}${c.date ? ` · ${c.date}` : ""}`
+            ),
+            effectiveBody
+              ? h(
+                  "div",
+                  {
+                    style: {
+                      fontSize: "12px",
+                      lineHeight: "1.6",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      padding: "10px 12px",
+                      borderRadius: "6px",
+                      background: "var(--dsw-alias-bg-module-platform, #f6f8fa)",
+                      border: "1px solid var(--dsw-alias-border-l2, #e1e4e8)",
+                    },
+                  },
+                  effectiveBody
+                )
+              : null,
+            effectiveStat
+              ? h(
+                  "div",
+                  null,
+                  h("div", { style: { fontSize: "11px", fontWeight: 600, marginBottom: "4px", opacity: 0.8 } }, "📁 文件变更统计:"),
+                  h(
+                    "pre",
+                    {
+                      className: "dsh-github-commit-pre",
+                      style: {
+                        fontSize: "11px",
+                        lineHeight: "1.5",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        margin: 0,
+                        maxHeight: "34vh",
+                        overflowY: "auto",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        background: "var(--dsw-alias-bg-module-platform, #f6f8fa)",
+                        border: "1px solid var(--dsw-alias-border-l2, #e1e4e8)",
+                      },
+                    },
+                    effectiveStat
+                  )
+                )
+              : null,
+            !effectiveBody && !effectiveStat
+              ? (fetchingDetail
+                  ? h("div", { style: { fontSize: "12px", opacity: 0.7, padding: "8px 0" } }, "⏳ 正在获取详细变更说明…")
+                  : h("div", { style: { fontSize: "11px", opacity: 0.6, fontStyle: "italic", padding: "6px 0" } }, "（该提交未包含多行正文；重启 DSH 桌面端可同步最新格式并直接呈现变更统计）"))
+              : null
+          )
         )
       );
     }
@@ -3332,6 +4033,17 @@ body[data-ds-dark-theme] .dsh-github-radio {
           { className: "dsh-github-card" },
           h("div", { className: "dsh-github-card-title" }, "本地工作区联动"),
           h("div", { className: "dsh-github-card-value" }, `${workspaceMatrix.length} 个工作区 (${workspaceMatrix.filter((w: any) => w.repo).length} 个已关联)`)
+        ),
+        // 待办概览卡：issueStats 三分类（数据已有零成本）——第一屏直接呈现工作量，
+        // 无待办时正向反馈「无待办 ✓」而非空白
+        h(
+          "div",
+          { className: "dsh-github-card" },
+          h("div", { className: "dsh-github-card-title" }, "📥 待处理 Issues"),
+          (data && data.issueStats && (data.issueStats.reported || data.issueStats.assigned || data.issueStats.created))
+            ? h("div", { className: "dsh-github-card-value", style: { fontSize: "14px" } },
+                `📥 用户提单 ${data.issueStats.reported || 0} · 🎯 分配给我 ${data.issueStats.assigned || 0} · ✍️ 我创建 ${data.issueStats.created || 0}`)
+            : h("div", { className: "dsh-github-card-value" }, "无待办 ✓")
         )
       );
 
@@ -3372,7 +4084,38 @@ body[data-ds-dark-theme] .dsh-github-radio {
                     ? h("span", { className: "dsh-github-ws-repo-link" }, renderOctocat(13, "currentColor"), `关联远程: ${ws.repo.nameWithOwner} (${ws.repo.defaultBranch})`)
                     : h("span", { className: "dsh-github-ws-path" }, ws.hasGit ? "本地有 Git，未关联 GitHub 远程" : "本地无 Git 仓库"),
                   ws.repo ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "已关联") : null
-                )
+                ),
+                // git 本地状态摘要（ahead/behind 快照语义 + dirty；探测失败/非 Git 不渲染）
+                ws.gitStatus
+                  ? h(
+                      "div",
+                      {
+                        style: { fontSize: "11px", display: "flex", gap: "8px", alignItems: "center", opacity: 0.85 },
+                        title: "ahead/behind 相对上次 git fetch 的快照（非实时）",
+                      },
+                      h("span", { style: { display: "inline-flex", alignItems: "center", gap: "4px" } }, renderGitIcon(12, "#1296db"), ws.gitStatus.branch),
+                      ws.gitStatus.hasUpstream
+                        ? h("span", null, `${ws.gitStatus.ahead > 0 ? "↑" + ws.gitStatus.ahead + " " : ""}${ws.gitStatus.behind > 0 ? "↓" + ws.gitStatus.behind : ""}${ws.gitStatus.ahead === 0 && ws.gitStatus.behind === 0 ? "✓ 同步" : ""}`)
+                        : h("span", null, "↑? ↓?"),
+                      ws.gitStatus.dirtyCount > 0
+                        ? h("span", null, `${ws.gitStatus.dirtyCount} 文件未提交`)
+                        : h("span", null, "干净")
+                    )
+                  : null,
+                ws.gitStatus && ws.gitStatus.dirtyFiles && ws.gitStatus.dirtyFiles.length > 0
+                  ? h(
+                      "details",
+                      { style: { fontSize: "11px" } },
+                      h("summary", { style: { cursor: "pointer", opacity: 0.8 } }, `未提交清单（${ws.gitStatus.dirtyFiles.length}）`),
+                      h(
+                        "div",
+                        { style: { padding: "4px 8px", borderRadius: "6px", background: "var(--dsw-alias-bg-module-platform, #f6f8fa)", lineHeight: "1.6", marginTop: "4px" } },
+                        ws.gitStatus.dirtyFiles.map(function (f: any, i: number) {
+                          return h("div", { key: i }, h("span", { style: { opacity: 0.7, marginRight: "6px" } }, f.status === "??" ? "??" : f.status), f.path);
+                        })
+                      )
+                    )
+                  : null
               ),
               h(
                 "div",
@@ -3412,7 +4155,10 @@ body[data-ds-dark-theme] .dsh-github-radio {
                     { className: "dsh-github-item-meta" },
                     h("span", null, `默认分支: ${r.defaultBranch}`),
                     r.isPrivate ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "Private") : h("span", { className: "dsh-github-badge dsh-badge-green" }, "Public"),
-                    h("span", null, `⭐ ${r.stargazerCount}`)
+                    h("span", null, `⭐ ${r.stargazerCount}`),
+                    formatRelativeTime(r.updatedAt)
+                      ? h("span", { title: `更新于 ${r.updatedAt}` }, `活跃于 ${formatRelativeTime(r.updatedAt)}`)
+                      : null
                   )
                 )
               )
@@ -3480,7 +4226,20 @@ body[data-ds-dark-theme] .dsh-github-radio {
             myPrs.length === 0 ? h("div", { className: "dsh-github-empty", style: { marginBottom: "16px" } }, "暂无开放中的 PR") : h(
               "div",
               { className: "dsh-github-list", style: { marginBottom: "16px" } },
-              myPrs.map((pr: any) => h("div", { key: pr.number, className: "dsh-github-item" }, h("a", { className: "dsh-github-item-title", href: pr.url, target: "_blank" }, `[${pr.repository?.nameWithOwner || 'Repo'}] #${pr.number} ${pr.title}`)))
+              myPrs.map((pr: any) => h(
+                "div",
+                { key: pr.number, className: "dsh-github-item", style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+                h("a", {
+                  className: "dsh-github-item-title",
+                  href: pr.url,
+                  target: "_blank",
+                  title: pr.updatedAt ? `更新于 ${pr.updatedAt}` : undefined,
+                }, `${pr.isDraft ? "⚪ " : ""}[${pr.repository?.nameWithOwner || 'Repo'}] #${pr.number} ${pr.title}`),
+                pr.isDraft ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "DRAFT") : null,
+                formatRelativeTime(pr.updatedAt)
+                  ? h("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", whiteSpace: "nowrap" } }, formatRelativeTime(pr.updatedAt))
+                  : null
+              ))
             ),
             h("h3", { className: "dsh-github-subheading" }, `📝 任务与待办 Issues (${filteredIssues.length})`),
             issuePillsEl,

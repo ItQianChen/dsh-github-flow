@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { findMostRecentWorkspacePath, findWorkspacePathBySession, hasGitDir } from './workspace.js';
-import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry } from './types.js';
 import type { ProxyManager } from './proxy.js';
 
 const execFileAsync = promisify(execFile);
@@ -119,6 +119,101 @@ export function compareGhVersions(a: string, b: string): number {
     if (da < db) return -1;
   }
   return 0;
+}
+
+/**
+ * 解析 `git status -sb --porcelain` 输出为结构化状态。
+ * 抽导出纯函数（parseGhVersion 同理）：三形态解析是易错边界区，单测钉死。
+ *
+ * 输出形态（实测）：
+ *   `## master...origin/master [ahead 2, behind 1]`  有 ahead/behind
+ *   `## master...origin/master`                       与远程同步
+ *   `## master` / `## HEAD (no branch)`               无 upstream（ahead/behind 未知=-1）
+ * 后续每行 `<XY> <path>` 为 porcelain 变更项（XY 两字符状态码，?? = untracked）。
+ */
+export function parseGitStatusOutput(output: string): GitLocalStatus | null {
+  const lines = (output || '').split('\n').filter((l) => l.length > 0);
+  if (lines.length === 0 || !lines[0].startsWith('## ')) return null;
+
+  const branchLine = lines[0].slice(3); // 去掉 '## ' 前缀
+  const hasUpstream = branchLine.includes('...');
+  const branchPart = hasUpstream ? branchLine.split('...')[0] : branchLine.split(' ')[0];
+
+  let ahead = -1;
+  let behind = -1;
+  if (hasUpstream) {
+    // ahead/behind 段在 upstream 之后（可能与 #id 同现：origin/master #12）。
+    // git 输出形态实测：`[ahead 2]` / `[behind 1]` / `[ahead 2, behind 1]`——
+    // 单括号内逗号分隔，behind 不必然前邻 '['（正则不可锚定 '['，否则
+    // `[ahead 2, behind 1]` 形态的 behind 永远漏解析——单测抓到的真实 Bug）
+    const trackingPart = branchLine.split('...')[1] || '';
+    ahead = 0;
+    behind = 0;
+    const aheadMatch = /ahead (\d+)/.exec(trackingPart);
+    const behindMatch = /behind (\d+)/.exec(trackingPart);
+    if (aheadMatch) ahead = Number(aheadMatch[1]);
+    if (behindMatch) behind = Number(behindMatch[1]);
+    // 仅 ahead 无 behind 时 behind=0（反之亦然）——git 输出只列非零侧
+  }
+
+  const dirtyFiles: Array<{ status: string; path: string }> = [];
+  for (let i = 1; i < lines.length && dirtyFiles.length < 20; i++) {
+    const line = lines[i];
+    if (line.length < 4) continue;
+    const status = line.slice(0, 2).trim() || 'M';
+    // 路径可能含空格（git 不加引号场景）；rename 形态 `R  old -> new` 取 new
+    let p = line.slice(3);
+    const renameArrow = p.indexOf(' -> ');
+    if (renameArrow >= 0) p = p.slice(renameArrow + 4);
+    dirtyFiles.push({ status, path: p });
+  }
+
+  return {
+    branch: branchPart.replace(/\s*\(no branch\)$/, '') || 'HEAD',
+    ahead,
+    behind,
+    dirtyCount: Math.max(0, lines.length - 1),
+    hasUpstream,
+    dirtyFiles,
+  };
+}
+
+/**
+ * 解析 `git log` 输出为提交条目数组。
+ * 支持两种形态：
+ * 1. 结构化带详情：%x1e 为 commit 间分隔符，%x1f 为字段间分隔符（含 fullSha/email/date/body/stat）；
+ * 2. 简易管道符：%h|%an|%ar|%s 行格式（兼容旧单测输入）。
+ * 空输出返回 []。
+ */
+export function parseGitLogLines(output: string): GitCommitEntry[] {
+  const out = (output || '').trim();
+  if (!out) return [];
+  if (out.includes('\x1e') || out.includes('\x1f')) {
+    const records = out.split('\x1e').filter((c) => c.trim().length > 0);
+    return records.map((chunk) => {
+      const parts = chunk.split('\x1f');
+      return {
+        sha: (parts[0] || '').trim(),
+        fullSha: (parts[1] || '').trim() || undefined,
+        author: (parts[2] || '').trim(),
+        email: (parts[3] || '').trim() || undefined,
+        date: (parts[4] || '').trim() || undefined,
+        relative: (parts[5] || '').trim(),
+        subject: (parts[6] || '').trim(),
+        body: (parts[7] || '').trim() || undefined,
+        stat: (parts[8] || '').trim() || undefined,
+      };
+    });
+  }
+  return out.split('\n').filter(Boolean).map((line) => {
+    const parts = line.split('|');
+    return {
+      sha: parts[0] || '',
+      author: parts[1] || '',
+      relative: parts[2] || '',
+      subject: parts.slice(3).join('|'),
+    };
+  });
 }
 
 /**
@@ -533,6 +628,134 @@ export class GhExecutor {
     if (p === 'win32') return '升级命令：`winget upgrade GitHub.cli`（或从 https://cli.github.com/ 下载最新 .msi）。';
     if (p === 'darwin') return '升级命令：`brew upgrade gh`（或从 https://cli.github.com/ 下载最新安装包）。';
     return '升级方式：更新系统包（Debian/Ubuntu: `sudo apt update && sudo apt install gh`；Fedora: `sudo dnf upgrade gh`），或见 https://cli.github.com/。';
+  }
+
+  /**
+   * 本地 Git 状态只读探测（白名单通道）。
+   *
+   * 这是本插件首次执行 git（此前仅 gh）——git 存在大量写命令，风险等级高于 gh，
+   * 因此白名单不落在「命令名过滤」而落在「命令形态常量」：spawn 参数是下方
+   * 硬编码的数组字面量，无任何动态拼接路径，写操作物理不可达（cwd 之外零输入，
+   * 而 cwd 本身也是插件解析的工作区路径）。
+   *
+   * 零网络：status 基于 remote-tracking ref（上次 fetch 的快照），毫秒级本地读取，
+   * 符合 global-overview 端点「工作区探测不发网络」的性能红线。
+   */
+  async getLocalGitStatus(cwd?: string): Promise<GitLocalStatus | null> {
+    try {
+      // 纯本地毫秒级；3s 超时兜底异常文件系统
+      const { stdout } = await execFileAsync('git', ['status', '-sb', '--porcelain'], {
+        cwd: cwd || undefined,
+        timeout: 3_000,
+        windowsHide: true,
+      });
+      return parseGitStatusOutput(String(stdout));
+    } catch {
+      // 非 Git 目录 / git 未安装 / 超时：静默降级为 null（调用方不渲染该行）
+      return null;
+    }
+  }
+
+  /**
+   * 本地 Git 提交记录（三段一次返回：本地领先 / 远程领先 / 最近提交）。
+   *
+   * 白名单纪律与 getLocalGitStatus 同源：下方两个命令形态常量硬编码
+   * （log + 修订范围语法，range 段由 hasUpstream 守卫后才拼接且仅两个
+   * 固定形态 @{u}..HEAD / HEAD..@{u}——不含任何用户输入路径）。
+   * 领先/落后列表基于 remote-tracking ref（上次 fetch 快照），与 status
+   * 的 ahead/behind 计数同一数据口径；格式 %h|%an|%ar|%s 实测可结构化解析。
+   */
+  async getGitCommitLog(cwd?: string, hasUpstream = true, limit = 15): Promise<GitCommitLog | null> {
+    const empty: GitCommitLog = { aheadCommits: [], behindCommits: [], recent: [] };
+    const logFmt = '--pretty=format:%x1e%h%x1f%H%x1f%an%x1f%ae%x1f%ad%x1f%ar%x1f%s%x1f%b%x1f';
+    try {
+      const recentRes = await execFileAsync('git', ['log', `-${Math.max(1, limit)}`, logFmt, '--stat', '--no-decorate'], {
+        cwd: cwd || undefined,
+        timeout: 4_000,
+        windowsHide: true,
+      });
+      empty.recent = parseGitLogLines(String(recentRes.stdout));
+      try {
+        const countRes = await execFileAsync('git', ['rev-list', '--count', 'HEAD'], {
+          cwd: cwd || undefined,
+          timeout: 2_000,
+          windowsHide: true,
+        });
+        const cnt = parseInt(String(countRes.stdout).trim(), 10);
+        if (!isNaN(cnt)) empty.totalCount = cnt;
+      } catch {}
+      if (!hasUpstream) return empty; // 无 upstream：领先/落后无从谈起，仅最近提交
+      const aheadRes = await execFileAsync('git', ['log', '@{u}..HEAD', logFmt, '--stat', '--no-decorate'], {
+        cwd: cwd || undefined,
+        timeout: 3_000,
+        windowsHide: true,
+      });
+      empty.aheadCommits = parseGitLogLines(String(aheadRes.stdout));
+      const behindRes = await execFileAsync('git', ['log', 'HEAD..@{u}', logFmt, '--stat', '--no-decorate'], {
+        cwd: cwd || undefined,
+        timeout: 3_000,
+        windowsHide: true,
+      });
+      empty.behindCommits = parseGitLogLines(String(behindRes.stdout));
+      return empty;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 分页获取最近提交记录（用于 Git 面板下滑触底继续加载）。
+   */
+  async getGitRecentLog(cwd?: string, limit = 15, skip = 0): Promise<{ commits: GitCommitEntry[]; totalCount?: number }> {
+    const logFmt = '--pretty=format:%x1e%h%x1f%H%x1f%an%x1f%ae%x1f%ad%x1f%ar%x1f%s%x1f%b%x1f';
+    const safeLimit = Math.min(Math.max(1, limit), 50);
+    const safeSkip = Math.max(0, skip);
+    const args = ['log', `-${safeLimit}`, logFmt, '--stat', '--no-decorate'];
+    if (safeSkip > 0) {
+      args.push('--skip', String(safeSkip));
+    }
+    try {
+      const { stdout } = await execFileAsync('git', args, {
+        cwd: cwd || undefined,
+        timeout: 5_000,
+        windowsHide: true,
+      });
+      const commits = parseGitLogLines(String(stdout));
+      let totalCount: number | undefined;
+      try {
+        const countRes = await execFileAsync('git', ['rev-list', '--count', 'HEAD'], {
+          cwd: cwd || undefined,
+          timeout: 2_000,
+          windowsHide: true,
+        });
+        const cnt = parseInt(String(countRes.stdout).trim(), 10);
+        if (!isNaN(cnt)) totalCount = cnt;
+      } catch {}
+      return { commits, totalCount };
+    } catch {
+      return { commits: [] };
+    }
+  }
+
+  /**
+   * 单条提交详情（点击提交行弹窗的数据源）。
+   * 白名单纪律延续：show 命令形态常量硬编码；sha 参数经 ^[0-9a-f]{4,40}$
+   * 十六进制校验后才拼接——这是 git 白名单通道首次接受「外部传入的单值」，
+   * 正则把值域锁死在纯十六进制（注入面为零：任何 shell 元字符/子命令
+   * 语法都不可能通过校验）。输出为 git show --stat 原文（含文件变更统计）。
+   */
+  async getGitCommitDetail(cwd: string | undefined, sha: string): Promise<string | null> {
+    if (!/^[0-9a-f]{4,40}$/i.test(sha)) return null; // 形态校验：纯十六进制短/全 sha
+    try {
+      const { stdout } = await execFileAsync('git', ['show', '--stat', '--pretty=format:%H%n%an <%ae>%n%ad%n%s%n%b', sha], {
+        cwd: cwd || undefined,
+        timeout: 3_000,
+        windowsHide: true,
+      });
+      return String(stdout);
+    } catch {
+      return null;
+    }
   }
 
   /** 生成当前操作系统平台的推荐安装引导与命令 */

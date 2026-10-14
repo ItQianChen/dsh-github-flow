@@ -363,7 +363,7 @@ export function renderRepoMarkdown(args: any, value: any): string {
     const branch = value.defaultBranchRef?.name || value.defaultBranch || 'main';
     const lines = [
       `### 📦 ${link}`,
-      `> ⭐ **Stars**: ${stars} | 🍴 **Forks**: ${forks} | 🌿 **默认分支**: \`${branch}\``,
+      `> ⭐ **Stars**: ${stars} | 🍴 **Forks**: ${forks} | ⎇ **默认分支**: \`${branch}\``,
       value.description ? `\n${value.description}\n` : '',
     ];
     if (value.licenseInfo?.name || value.licenseInfo?.key) {

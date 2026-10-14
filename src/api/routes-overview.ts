@@ -66,6 +66,9 @@ export function registerOverviewRoutes(
         let pullRequests: PrItem[] = [];
         let issues: IssueItem[] = [];
         let runs: WorkflowRunItem[] = [];
+        // 面板增强信息载体（git 状态/Release 锚定/分支 PR——全部可选字段，
+        // 进缓存与快照时旧消费方零破坏，渲染层 ?. 兜底）
+        const freshExtras: Record<string, any> = {};
 
         if (repo && auth.loggedIn) {
           // 并发拉取当前文件夹仓库的 PRs、Issues 和 Runs
@@ -83,7 +86,6 @@ export function registerOverviewRoutes(
               { cwd, timeoutMs: 8_000 }
             ),
           ]);
-
           if (prsRes.ok && Array.isArray(prsRes.data)) pullRequests = prsRes.data;
           if (issuesRes.ok && Array.isArray(issuesRes.data)) {
             const currentUser = auth.user;
@@ -97,6 +99,40 @@ export function registerOverviewRoutes(
             });
           }
           if (runsRes.ok && Array.isArray(runsRes.data)) runs = runsRes.data;
+
+          // 面板信息增强（三路并行，全部失败静默——可选装饰信息不阻塞主流程）：
+          // 1. git 本地状态：纯本地毫秒级（remote-tracking 快照），零网络
+          // 2. Release 锚定：gh release view，无 Release 仓库是常态非错误
+          // 3. 当前分支↔PR 关联：pr status -c，无 PR 分支同样静默
+          const [gitStatus, releaseInfo, branchPr] = await Promise.all([
+            executor.getLocalGitStatus(cwd).catch(() => null),
+            executor.run<any>(
+              ['release', 'view', '--json', 'tagName,isPrerelease,isDraft,publishedAt,url', '-R', repo.nameWithOwner],
+              { cwd, timeoutMs: 8_000 }
+            ).then((r) => (r.ok && r.data && !r.data.isDraft ? r.data : null)).catch(() => null),
+            executor.run<any>(
+              ['pr', 'status', '-c', '--json', 'number,title,state,url,isDraft', '-R', repo.nameWithOwner],
+              { cwd, timeoutMs: 8_000 }
+            ).then((r) => {
+              // 实测键集：{ createdBy: [...], needsReview: [...] }——「当前分支
+              // 关联 PR」按优先级取 createdBy（自己发起）→ needsReview（待审）。
+              // 不传 rawText：executor 对含 --json 的命令自动解析出 data——
+              // rawText 模式 data 恒 undefined 会让本功能静默失效（审查抓到的真实 Bug）
+              if (!r.ok || !r.data) return null;
+              const createdBy = Array.isArray(r.data?.createdBy) ? r.data.createdBy : [];
+              const needsReview = Array.isArray(r.data?.needsReview) ? r.data.needsReview : [];
+              return createdBy[0] || needsReview[0] || null;
+            }).catch(() => null),
+          ]);
+          (freshExtras as any).gitStatus = gitStatus;
+          (freshExtras as any).releaseInfo = releaseInfo;
+          (freshExtras as any).branchPr = branchPr;
+          // 4. git 提交记录三段（领先/落后/最近）：依赖 gitStatus.hasUpstream 守卫，
+          // 在并行波次之后串行补（本地毫秒级，无感知延迟）——放进第一波会因
+          // Promise.all 参数在调用时求值而引用未解构的 gitStatus（恒 undefined）
+          (freshExtras as any).commitLog = await executor
+            .getGitCommitLog(cwd, gitStatus ? gitStatus.hasUpstream : false)
+            .catch(() => null);
         }
 
         const issueStats = calculateIssueStats(issues);
@@ -110,6 +146,7 @@ export function registerOverviewRoutes(
           runs,
           lastUpdated: new Date().toISOString(),
           updateInfo: checker.getQuickStatus(),
+          ...freshExtras,
         };
 
         cacheMap.set(cwd, freshData, now);
@@ -167,7 +204,7 @@ export function registerOverviewRoutes(
               { timeoutMs: 8_000 }
             ),
             executor.run<any[]>(
-              ['search', 'prs', '--author=@me', '--state=open', '--limit', '10', '--json', 'number,title,repository,url,updatedAt'],
+              ['search', 'prs', '--author=@me', '--state=open', '--limit', '10', '--json', 'number,title,repository,url,updatedAt,isDraft'],
               { timeoutMs: 8_000 }
             ),
             executor.run<any[]>(
@@ -259,6 +296,9 @@ export function registerOverviewRoutes(
           // 每次网络往返都要秒级，5 个工作区就足以把该端点拖到 20 秒。
           workspaceMatrix = await mapLimit(wsEntries, WORKSPACE_PROBE_CONCURRENCY, async (ws) => {
             const hasGit = hasGitDir(ws.path);
+            // git 状态与身份识别同为纯本地探测（remote-tracking 快照零网络），
+            // 挂进同一 mapLimit 有界并发——不新增并发维度，不碰性能红线
+            const gitStatus = hasGit ? await executor.getLocalGitStatus(ws.path).catch(() => null) : null;
             return {
               id: ws.id,
               title: ws.title || basenameSafe(ws.path),
@@ -266,6 +306,7 @@ export function registerOverviewRoutes(
               hasGit,
               repo: hasGit ? executor.getRepoIdentityFromLocal(ws.path) || undefined : undefined,
               sessionCount: ws.sessionIds.length,
+              ...(gitStatus ? { gitStatus } : {}),
             };
           });
         }
@@ -286,6 +327,73 @@ export function registerOverviewRoutes(
         sendJson(res, 200, { ok: true, data: globalData, fromCache: false });
       } catch (err: any) {
         sendJson(res, 500, { ok: false, error: err.message || '获取全局驾驶舱数据失败' });
+      }
+    },
+  });
+
+  // 3. 单条提交详情（Git 记录页点击行的惰性查询——弹窗打开时才发起，
+  //    不进 overview 缓存：低频单查 + git show 本地毫秒级，无缓存必要）
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/commit-detail',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, message: '仅支持 GET 请求' });
+        return;
+      }
+      try {
+        const url = new URL(req.url || '', 'http://127.0.0.1');
+        let cwd = url.searchParams.get('cwd') || undefined;
+        const sessionId = url.searchParams.get('sessionId');
+        if (!cwd && sessionId) {
+          cwd = findWorkspacePathBySession(sessionId) || undefined;
+        }
+        if (!cwd) {
+          cwd = findMostRecentWorkspacePath() || undefined;
+        }
+        const sha = url.searchParams.get('sha') || '';
+        // sha 形态校验双保险（executor 内还有一道）：路由层先拦明显恶意值
+        if (!/^[0-9a-f]{4,40}$/i.test(sha)) {
+          sendJson(res, 400, { ok: false, error: '非法 sha（仅接受 4-40 位十六进制）' });
+          return;
+        }
+        const detail = await executor.getGitCommitDetail(cwd, sha);
+        if (detail === null) {
+          sendJson(res, 404, { ok: false, error: '未找到该提交（可能不在当前仓库）' });
+          return;
+        }
+        sendJson(res, 200, { ok: true, detail });
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, error: err.message || '查询提交详情失败' });
+      }
+    },
+  });
+
+  // 4. 分页获取最近提交记录（Git 记录页下滑触底自动加载或点击加载更多）
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/git-log',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, message: '仅支持 GET 请求' });
+        return;
+      }
+      try {
+        const url = new URL(req.url || '', 'http://127.0.0.1');
+        let cwd = url.searchParams.get('cwd') || undefined;
+        const sessionId = url.searchParams.get('sessionId');
+        if (!cwd && sessionId) {
+          cwd = findWorkspacePathBySession(sessionId) || undefined;
+        }
+        if (!cwd) {
+          cwd = findMostRecentWorkspacePath() || undefined;
+        }
+        const limit = Math.min(Math.max(1, Number(url.searchParams.get('limit')) || 15), 50);
+        const skip = Math.max(0, Number(url.searchParams.get('skip')) || 0);
+        const result = await executor.getGitRecentLog(cwd, limit, skip);
+        sendJson(res, 200, { ok: true, data: result });
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, error: err.message || '获取提交记录失败' });
       }
     },
   });

@@ -1,4 +1,4 @@
-import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry } from './types.js';
 import type { ProxyManager } from './proxy.js';
 /**
  * 从 `gh --version` 输出中解析语义化版本号。
@@ -12,6 +12,25 @@ export declare function parseGhVersion(output: string): string | null;
  * 这会把 2.100 误判为低于 2.96，导致可用命令被错误降级。逐段 Number 比较是唯一正确姿势。
  */
 export declare function compareGhVersions(a: string, b: string): number;
+/**
+ * 解析 `git status -sb --porcelain` 输出为结构化状态。
+ * 抽导出纯函数（parseGhVersion 同理）：三形态解析是易错边界区，单测钉死。
+ *
+ * 输出形态（实测）：
+ *   `## master...origin/master [ahead 2, behind 1]`  有 ahead/behind
+ *   `## master...origin/master`                       与远程同步
+ *   `## master` / `## HEAD (no branch)`               无 upstream（ahead/behind 未知=-1）
+ * 后续每行 `<XY> <path>` 为 porcelain 变更项（XY 两字符状态码，?? = untracked）。
+ */
+export declare function parseGitStatusOutput(output: string): GitLocalStatus | null;
+/**
+ * 解析 `git log` 输出为提交条目数组。
+ * 支持两种形态：
+ * 1. 结构化带详情：%x1e 为 commit 间分隔符，%x1f 为字段间分隔符（含 fullSha/email/date/body/stat）；
+ * 2. 简易管道符：%h|%an|%ar|%s 行格式（兼容旧单测输入）。
+ * 空输出返回 []。
+ */
+export declare function parseGitLogLines(output: string): GitCommitEntry[];
 /**
  * 按「字符数 + UTF-8 字节数」双口径截断输出。
  * 抽成纯函数是刻意的：截断逻辑是崩溃高发区（切碎多字节字符、误伤 JSON、把二进制流截成垃圾），
@@ -118,6 +137,43 @@ export declare class GhExecutor {
     }>;
     /** gh 升级命令按平台提示（复用三态状态机的平台判断口径） */
     private getGhUpgradeHint;
+    /**
+     * 本地 Git 状态只读探测（白名单通道）。
+     *
+     * 这是本插件首次执行 git（此前仅 gh）——git 存在大量写命令，风险等级高于 gh，
+     * 因此白名单不落在「命令名过滤」而落在「命令形态常量」：spawn 参数是下方
+     * 硬编码的数组字面量，无任何动态拼接路径，写操作物理不可达（cwd 之外零输入，
+     * 而 cwd 本身也是插件解析的工作区路径）。
+     *
+     * 零网络：status 基于 remote-tracking ref（上次 fetch 的快照），毫秒级本地读取，
+     * 符合 global-overview 端点「工作区探测不发网络」的性能红线。
+     */
+    getLocalGitStatus(cwd?: string): Promise<GitLocalStatus | null>;
+    /**
+     * 本地 Git 提交记录（三段一次返回：本地领先 / 远程领先 / 最近提交）。
+     *
+     * 白名单纪律与 getLocalGitStatus 同源：下方两个命令形态常量硬编码
+     * （log + 修订范围语法，range 段由 hasUpstream 守卫后才拼接且仅两个
+     * 固定形态 @{u}..HEAD / HEAD..@{u}——不含任何用户输入路径）。
+     * 领先/落后列表基于 remote-tracking ref（上次 fetch 快照），与 status
+     * 的 ahead/behind 计数同一数据口径；格式 %h|%an|%ar|%s 实测可结构化解析。
+     */
+    getGitCommitLog(cwd?: string, hasUpstream?: boolean, limit?: number): Promise<GitCommitLog | null>;
+    /**
+     * 分页获取最近提交记录（用于 Git 面板下滑触底继续加载）。
+     */
+    getGitRecentLog(cwd?: string, limit?: number, skip?: number): Promise<{
+        commits: GitCommitEntry[];
+        totalCount?: number;
+    }>;
+    /**
+     * 单条提交详情（点击提交行弹窗的数据源）。
+     * 白名单纪律延续：show 命令形态常量硬编码；sha 参数经 ^[0-9a-f]{4,40}$
+     * 十六进制校验后才拼接——这是 git 白名单通道首次接受「外部传入的单值」，
+     * 正则把值域锁死在纯十六进制（注入面为零：任何 shell 元字符/子命令
+     * 语法都不可能通过校验）。输出为 git show --stat 原文（含文件变更统计）。
+     */
+    getGitCommitDetail(cwd: string | undefined, sha: string): Promise<string | null>;
     /** 生成当前操作系统平台的推荐安装引导与命令 */
     private getPlatformInstallGuide;
     /** 实际执行 `gh auth status` 并解析结果，不含缓存逻辑 */

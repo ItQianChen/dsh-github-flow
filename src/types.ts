@@ -109,6 +109,52 @@ export interface RepoMetadata {
   url?: string;
 }
 
+/**
+ * 本地 Git 工作区状态快照（ahead/behind 是 remote-tracking ref 的「上次 fetch」视图，
+ * 非实时网络状态——UI 渲染时必须带上这一语义提示，否则会误导用户）。
+ */
+export interface GitLocalStatus {
+  branch: string;
+  /** 领先远程的提交数；无 upstream 时为 -1（未知） */
+  ahead: number;
+  /** 落后远程的提交数；无 upstream 时为 -1（未知） */
+  behind: number;
+  /** 未提交变更文件数（含 untracked） */
+  dirtyCount: number;
+  hasUpstream: boolean;
+  /** 未提交文件清单（porcelain 解析，截断前 20 条防快照膨胀） */
+  dirtyFiles: Array<{ status: string; path: string }>;
+}
+
+/** 单条提交记录（结构化解析） */
+export interface GitCommitEntry {
+  sha: string;
+  fullSha?: string;
+  author: string;
+  email?: string;
+  date?: string;
+  /** git 的相对时间原文（如 "2 hours ago"）——本地化由渲染层处理 */
+  relative: string;
+  subject: string;
+  body?: string;
+  stat?: string;
+}
+
+/**
+ * 本地 Git 提交记录三段视图（与 GitLocalStatus 的 ahead/behind 计数同口径，
+ * 均为 remote-tracking 快照）。
+ */
+export interface GitCommitLog {
+  /** 本地领先远程的提交（待 push） */
+  aheadCommits: GitCommitEntry[];
+  /** 远程领先本地的提交（待 pull，快照口径） */
+  behindCommits: GitCommitEntry[];
+  /** 最近提交（默认 15 条，支持下滚分页） */
+  recent: GitCommitEntry[];
+  /** 仓库总提交数（rev-list --count HEAD） */
+  totalCount?: number;
+}
+
 export interface PrItem {
   number: number;
   title: string;
@@ -178,6 +224,14 @@ export interface GitHubOverviewData {
   error?: string;
   /** 插件版本与升级信息（由内存缓存快速读取，不阻塞首屏业务） */
   updateInfo?: UpdateInfo;
+  /** 本地 Git 状态（ahead/behind/dirty，remote-tracking 快照语义）；非 Git 工作区为 undefined */
+  gitStatus?: GitLocalStatus | null;
+  /** 提交记录三段（本地领先/远程领先/最近）；探测失败为 undefined */
+  commitLog?: GitCommitLog | null;
+  /** 最新 Release 锚定（已过滤 Draft）；无 Release 仓库为 null */
+  releaseInfo?: { tagName: string; isPrerelease?: boolean; publishedAt?: string; url?: string } | null;
+  /** 当前分支关联的 PR；无 PR 分支为 null */
+  branchPr?: { number: number; title: string; state?: string; url?: string; isDraft?: boolean } | null;
 }
 
 export interface UserRepoItem {
@@ -198,6 +252,8 @@ export interface WorkspaceMatrixItem {
   hasGit: boolean;
   repo?: RepoMetadata;
   sessionCount: number;
+  /** 本地 Git 状态摘要（可选——探测失败/非 Git 工作区不携带） */
+  gitStatus?: GitLocalStatus;
 }
 
 export interface GlobalIssueItem {
