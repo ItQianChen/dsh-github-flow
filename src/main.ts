@@ -51,6 +51,7 @@ export const Config = {
           cacheTtlMs: typeof cfg.cacheTtlMs === 'number' ? cfg.cacheTtlMs : 15_000,
           defaultListLimit: typeof cfg.defaultListLimit === 'number' ? cfg.defaultListLimit : 20,
           checkUpdate: typeof cfg.checkUpdate === 'boolean' ? cfg.checkUpdate : true,
+          agentEnvInjection: cfg.agentEnvInjection !== false,
           updateCheckIntervalMs: typeof cfg.updateCheckIntervalMs === 'number' ? cfg.updateCheckIntervalMs : 86_400_000,
           registryUrl: typeof cfg.registryUrl === 'string' ? cfg.registryUrl : undefined,
           proxyUrl: typeof cfg.proxyUrl === 'string' ? cfg.proxyUrl : undefined,

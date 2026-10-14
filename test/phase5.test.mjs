@@ -83,7 +83,16 @@ async function runTests() {
     // --- 3. 持久化往返 ---
     console.log('\n--- 3. persistence round-trip ---');
     pm.save({ url: 'http://127.0.0.1:9999', noProxy: '', applyToPackageManager: false });
-    const canPersist = existsSync(storePath);
+    // 写入能力探测必须「真写」而非 existsSync：沙箱下旧 proxy.json 可能因删除被拒而
+    // 残留（rmSync EPERM 被静默吞掉），existsSync 会把「不可写」误判成「可写」，
+    // 导致下方 round-trip 断言在降级环境必然失败。改用临时文件实测写+删。
+    let canPersist = false;
+    try {
+      const probePath = storePath + '.write-probe';
+      writeFileSync(probePath, '{}', 'utf8');
+      rmSync(probePath, { force: true });
+      canPersist = true;
+    } catch { /* 写探测失败：persist 已降级为 memory-only，下方盘上断言跳过 */ }
     if (!canPersist) {
       console.log('⚠️ SKIP disk assertions: ~/.dsh/data not writable in this sandbox (persist degrades to memory-only)');
     }
@@ -117,7 +126,7 @@ async function runTests() {
 
     // --- 4. executor 集成：子进程 env 注入 ---
     console.log('\n--- 4. executor integration ---');
-    rmSync(storePath, { force: true });
+    trySilentRemove(); // 沙箱下删除可能 EPERM：静默容错（与测试前清理同策略）
     const pmExec = new ProxyManager();
     pmExec.save({ url: 'http://exec-proxy:7890' });
 
@@ -195,11 +204,17 @@ async function runTests() {
     console.log('========================================');
     if (passed !== total) process.exit(1);
   } finally {
-    // 恢复用户真实配置（或清除测试产生的文件）
-    rmSync(storePath, { force: true });
-    if (hadOriginal && backup !== null) {
-      mkdirSync(path.dirname(storePath), { recursive: true });
-      writeFileSync(storePath, backup, 'utf8');
+    // 恢复用户真实配置（或清除测试产生的文件）。
+    // 沙箱下对 ~/.dsh/data 的删除可能 EPERM：恢复动作失败不得让测试进程崩溃
+    // （断言结果已在上面输出，收尾失败只应产生提示而非改写退出语义）。
+    try {
+      rmSync(storePath, { force: true });
+      if (hadOriginal && backup !== null) {
+        mkdirSync(path.dirname(storePath), { recursive: true });
+        writeFileSync(storePath, backup, 'utf8');
+      }
+    } catch (e) {
+      console.log(`⚠️ SKIP config restore: sandbox denied ~/.dsh/data cleanup (${e.code || 'unknown'})`);
     }
   }
 }
