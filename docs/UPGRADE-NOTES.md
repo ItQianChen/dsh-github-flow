@@ -10,8 +10,8 @@
 
 | # | 文件 | 位置 | 当前值 | 说明 |
 |---|---|---|---|---|
-| 1 | [package.json](../package.json) | 第 3 行 `"version": "0.2.1"` | `0.2.1` | npm 发布版本、CI 取版来源 |
-| 2 | [src/version.ts](../src/version.ts) | 第 9 行 `CURRENT_PLUGIN_VERSION = '0.2.1'` | `'0.2.1'` | 运行时版本比较基准（假横幅的教训来源） |
+| 1 | [package.json](../package.json) | 第 3 行 `"version": "0.3.0"` | `0.3.0` | npm 发布版本、CI 取版来源 |
+| 2 | [src/version.ts](../src/version.ts) | 第 9 行 `CURRENT_PLUGIN_VERSION = '0.3.0'` | `'0.3.0'` | 运行时版本比较基准（假横幅的教训来源） |
 
 **两处必须同值**。`pnpm run build` 会硬校验（[scripts/build.mjs](../scripts/build.mjs) 的
 `assertVersionConsistency`），不一致直接构建失败——但不要依赖拦截，发版前手动核对。
@@ -41,28 +41,28 @@
 | # | 机制 | 说明 |
 |---|---|---|
 | 9 | CI 取版（.github/workflows/npm-publish.yml:62） | `VERSION=$(node -p "require('./package.json').version")`——从 package.json 读，无硬编码 |
-| 10 | Git tag | `git tag v0.2.1` 手动打，值必须 = package.json 版本（tag 与 package.json 不一致时：CI 发布的 npm 版本以 package.json 为准，GitHub Release 标题以 tag 为准，出现两者错位） |
+| 10 | Git tag | `git tag v0.3.0` 手动打，值必须 = package.json 版本（tag 与 package.json 不一致时：CI 发布的 npm 版本以 package.json 为准，GitHub Release 标题以 tag 为准，出现两者错位） |
 
 ## 五、发版完整流程（含版本修改）
 
 ```powershell
 # 1. 改版本（两处同值）
-#    package.json  → "version": "0.2.1"
-#    src/version.ts → CURRENT_PLUGIN_VERSION = '0.2.1'
+#    package.json  → "version": "0.3.0"
+#    src/version.ts → CURRENT_PLUGIN_VERSION = '0.3.0'
 
 # 2. 文档已用占位符（npm-publish-guide 示例、README 安装命令），发版无需改文档版本号
 
 # 3. 构建（版本一致性校验在此拦截漏改）+ 全量测试
 pnpm run build
-pnpm test    # 9 阶段全绿
+pnpm test    # 11 阶段全绿
 
 # 4. 本机 e2e（必须先重启 DSH 桌面进程——Node 模块缓存，软链重建不注入运行中进程）
-#    重启后验证：GET /api/github/check-update 的 currentVersion = 0.2.1
+#    重启后验证：GET /api/github/check-update 的 currentVersion = 0.3.0
 
 # 5. 提交 + 打 tag + 推送（tag 值 = package.json 版本）
 git add -A
-git commit -m "chore(release): v0.2.1"
-git tag v0.2.1
+git commit -m "chore(release): v0.3.0"
+git tag v0.3.0
 git push origin master --tags
 #    CI（npm-publish.yml）自动：构建→发布 npm→创建 GitHub Release
 

@@ -249,14 +249,23 @@ Access via the GitHub icon in the main left navigation:
 </p>
 
 ### 2. Session Right Sidebar Panel (Workspace Drawer)
-Located in the right drawer of every chat workspace:
-* **Context Auto-Binding**: Automatically locks onto the active Git repository;
-* **Freshness Pill Alignment**: Compact indicator `[📦 Local Snapshot (2m ago)]` with live `[🔄 Refresh]` button, 100% aligned with global rules;
-* **PR Status Pills**: Live PR inspection with CI checks and review badges;
-* **Workspace Open Issues List**: Direct issue task review with author badges and external links;
-* **Latest Actions Pipeline**: Real-time CI workflow status tracking;
+Located in the right drawer of every chat workspace, seamlessly bridging your local Git workspace with remote GitHub repositories:
+* **Context Auto-Binding**: Automatically locks onto the active Git repository of the current session;
+* **Freshness Pill Alignment**: Compact indicator `[📦 Local Snapshot (2m ago)]` with live `[🔄 Refresh]` button, 100% aligned with global rules for an instant 0ms first render;
 * **Quick Action Grid**: Open repo in browser, jump to Issues/PRs, create PRs with one click;
-* **⚙️ Full Settings Access**: The sidebar offers its own settings button reusing the same settings modal as the cockpit (all four sections: Sync / Proxy / Update Source / About) — no need to switch back to the main page.
+* **Five Mutually Exclusive Tabs**: Compact tabbed navigation directly below the quick action grid, reducing vertical scrolling:
+  * **Git Records (`Git`)** (Default tab):
+    * Branch & Remote Sync: Real-time branch indicator (e.g. `master`) with tracking sync status (`✓ Up to date` or `↑N to push` / `↓N to pull`);
+    * Three-Section Commit View: Unpushed commits (ahead of remote), unpulled commits (behind remote), and recent commit history;
+    * 15 commits displayed by default, with **infinite scroll loading** when scrolling to the bottom (with live `15 / 74` progress counter and click trigger);
+    * Latest Release badge (`🏷️ v0.2.1`) anchored in the top right with hover details and direct release link;
+    * **Commit Detail Modal**: Click any commit row to open a clean modal dialog centered within the right sidebar (scoped inside drawer boundaries without overflowing full-screen), featuring smooth vertical scrolling, full 40-char SHA, author email, date, multi-line commit message body, and file diff stat table (`--stat`); pure local 0ms instant display, closable via `Esc`, close button, or backdrop click;
+  * **Uncommitted Changes (`📁 Uncommitted (N)`)**: Full-width list of uncommitted files with color-coded status codes (`??` untracked, `M` modified, `D` deleted, `R` renamed) and change counts;
+  * **Pull Requests (`🔀 PR (N)`)**: Open PR inspection with 3-state CI check rollup (`✅ CI Passed` / `❌ CI Failed` / `⏳ CI Pending`), merge conflict detection, review decisions (`✔ Approved` / `✋ Changes Requested` / `👀 Review Required`), Draft pills, and humanized relative timestamps;
+  * **Workspace Issues (`📋 Issues (N)`)**: Direct issue task review with assignees, labels, and category pills;
+  * **Actions Pipeline (`⚡ Actions (N)`)**: Real-time CI workflow status tracking with trigger event badges (`push`/`schedule`/`manual`/`PR`), relative time, and self-healing diagnostic notes for failed runs (embedding `run_id` for Agent one-click log inspection);
+* **Official Git Vector Icon**: High-definition Git diamond vector icon (`#1296db` SVG) across all Git and branch labels;
+* **⚙️ Full Settings Access**: Dedicated settings button reusing the same settings modal as the cockpit (all four sections: Sync / Proxy / Update Source / About) — no need to switch back to the main page.
 
 <p align="center">
   <img src="./docs/images/2.png" alt="Session Right Sidebar Panel" width="100%" />
