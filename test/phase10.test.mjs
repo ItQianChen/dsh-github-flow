@@ -321,6 +321,155 @@ async function runTests() {
     assert(emptyActive.includes('all: true'), 'empty active list hints at all:true (disabled trap)');
   }
 
+  // --- 8. 轻变更命令构造（S3：pin/unpin/lock/unlock/ready/workflow 开关）---
+  console.log('\n--- 8. light mutation command construction ---');
+  {
+    const rec = [];
+    const mkExec = () => ({
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
+      async run(cmd, opts) { rec.push({ cmd, opts }); return { ok: true, rawOutput: 'done' }; },
+      async getGhVersion() { return '2.96.0'; },
+      async runGuarded(cmd, opts) { return this.run(cmd, opts); },
+    });
+    const { createIssueTool } = await import('../lib/tools/issue.js');
+    const { createPrTool } = await import('../lib/tools/pr.js');
+    const { createRunTool } = await import('../lib/tools/run.js');
+    const issueT = createIssueTool(mkExec());
+    const prT = createPrTool(mkExec());
+    const runT = createRunTool(mkExec());
+
+    await issueT.execute({ action: 'pin', issue_number: 5, repo: 'o/r' }, {});
+    assert(rec.at(-1).cmd.join(' ') === 'issue pin 5 -R o/r', 'issue pin command exact');
+
+    await issueT.execute({ action: 'lock', issue_number: 7, repo: 'o/r', lock_reason: 'too_heated' }, {});
+    assert(rec.at(-1).cmd.join(' ') === 'issue lock 7 -R o/r --reason too_heated', 'issue lock with reason (实测枚举值 too_heated)');
+
+    await issueT.execute({ action: 'unlock', issue_number: 7, repo: 'o/r' }, {});
+    assert(rec.at(-1).cmd.join(' ') === 'issue unlock 7 -R o/r', 'unlock is standalone gh command (not lock flag)');
+
+    await issueT.execute({ action: 'status', repo: 'o/r' }, {});
+    assert(rec.at(-1).cmd[1] === 'status' && rec.at(-1).opts.rawText === true, 'issue status rawText passthrough');
+
+    await prT.execute({ action: 'ready', pr_number: 9, repo: 'o/r' }, {});
+    assert(rec.at(-1).cmd.join(' ') === 'pr ready 9 -R o/r', 'pr ready command exact (no confirm: reversible state)');
+    await prT.execute({ action: 'ready', pr_number: 9, repo: 'o/r', undo: true }, {});
+    assert(rec.at(-1).cmd.join(' ') === 'pr ready 9 -R o/r --undo', 'pr ready --undo converts back to draft (gh native reverse)');
+
+    await prT.execute({ action: 'update_branch', pr_number: 9, repo: 'o/r' }, {});
+    assert(rec.at(-1).cmd.join(' ') === 'pr update-branch 9 -R o/r', 'pr update-branch no confirm (self-heal action, D6)');
+
+    await runT.execute({ action: 'workflow_enable', workflow: 'ci.yml', repo: 'o/r' }, {});
+    assert(rec.at(-1).cmd.join(' ') === 'workflow enable ci.yml -R o/r', 'workflow enable command exact');
+
+    const disRes = await runT.execute({ action: 'workflow_disable', workflow: 'ci.yml', repo: 'o/r' }, {});
+    assert(rec.at(-1).cmd.join(' ') === 'workflow disable ci.yml -R o/r', 'workflow disable command exact');
+    assert(/trigger 将静默失败/.test(disRes.message), 'disable output warns trigger will silently fail (D4)');
+  }
+
+  // --- 9. confirm 分流（S3：delete/transfer/revert 拦截 + variable/secret 渲染红线）---
+  console.log('\n--- 9. confirm gates and render redline ---');
+  {
+    const rec = [];
+    const mkExec = () => ({
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
+      async run(cmd, opts) { rec.push({ cmd, opts }); return { ok: true, rawOutput: 'done' }; },
+      async getGhVersion() { return '2.96.0'; },
+      async runGuarded(cmd, opts) { return this.run(cmd, opts); },
+    });
+    const { createIssueTool } = await import('../lib/tools/issue.js');
+    const { createPrTool } = await import('../lib/tools/pr.js');
+    const { createSecretTool } = await import('../lib/tools/secret.js');
+    const issueT = createIssueTool(mkExec());
+    const prT = createPrTool(mkExec());
+    const secretT = createSecretTool(mkExec());
+
+    // 9.1 issue delete：未 confirm → 拦截卡 + 零 gh 调用
+    rec.length = 0;
+    const delBlocked = await issueT.execute({ action: 'delete', issue_number: 9, repo: 'o/r' }, {});
+    assert(delBlocked.status === 'AWAITING_CONFIRMATION' && rec.length === 0, 'issue delete blocked without confirm AND zero gh calls');
+    assert(/永久消失/.test(delBlocked.impact) && /无法恢复/.test(delBlocked.impact) && /物理删除/.test(delBlocked.warning), 'delete impact states physical irreversibility (D2)');
+
+    await issueT.execute({ action: 'delete', issue_number: 9, repo: 'o/r', confirm: true }, {});
+    assert(rec.at(-1).cmd.includes('--yes'), 'confirmed delete carries --yes (non-TTY essential)');
+
+    // 9.2 transfer：目标必填 + 同仓库拒绝 + confirm 拦截
+    let trThrew = false;
+    try { await issueT.execute({ action: 'transfer', issue_number: 9, repo: 'o/r' }, {}); } catch { trThrew = true; }
+    assert(trThrew, 'transfer without target_repo throws');
+    rec.length = 0;
+    const trBlocked = await issueT.execute({ action: 'transfer', issue_number: 9, repo: 'o/r', target_repo: 'o/other' }, {});
+    assert(trBlocked.status === 'AWAITING_CONFIRMATION' && rec.length === 0, 'transfer blocked without confirm');
+    let sameRepoThrew = false;
+    try { await issueT.execute({ action: 'transfer', issue_number: 9, repo: 'o/r', target_repo: 'o/r', confirm: true }, {}); } catch { sameRepoThrew = true; }
+    assert(sameRepoThrew, 'transfer to same repo rejected');
+    await issueT.execute({ action: 'transfer', issue_number: 9, repo: 'o/r', target_repo: 'o/other', confirm: true }, {});
+    assert(rec.at(-1).cmd.join(' ') === 'issue transfer 9 o/other -R o/r', 'confirmed transfer command exact');
+
+    // 9.3 pr revert：confirm 拦截（远端创建实体，merge 级）
+    rec.length = 0;
+    const rvBlocked = await prT.execute({ action: 'revert', pr_number: 12, repo: 'o/r' }, {});
+    assert(rvBlocked.status === 'AWAITING_CONFIRMATION' && rec.length === 0, 'pr revert blocked without confirm (D5)');
+    await prT.execute({ action: 'revert', pr_number: 12, repo: 'o/r', confirm: true }, {});
+    assert(rec.at(-1).cmd.join(' ') === 'pr revert 12 -R o/r', 'confirmed revert command exact');
+
+    // 9.4 variable/secret 渲染红线（D1：物理分离）
+    // variable get 返回值且渲染可见；secret 路径 value 永不出现
+    await secretT.execute({ action: 'set', kind: 'variable', name: 'DEPLOY_ENV', value: 'staging', repo: 'o/r' }, {});
+    assert(rec.at(-1).cmd.includes('--body') && rec.at(-1).cmd.includes('staging'), 'variable set via -b direct (E2: no stdin redline)');
+    assert(!rec.at(-1).opts || rec.at(-1).opts.stdin === undefined, 'variable set never uses stdin channel');
+
+    const got = await secretT.execute({ action: 'get', kind: 'variable', name: 'DEPLOY_ENV', repo: 'o/r' }, {});
+    assert(got.value !== undefined, 'variable get returns value (CI plaintext by design)');
+
+    let sgThrew = false;
+    try { await secretT.execute({ action: 'get', name: 'NPM_TOKEN', repo: 'o/r' }, {}); } catch (e) { sgThrew = /加密存储|不可读取/.test(String(e.message)); }
+    assert(sgThrew, 'secret get explicitly rejected (GitHub-side encryption, physical impossibility)');
+
+    // 渲染分流：secret list 输出永不含 value；variable 渲染可含值
+    const tool = secretT;
+    const secretRendered = tool.output.render({ action: 'list', kind: 'secret' }, { items: [{ name: 'NPM_TOKEN', updatedAt: '2026-01-01T00:00:00Z', visibility: 'private' }] })[0].text;
+    assert(!secretRendered.includes('value'), 'secret render never mentions value field');
+    const varSetRendered = tool.output.render({ action: 'set', kind: 'variable' }, { message: 'Variable「E」已更新（值: staging）' })[0].text;
+    assert(varSetRendered.includes('staging'), 'variable set render shows plaintext value (by design)');
+    // app/visibility 误用于 variable 被拒
+    let appThrew = false;
+    try { await secretT.execute({ action: 'list', kind: 'variable', repo: 'o/r', app: 'actions' }, {}); } catch { appThrew = true; }
+    assert(appThrew, 'variable rejects secret-only app param');
+
+    // 9.5 向后兼容：无 kind 默认 secret（行为与旧版一致）
+    rec.length = 0;
+    await secretT.execute({ action: 'set', name: 'NPM_TOKEN', value: 'x', repo: 'o/r' }, {});
+    assert(rec.at(-1).cmd[0] === 'secret' && rec.at(-1).opts.stdin === 'x', 'default kind=secret keeps stdin channel (backward compat)');
+  }
+
+  // --- 10. run download 落盘纪律（GHSA 防线）---
+  console.log('\n--- 10. run download GHSA discipline ---');
+  {
+    const rec = [];
+    const dlExec = {
+      async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
+      async run(cmd, opts) { rec.push({ cmd, opts }); return { ok: true, rawOutput: 'downloaded' }; },
+      async getGhVersion() { return '2.96.0'; }, // < 2.102 → securityNote 必须出现
+      async runGuarded(cmd, opts) { return this.run(cmd, opts); },
+    };
+    const { createRunTool } = await import('../lib/tools/run.js');
+    const runT = createRunTool(dlExec);
+
+    const r = await runT.execute({ action: 'download', run_id: '12345', repo: 'owner/rep' }, {});
+    const dirArg = r.directory;
+    // 落盘路径恰为插件派生（无 dir 参数可传）
+    const expected = ['.dsh', 'data', 'dsh-github-flow', 'artifacts', 'owner', 'rep', '12345'];
+    const gotParts = dirArg.split(/[\\/]/);
+    assert(expected.every((seg) => gotParts.includes(seg)), 'download dir is plugin-derived (owner/repo/run_id), never user input');
+    const dashD = rec.at(-1).cmd[rec.at(-1).cmd.indexOf('-D') + 1];
+    assert(dashD === dirArg, '-D receives exactly the plugin-derived path');
+    assert(/GHSA-39wj-f2f4-978v/.test(r.securityNote || ''), 'gh<2.102 output carries GHSA security note');
+    assert(!('dir' in runT.parameters.properties), 'download exposes no dir param to user (attack surface: one mkdirSync)');
+
+    await runT.execute({ action: 'download', run_id: '12345', repo: 'owner/rep', name: 'build-artifact' }, {});
+    assert(rec.at(-1).cmd.includes('-n') && rec.at(-1).cmd[rec.at(-1).cmd.indexOf('-n') + 1] === 'build-artifact', 'name filter passes -n');
+  }
+
   console.log('\n========================================');
   console.log(`Phase 10 Test Result: ${passed}/${total} assertions PASSED!`);
   console.log('========================================');

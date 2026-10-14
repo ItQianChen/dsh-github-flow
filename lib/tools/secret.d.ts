@@ -10,6 +10,11 @@ export declare function createSecretTool(executor: GhExecutor): {
                 enum: string[];
                 description: string;
             };
+            kind: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
             repo: {
                 type: string;
                 description: string;

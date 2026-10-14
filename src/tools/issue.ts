@@ -24,12 +24,21 @@ export function createIssueTool(executor: GhExecutor) {
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'create', 'comment', 'close', 'reopen', 'edit', 'develop', 'view_images'],
-          description: 'Issue 操作类型。view_images 下载正文内的图片到本地并返回可渲染的图片内容块（Agent 可直接"看"用户报障截图）。',
+          enum: ['list', 'view', 'create', 'comment', 'close', 'reopen', 'edit', 'develop', 'view_images', 'delete', 'transfer', 'pin', 'unpin', 'lock', 'unlock', 'status'],
+          description: 'Issue 操作类型。view_images 下载正文内的图片到本地并返回可渲染的图片内容块（Agent 可直接"看"用户报障截图）。delete 物理删除不可恢复、transfer 跨仓库迁移，两者均需 confirm: true。',
         },
         issue_number: {
           type: 'number',
-          description: 'Issue 编号（view, comment, close, reopen, edit, develop 时使用）。',
+          description: 'Issue 编号（view, comment, close, reopen, edit, develop, delete, transfer, pin/unpin/lock/unlock 时使用）。',
+        },
+        target_repo: {
+          type: 'string',
+          description: 'transfer 动作必填：迁移目标仓库 [owner/repo]（迁移后原 URL 301 重定向，归属不可静默撤回）。',
+        },
+        lock_reason: {
+          type: 'string',
+          enum: ['off_topic', 'resolved', 'spam', 'too_heated'],
+          description: 'lock 动作可选：锁定原因（gh 实测四合法值）。',
         },
         repo: {
           type: 'string',
@@ -78,7 +87,7 @@ export function createIssueTool(executor: GhExecutor) {
         },
         confirm: {
           type: 'boolean',
-          description: '高危破坏性操作确认标志（close 动作必需）。若为 false 则仅输出待关闭警告。',
+          description: '高危破坏性操作确认标志（close/delete/transfer 动作必需）。delete 物理删除不可恢复、transfer 跨仓库迁移，拦截级别高于 close。',
         },
         image_urls: {
           type: 'array',
@@ -284,6 +293,77 @@ export function createIssueTool(executor: GhExecutor) {
           const res = await executor.run(['issue', 'reopen', String(args.issue_number), ...repoArgs], runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: `Issue #${args.issue_number} 已重新开启` };
+        }
+
+        // ---- 变更面新增（S3）----
+
+        case 'pin':
+        case 'unpin': {
+          if (!args.issue_number) throw new Error(`${args.action} 操作必须提供 issue_number`);
+          // 置顶状态位：可逆（pin↔unpin 互逆），按轻变更免 confirm
+          const res = await executor.run(['issue', args.action, String(args.issue_number), ...repoArgs], runOpts);
+          if (!res.ok) throw new Error(res.error);
+          return { message: `Issue #${args.issue_number} 已${args.action === 'pin' ? '置顶' : '取消置顶'}` };
+        }
+
+        case 'lock':
+        case 'unlock': {
+          if (!args.issue_number) throw new Error(`${args.action} 操作必须提供 issue_number`);
+          // unlock 是 gh 独立命令（非 lock 的 flag，实测 help 已钉）；锁定对话可逆，免 confirm
+          const cmd = ['issue', args.action, String(args.issue_number), ...repoArgs];
+          if (args.action === 'lock' && args.lock_reason) {
+            cmd.push('--reason', args.lock_reason);
+          }
+          const res = await executor.run(cmd, runOpts);
+          if (!res.ok) throw new Error(res.error);
+          return {
+            message: `Issue #${args.issue_number} 对话已${args.action === 'lock' ? '锁定' : '解锁'}`,
+            ...(args.action === 'lock' && args.lock_reason ? { reason: args.lock_reason } : {}),
+          };
+        }
+
+        case 'delete': {
+          if (!args.issue_number) throw new Error('delete 操作必须提供 issue_number');
+          // 物理删除 > close 的拦截级别：issue 编号永久消失、评论湮灭、GraphQL 无法恢复
+          if (args.confirm !== true) {
+            return {
+              status: 'AWAITING_CONFIRMATION',
+              warning: `⚠️ 高危操作拦截：你即将**物理删除** Issue #${args.issue_number}（非 close，不可恢复）。`,
+              impact: 'Issue 编号将永久消失，全部评论与附件随之湮灭，GraphQL 层无法恢复——这与 close（可 reopen 逆转）有本质区别。',
+              requiredAction: '如确认删除，请与用户核实后附加 `confirm: true` 重新调用。',
+            };
+          }
+          // 非 TTY 下 gh issue delete 会挂起等待 prompt，--yes 是非交互执行的唯一途径
+          const res = await executor.run(['issue', 'delete', String(args.issue_number), ...repoArgs, '--yes'], runOpts);
+          if (!res.ok) throw new Error(res.error);
+          return { message: `Issue #${args.issue_number} 已永久删除（不可恢复）` };
+        }
+
+        case 'transfer': {
+          if (!args.issue_number) throw new Error('transfer 操作必须提供 issue_number');
+          if (!args.target_repo) throw new Error('transfer 操作必须提供 target_repo [owner/repo]');
+          if (args.target_repo === repoTarget) {
+            throw new Error(`transfer 目标仓库 (${args.target_repo}) 与当前仓库相同，迁移无意义。`);
+          }
+          // 跨仓库迁移：原 URL 301 但归属改变，不可静默撤回——与 delete 同级 confirm
+          if (args.confirm !== true) {
+            return {
+              status: 'AWAITING_CONFIRMATION',
+              warning: `⚠️ 高危操作拦截：你即将把 Issue #${args.issue_number} 从 ${repoTarget} 迁移到 ${args.target_repo}。`,
+              impact: `迁移后 Issue 归属 ${args.target_repo}（原 URL 301 重定向），标签/里程碑不随迁，操作不可静默撤回。需要目标仓库的写权限。`,
+              requiredAction: '如确认迁移，请与用户核实后附加 `confirm: true` 重新调用。',
+            };
+          }
+          const res = await executor.run(['issue', 'transfer', String(args.issue_number), args.target_repo, ...repoArgs], runOpts);
+          if (!res.ok) throw new Error(res.error);
+          return { message: `Issue #${args.issue_number} 已迁移至 ${args.target_repo}`, url: res.rawOutput };
+        }
+
+        case 'status': {
+          // 非 TTY 纯文本分段（Assigned/Mentioning/Pushed），gh 原生已是紧凑格式
+          const res = await executor.run(['issue', 'status', ...repoArgs], { ...runOpts, rawText: true, timeoutMs: 20_000 });
+          if (!res.ok) throw new Error(res.error);
+          return { result: res.rawOutput || '无分配议题' };
         }
 
         default:

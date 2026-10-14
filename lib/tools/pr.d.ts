@@ -52,6 +52,10 @@ export declare function createPrTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            undo: {
+                type: string;
+                description: string;
+            };
             state: {
                 type: string;
                 enum: string[];

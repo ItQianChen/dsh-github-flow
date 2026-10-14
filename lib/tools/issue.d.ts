@@ -15,6 +15,15 @@ export declare function createIssueTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            target_repo: {
+                type: string;
+                description: string;
+            };
+            lock_reason: {
+                type: string;
+                enum: string[];
+                description: string;
+            };
             repo: {
                 type: string;
                 description: string;

@@ -39,6 +39,10 @@ export declare function createRunTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            name: {
+                type: string;
+                description: string;
+            };
             ref: {
                 type: string;
                 description: string;
