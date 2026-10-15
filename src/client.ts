@@ -1375,11 +1375,16 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
       var [launching, setLaunching] = React.useState(false);
       var [toastMsg, setToastMsg] = React.useState(null as string | null);
 
-      var notInstalled = !auth?.installed;
+      var isNetwork = Boolean(auth?.networkError);
+      var notInstalled = !isNetwork && Boolean(auth && auth.installed === false);
+      var notLoggedIn = !isNetwork && !notInstalled && Boolean(!auth?.loggedIn);
+
       var guide = auth?.installGuide;
-      var defaultCmd = notInstalled
-        ? (guide?.command || "winget install --id GitHub.cli")
-        : "gh auth login";
+      var defaultCmd = isNetwork
+        ? "gh auth status"
+        : notInstalled
+          ? (guide?.command || "winget install --id GitHub.cli")
+          : "gh auth login";
 
       var copyCmd = (cmd: string) => {
         try {
@@ -1438,32 +1443,44 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
         }
       };
 
+      var openProxySettings = () => {
+        try {
+          window.dispatchEvent(new CustomEvent("dsh-github-open-proxy"));
+        } catch (e) {}
+      };
+
       var h = React.createElement;
 
       return h(
         "div",
         {
-          className: "dsh-github-guide-card " + (notInstalled ? "danger" : "warning"),
+          className: "dsh-github-guide-card " + (isNetwork ? "warning" : notInstalled ? "danger" : "warning"),
           style: isRightbar ? { padding: "12px", marginBottom: "12px" } : undefined
         },
         // 头部
         h(
           "div",
           { className: "dsh-github-guide-header" },
-          notInstalled ? "⚠️ 未检测到 GitHub CLI (gh)" : "🔑 GitHub 账号尚未登录",
+          isNetwork
+            ? "🌐 无法连接 GitHub 服务器"
+            : notInstalled
+              ? "⚠️ 未检测到 GitHub CLI (gh)"
+              : "🔑 GitHub 账号尚未登录",
           h(
             "span",
-            { className: "dsh-github-badge " + (notInstalled ? "dsh-badge-red" : "dsh-badge-yellow") },
-            notInstalled ? "未安装" : "未认证"
+            { className: "dsh-github-badge " + (isNetwork ? "dsh-badge-yellow" : notInstalled ? "dsh-badge-red" : "dsh-badge-yellow") },
+            isNetwork ? "网络受限" : notInstalled ? "未安装" : "未认证"
           )
         ),
         // 描述
         h(
           "div",
           { className: "dsh-github-guide-desc" },
-          notInstalled
-            ? (guide?.description || "DSH GitHub Flow 插件依赖官方 GitHub CLI 工具与云端进行安全交互，当前系统 PATH 中未检测到该工具。")
-            : "检测到本机已安装 GitHub CLI，请完成账号授权以解锁仓库管理、PR 审查和 Issues 待办。"
+          isNetwork
+            ? (auth?.networkErrorReason || "检测到本机已安装 GitHub CLI，但当前无法连接至 api.github.com（网络超时、DNS 无法解析或被系统代理阻断）。")
+            : notInstalled
+              ? (guide?.description || "DSH GitHub Flow 插件依赖官方 GitHub CLI 工具与云端进行安全交互，当前系统 PATH 中未检测到该工具。")
+              : "检测到本机已安装 GitHub CLI，请完成账号授权以解锁仓库管理、PR 审查和 Issues 待办。"
         ),
         // 命令代码展示框
         h(
@@ -1482,18 +1499,48 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
         ),
         // 步骤提示
         !notInstalled && !isRightbar
-          ? h(
-              "ol",
-              { className: "dsh-github-steps-list" },
-              h("li", null, "打开系统终端（PowerShell / CMD / Terminal），运行上述命令；"),
-              h("li", null, "按提示依次选择「GitHub.com」➜「HTTPS」➜「Login with a web browser」；"),
-              h("li", null, "按回车打开浏览器确认授权后，切回本页面即可自动恢复。")
-            )
+          ? (isNetwork
+              ? h(
+                  "ol",
+                  { className: "dsh-github-steps-list" },
+                  h("li", null, "检查系统本地网络连接或 DNS 解析，确认能正常访问 github.com；"),
+                  h("li", null, "若使用了网络代理工具，可在下方点击「配置网络代理」填写 HTTP 或 SOCKS5 代理；"),
+                  h("li", null, "配置或恢复网络后，切回本面板或点击「重试连接」即可自动同步数据。")
+                )
+              : h(
+                  "ol",
+                  { className: "dsh-github-steps-list" },
+                  h("li", null, "打开系统终端（PowerShell / CMD / Terminal），运行上述命令；"),
+                  h("li", null, "按提示依次选择「GitHub.com」➜「HTTPS」➜「Login with a web browser」；"),
+                  h("li", null, "按回车打开浏览器确认授权后，切回本页面即可自动恢复。")
+                ))
           : null,
         // 操作按钮区域
         h(
           "div",
           { className: "dsh-github-guide-actions" },
+          isNetwork
+            ? h(
+                "button",
+                {
+                  className: "dsh-github-action-btn",
+                  onClick: onRefresh,
+                  title: "重新发起网络连接校验"
+                },
+                "🔄 重试网络连接"
+              )
+            : null,
+          isNetwork
+            ? h(
+                "button",
+                {
+                  className: "dsh-github-action-btn",
+                  onClick: openProxySettings,
+                  title: "打开网络代理设置，配置 HTTP/SOCKS5 代理服务器"
+                },
+                "⚙️ 配置网络代理"
+              )
+            : null,
           h(
             "button",
             {
@@ -1502,7 +1549,7 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
               disabled: launching,
               title: "自动唤起系统终端并执行该命令"
             },
-            launching ? "正在唤起..." : (notInstalled ? "💻 唤起终端安装" : "💻 唤起终端登录")
+            launching ? "正在唤起..." : (isNetwork ? "💻 终端排查状态" : notInstalled ? "💻 唤起终端安装" : "💻 唤起终端登录")
           ),
           notInstalled
             ? h(
@@ -1515,39 +1562,41 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
                 "🌐 官网安装包 (.msi/.pkg)"
               )
             : null,
-          h(
-            "button",
-            {
-              className: "dsh-github-action-btn",
-              onClick: function () {
-                setToastMsg("正在快速检测登录状态...");
-                // 探测超时保护：后端 auth 探针本身 10s 超时，前端同样 10s 兜底——
-                // 无超时时挂起会让 toast 永远停在"正在检测"且自愈刷新不触发
-                var probeController = new AbortController();
-                var probeTimer = setTimeout(function () { probeController.abort(); }, 10000);
-                fetch("/api/github/auth?force=true", { signal: probeController.signal })
-                  .then(function (res) { return res.json(); })
-                  .then(function (json) {
-                    clearTimeout(probeTimer);
-                    if (json && json.ok && json.auth && json.auth.loggedIn) {
-                      setToastMsg("✅ 已识别到 GitHub CLI 登录态，正在拉取数据...");
-                      clearStoredGlobalOverview();
-                      onRefresh();
-                    } else {
-                      setToastMsg("⚠️ 暂未检测到登录凭据，请在终端执行 gh auth login 完成授权");
-                      onRefresh();
-                    }
-                  })
-                  .catch(function () {
-                    clearTimeout(probeTimer);
-                    setToastMsg("❌ 检测超时或后端不可达，请稍后重试");
-                    onRefresh();
-                  });
-              },
-              title: "重新检测登录与安装状态"
-            },
-            "🔄 刷新状态"
-          )
+          !isNetwork
+            ? h(
+                "button",
+                {
+                  className: "dsh-github-action-btn",
+                  onClick: function () {
+                    setToastMsg("正在快速检测登录状态...");
+                    // 探测超时保护：后端 auth 探针本身 10s 超时，前端同样 10s 兜底——
+                    // 无超时时挂起会让 toast 永远停在\"正在检测\"且自愈刷新不触发
+                    var probeController = new AbortController();
+                    var probeTimer = setTimeout(function () { probeController.abort(); }, 10000);
+                    fetch("/api/github/auth?force=true", { signal: probeController.signal })
+                      .then(function (res) { return res.json(); })
+                      .then(function (json) {
+                        clearTimeout(probeTimer);
+                        if (json && json.ok && json.auth && json.auth.loggedIn) {
+                          setToastMsg("✅ 已识别到 GitHub CLI 登录态，正在拉取数据...");
+                          clearStoredGlobalOverview();
+                          onRefresh();
+                        } else {
+                          setToastMsg("⚠️ 暂未检测到登录凭据，请在终端执行 gh auth login 完成授权");
+                          onRefresh();
+                        }
+                      })
+                      .catch(function () {
+                        clearTimeout(probeTimer);
+                        setToastMsg("❌ 检测超时或后端不可达，请稍后重试");
+                        onRefresh();
+                      });
+                  },
+                  title: "重新检测登录与安装状态"
+                },
+                "🔄 刷新状态"
+              )
+            : null
         ),
         toastMsg
           ? h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-link, #0969da)", marginTop: "8px" } }, `ℹ️ ${toastMsg}`)
@@ -1854,6 +1903,97 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
       );
     }
 
+    /**
+     * 网络连接异常与离线状态醒目横幅组件
+     * 严防静默欺骗：当刷新失败、超时或断网时，直接在核心视觉区置顶展示警告，
+     * 明确告知用户正在查看历史离线快照，绝不伪装成最新状态，并提供重试与代理配置。
+     */
+    function NetworkAlertBanner(props: {
+      isRightbar?: boolean;
+      networkErrorReason?: string | null;
+      lastSyncedAt?: number;
+      onRefresh?: () => void;
+      onOpenProxy?: () => void;
+    }) {
+      var isRightbar = Boolean(props.isRightbar);
+      var reason = props.networkErrorReason || "无法连接至 GitHub API 服务器（网络超时或被防火墙/代理阻断），本次未能获取最新数据。";
+      var lastSyncedAt = props.lastSyncedAt || 0;
+      var onRefresh = props.onRefresh || (() => {});
+      var onOpenProxy = props.onOpenProxy || (() => {
+        try { window.dispatchEvent(new CustomEvent("dsh-github-open-proxy")); } catch (e) {}
+      });
+
+      var formatTime = function (ts: number) {
+        if (!ts) return "未知时间";
+        var diff = Date.now() - ts;
+        var MIN = 60 * 1000, HOUR = 60 * MIN, DAY = 24 * HOUR;
+        if (diff < MIN) return "刚刚";
+        if (diff < HOUR) return Math.floor(diff / MIN) + " 分钟前";
+        if (diff < DAY) return Math.floor(diff / HOUR) + " 小时前";
+        return new Date(ts).toLocaleDateString();
+      };
+
+      var h = React.createElement;
+
+      return h(
+        "div",
+        {
+          className: "dsh-github-network-alert",
+          style: {
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+            padding: isRightbar ? "10px 12px" : "12px 16px",
+            marginBottom: "12px",
+            borderRadius: "8px",
+            background: "rgba(240, 136, 62, 0.12)",
+            border: "1px solid rgba(240, 136, 62, 0.4)",
+            fontSize: "12px",
+            color: "var(--dsw-alias-label-primary, #1f2328)",
+          },
+        },
+        h(
+          "div",
+          { style: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" } },
+          h(
+            "div",
+            { style: { display: "flex", alignItems: "center", gap: "6px", fontWeight: 600, color: "var(--dsw-alias-state-attention-primary, #9a6700)" } },
+            h("span", null, "⚠️"),
+            h("span", null, "网络连接失败，当前展示离线历史数据")
+          ),
+          h(
+            "div",
+            { style: { display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 } },
+            h(
+              "button",
+              {
+                className: "dsh-github-btn-sm",
+                onClick: onRefresh,
+                title: "重新发起网络连接刷新",
+                style: { padding: "3px 8px", fontSize: "11px", cursor: "pointer" },
+              },
+              "🔄 重试刷新"
+            ),
+            h(
+              "button",
+              {
+                className: "dsh-github-btn-sm",
+                onClick: onOpenProxy,
+                title: "打开网络代理设置配置 HTTP/SOCKS5 代理",
+                style: { padding: "3px 8px", fontSize: "11px", cursor: "pointer" },
+              },
+              "⚙️ 配置代理"
+            )
+          )
+        ),
+        h(
+          "div",
+          { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", lineHeight: 1.4 } },
+          reason + (lastSyncedAt ? `（当前数据快照同步于 ${formatTime(lastSyncedAt)}）` : "")
+        )
+      );
+    }
+
     // 数据新鲜度与同步状态微标组件 (自适应全景大面板与右侧栏紧凑模式)
     function SyncStatusBadge(props: { syncStatus: string; lastSyncedAt: number; isRightbar?: boolean }) {
       var syncStatus = props.syncStatus;
@@ -1889,8 +2029,8 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
         bg = "rgba(101, 109, 118, 0.12)";
         color = "var(--dsw-alias-label-secondary, #656d76)";
       } else if (syncStatus === "failed") {
-        text = isRightbar ? "⚠️ 同步超时" : "⚠️ 同步超时，已保留本地缓存";
-        bg = "rgba(207, 34, 46, 0.1)";
+        text = isRightbar ? "❌ 刷新失败 (离线)" : "❌ 网络断开 (展示离线数据)";
+        bg = "rgba(207, 34, 46, 0.12)";
         color = "var(--dsw-alias-state-error-primary, #cf222e)";
       }
 
@@ -1942,6 +2082,20 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
       var effectiveUpdateInfo = updateInfo || data?.updateInfo;
       var upgradeBannerEl = effectiveUpdateInfo && effectiveUpdateInfo.hasUpdate
         ? h(UpgradeNotificationCard, { updateInfo: effectiveUpdateInfo, isRightbar })
+        : null;
+
+      // 核心防欺骗告警：若当前处于网络失败态（syncStatus === 'failed' 或 auth?.networkError 或明确的 error），
+      // 绝不静默展示旧数据！直接在正中央高亮告警横幅，标明「离线历史快照」，并提供重试与代理设置！
+      var networkAlertBannerEl = (syncStatus === "failed" || auth?.networkError || (error && data))
+        ? h(NetworkAlertBanner, {
+            isRightbar,
+            networkErrorReason: auth?.networkErrorReason || error || "连接 GitHub API 超时或网络不可达，本次未能获取最新数据。",
+            lastSyncedAt,
+            onRefresh,
+            onOpenProxy: function () {
+              try { window.dispatchEvent(new CustomEvent("dsh-github-open-proxy")); } catch (e) {}
+            },
+          })
         : null;
 
       var headerEl = h(
@@ -2216,8 +2370,8 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
             )
       );
 
-      // 快捷操作栏 (方案 1: 官方黄金功能直达)
-      var actionsBarEl = h(
+      // 快捷操作栏 (仅在检测到关联仓库时展示，未绑定仓库时不展示虚假按钮)
+      var actionsBarEl = repo ? h(
         "div",
         { className: "dsh-github-quick-actions" },
         // 1. 浏览器打开仓库主页
@@ -2290,7 +2444,7 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
           },
           "📝 新建 Issue"
         )
-      );
+      ) : null;
 
       // PR 列表
       var prSectionEl = h(
@@ -2454,7 +2608,7 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
             )
       );
 
-      var authGuideEl = !auth?.loggedIn
+      var authGuideEl = (!auth?.loggedIn && !auth?.networkError && syncStatus !== "failed")
         ? h(AuthGuideCard, { auth, onRefresh, isRightbar })
         : null;
 
@@ -2520,7 +2674,7 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
         gitSt ? h("div", { "data-tab-page": "dirty", hidden: defaultTab !== "dirty" }, dirtySectionEl) : null
       );
 
-      return [headerEl, upgradeBannerEl, authGuideEl, repoCardEl, actionsBarEl, tabbedContentEl].filter(Boolean);
+      return [headerEl, networkAlertBannerEl, upgradeBannerEl, authGuideEl, repoCardEl, actionsBarEl, tabbedContentEl].filter(Boolean);
     }
 
     // 全局持久化缓存与偏好配置键名
@@ -2568,9 +2722,8 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
         var raw = localStorage.getItem(GLOBAL_OVERVIEW_CACHE_KEY);
         if (!raw) return null;
         var parsed = JSON.parse(raw);
-        // 毒丸缓存自愈清洗：如果缓存中的快照显示「未登录」或未就绪，立即将其从 localStorage 彻底抹除！
-        if (!parsed || !parsed.data || !parsed.data.auth || !parsed.data.auth.loggedIn) {
-          localStorage.removeItem(GLOBAL_OVERVIEW_CACHE_KEY);
+        // 数据完整性校验：必须具备有效 data 载荷
+        if (!parsed || !parsed.data) {
           return null;
         }
         if (typeof parsed.savedAt === "number") {
@@ -2583,8 +2736,8 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
     }
 
     function saveStoredGlobalOverview(data: any) {
-      // 毒丸拦截守卫：绝不持久化存储未登录状态、空数据或异常快照！
-      if (!data || !data.auth || !data.auth.loggedIn) {
+      // 容灾拦截守卫：绝不让网络异常状态冲刷覆盖已持久化的有效快照！
+      if (!data || !data.auth || data.auth.networkError) {
         return;
       }
       try {
@@ -2637,9 +2790,7 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
         var raw = localStorage.getItem(key);
         if (!raw) return null;
         var parsed = JSON.parse(raw);
-        // 毒丸拦截：若快照未登录，物理删除
-        if (!parsed || !parsed.data || !parsed.data.auth || !parsed.data.auth.loggedIn) {
-          localStorage.removeItem(key);
+        if (!parsed || !parsed.data) {
           return null;
         }
         return { data: parsed.data, savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : 0 };
@@ -2649,7 +2800,8 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
     }
 
     function saveStoredRightbarData(cwd: string | null, data: any) {
-      if (!data || !data.auth || !data.auth.loggedIn) return;
+      // 遭遇网络故障或空数据时，不冲刷本地有效快照
+      if (!data || !data.auth || data.auth.networkError) return;
       try {
         var key = getRightbarStorageKey(cwd);
         localStorage.setItem(key, JSON.stringify({
@@ -2681,6 +2833,21 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
       var [loading, setLoading] = React.useState(false);
       var [error, setError] = React.useState(null as string | null);
       var [updateInfo, setUpdateInfo] = React.useState(null as any);
+      var [toastMsg, setToastMsg] = React.useState(null as string | null);
+
+      var showToast = (msg: string) => {
+        setToastMsg(msg);
+        setTimeout(() => setToastMsg(null), 5000);
+      };
+
+      // 工作区路径 (cwd) 切换响应式同步：立即加载对应新工作区的独立本地快照，杜绝上一个工作区数据残留！
+      React.useEffect(() => {
+        var snap = getStoredRightbarSnapshot(cwd);
+        setData(snap?.data || null);
+        setSyncStatus(snap ? "cached" : "loading");
+        setLastSyncedAt(snap?.savedAt || 0);
+        setError(null);
+      }, [cwd]);
 
       // 跨组件事件监听：当主页修改了同步设置或清空缓存时，右侧栏即时无感对齐
       React.useEffect(function () {
@@ -2744,6 +2911,9 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
           }
           var url = "/api/github/overview";
           var params: string[] = [];
+          if (forceRefresh) {
+            params.push("force=true");
+          }
           if (sessionId) {
             params.push("sessionId=" + encodeURIComponent(sessionId));
           }
@@ -2757,37 +2927,79 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
           if (!res.ok) {
             var errText = await res.text().catch(() => "");
             var msg = `后端服务未就绪 (${res.status}): ${errText || res.statusText}`;
-            if (data) {
-              setSyncStatus("failed");
-            } else {
-              setError(msg);
+            setSyncStatus("failed");
+            setError(msg);
+            if (forceRefresh) {
+              showToast("❌ 刷新失败：" + msg);
             }
             return;
           }
           var json = await res.json();
           if (json.ok && json.data) {
-            setData(json.data);
-            saveStoredRightbarData(cwd, json.data); // 写入持久化快照
-            setLastSyncedAt(Date.now());
-            setSyncStatus("fresh");
+            var isFail = Boolean(
+              json.partialFailure ||
+              json.data.partialFailure ||
+              json.data.networkError ||
+              json.data.auth?.networkError ||
+              json.error
+            );
+            var failReason = String(
+              json.error ||
+              json.fetchError ||
+              json.data.networkErrorReason ||
+              json.data.auth?.networkErrorReason ||
+              "拉取云端数据失败"
+            );
+
+            if (isFail) {
+              setSyncStatus("failed");
+              setError(failReason);
+              // 关键保全：若当前本地已有数据且包含 PR/Issue，若新拉取的为空，绝不让空列表抹杀现有数据！
+              if (data && (data.pullRequests?.length > 0 || data.issues?.length > 0 || data.runs?.length > 0)) {
+                if (json.data.pullRequests?.length > 0 || json.data.issues?.length > 0) {
+                  setData(json.data);
+                }
+              } else {
+                setData(json.data);
+              }
+              if (forceRefresh) {
+                showToast("❌ 刷新失败：" + failReason);
+              }
+            } else {
+              setData(json.data);
+              saveStoredRightbarData(cwd, json.data); // 写入持久化快照
+              // 关键修正：如果是来自后端缓存则读取缓存历史时间，仅在云端新鲜请求时使用 Date.now()！
+              var syncTs = json.fromCache && json.data.lastUpdated
+                ? (Date.parse(json.data.lastUpdated) || Date.now())
+                : Date.now();
+              setLastSyncedAt(syncTs);
+              setSyncStatus(json.fromCache ? "cached" : "fresh");
+              setError(null);
+              if (forceRefresh) {
+                showToast("✅ 刷新成功，已同步最新数据");
+              }
+            }
             if (json.data.updateInfo) {
               setUpdateInfo(json.data.updateInfo);
             }
           } else if (data) {
             setSyncStatus("failed");
+            var failMsg = json.error || "获取状态失败";
+            setError(failMsg);
+            if (forceRefresh) {
+              showToast("❌ 刷新失败：" + failMsg);
+            }
           } else {
             setError(json.error || "获取状态失败");
           }
         } catch (err: any) {
-          if (data) {
-            // 后台网络故障时，旧数据依然完整可用
-            setSyncStatus("failed");
-          } else {
-            if (timedOut || err.name === "AbortError") {
-              setError("获取超时（45 秒）：本机 gh 命令响应过慢或网络代理劫持了回环请求。可稍后重试，或在「⚙️ 设置 → 🌐 网络代理」确认代理已放行 127.0.0.1。");
-            } else {
-              setError(err.message || "网络异常");
-            }
+          setSyncStatus("failed");
+          var catchFailReason = (timedOut || err.name === "AbortError")
+            ? "网络连接超时 (45 秒)：请检查网络或在代理设置中放行 127.0.0.1"
+            : (err.message || "网络异常");
+          setError(catchFailReason);
+          if (forceRefresh) {
+            showToast("❌ 刷新失败：" + catchFailReason);
           }
         } finally {
           clearTimeout(timer);
@@ -2914,8 +3126,22 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
           var visible = rect.width > 0 && rect.height > 0;
           if (visible) setAboutModalOpen(true);
         };
+        var onOpenProxy = () => {
+          var el = containerRef.current;
+          if (!el) return;
+          var rect = el.getBoundingClientRect();
+          var visible = rect.width > 0 && rect.height > 0;
+          if (visible) {
+            setRightbarModalSection("proxy");
+            setRightbarModalOpen(true);
+          }
+        };
         window.addEventListener("dsh-github-open-about", onOpenAbout);
-        return () => window.removeEventListener("dsh-github-open-about", onOpenAbout);
+        window.addEventListener("dsh-github-open-proxy", onOpenProxy);
+        return () => {
+          window.removeEventListener("dsh-github-open-about", onOpenAbout);
+          window.removeEventListener("dsh-github-open-proxy", onOpenProxy);
+        };
       }, []);
       var openRightbarSettings = () => {
         setRightbarModalSection("sync");
@@ -2923,9 +3149,33 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
       };
 
       var h = React.createElement;
+      var toastEl = toastMsg
+        ? h(
+            "div",
+            {
+              style: {
+                padding: "8px 12px",
+                marginBottom: "10px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                background: toastMsg.startsWith("✅") ? "rgba(46, 160, 67, 0.15)" : "rgba(207, 34, 46, 0.15)",
+                color: toastMsg.startsWith("✅") ? "var(--dsw-alias-state-success, #2ea043)" : "var(--dsw-alias-state-error-primary, #cf222e)",
+                border: "1px solid " + (toastMsg.startsWith("✅") ? "rgba(46, 160, 67, 0.35)" : "rgba(207, 34, 46, 0.35)"),
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "8px",
+              },
+            },
+            h("span", null, toastMsg),
+            h("button", { onClick: () => setToastMsg(null), style: { background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: "14px" } }, "✕")
+          )
+        : null;
+
       return h(
         "div",
         { className: "dsh-github-rightbar-container", ref: containerRef },
+        toastEl,
         ...renderGithubRepoView(
           h,
           data,
@@ -3714,6 +3964,13 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
       var [activeTab, setActiveTab] = React.useState("workspaces"); // 'workspaces' | 'repos' | 'mywork'
       var [searchQuery, setSearchQuery] = React.useState("");
       var [issueFilter, setIssueFilter] = React.useState("all"); // 'all' | 'reported' | 'assigned' | 'created'
+      var [toastMsg, setToastMsg] = React.useState(null as string | null);
+
+      var showToast = (msg: string) => {
+        setToastMsg(msg);
+        setTimeout(() => setToastMsg(null), 5000);
+      };
+
       // 代理生效状态（标题栏 🌐 徽章数据源）：挂载时读一次 + 弹窗关闭时刷新
       //（保存发生在弹窗内，关闭时机足以让徽章与最新配置对齐，无需轮询）
       var [proxyActive, setProxyActive] = React.useState(null as { enabled: boolean; url: string } | null);
@@ -3762,8 +4019,21 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
             setIsSettingsModalOpen(true);
           }
         };
+        var onOpenProxy = () => {
+          var el = panelRef.current;
+          if (!el) return;
+          var rect = el.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            setSettingsInitialSection("proxy");
+            setIsSettingsModalOpen(true);
+          }
+        };
         window.addEventListener("dsh-github-open-about", onOpenAbout);
-        return () => window.removeEventListener("dsh-github-open-about", onOpenAbout);
+        window.addEventListener("dsh-github-open-proxy", onOpenProxy);
+        return () => {
+          window.removeEventListener("dsh-github-open-about", onOpenAbout);
+          window.removeEventListener("dsh-github-open-proxy", onOpenProxy);
+        };
       }, []);
 
       // 齿轮按钮：默认打开「数据同步」分区（既有语义不变）
@@ -3786,27 +4056,59 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
         var timedOut = false;
         var timer = setTimeout(function () { timedOut = true; controller.abort(); }, 45000);
         try {
-          // refresh 预置请求必须共享同一 signal：它一旦挂起（如系统代理劫持回环请求），
-          // 后续 overview fetch 永远执行不到，loading 永不清除——无 gh 用户正是被此卡死。
           if (forceRefresh) await fetch("/api/github/refresh", { method: "POST", signal: controller.signal }).catch(() => {});
-          var res = await fetch("/api/github/global-overview", { signal: controller.signal });
+          var url = "/api/github/global-overview";
+          if (forceRefresh) {
+            url += "?force=true";
+          }
+          var res = await fetch(url, { signal: controller.signal });
           if (!res.ok) {
             var errText = await res.text().catch(() => "");
             var failMsg = `获取全局数据失败（HTTP ${res.status}）${errText ? ": " + errText : ""}`;
-            if (data) {
-              // 容灾保障：有本地旧数据时绝不红屏崩溃，平滑降级展示离线快照
-              setSyncStatus("failed");
-            } else {
-              setError(failMsg);
-            }
+            setSyncStatus("failed");
+            setError(failMsg);
+            if (forceRefresh) showToast("❌ 刷新失败：" + failMsg);
             return;
           }
           var json = await res.json();
           if (json.ok && json.data) {
-            setData(json.data);
-            saveStoredGlobalOverview(json.data); // 写入持久化快照
-            setLastSyncedAt(Date.now());
-            setSyncStatus("fresh");
+            var isFail = Boolean(
+              json.partialFailure ||
+              json.data.partialFailure ||
+              json.data.networkError ||
+              json.data.auth?.networkError ||
+              json.error
+            );
+            var failReason = String(
+              json.error ||
+              json.fetchError ||
+              json.data.networkErrorReason ||
+              json.data.auth?.networkErrorReason ||
+              "拉取全局数据失败"
+            );
+
+            if (isFail) {
+              setSyncStatus("failed");
+              setError(failReason);
+              if (data && (data.userRepos?.length > 0 || data.myPrs?.length > 0 || data.myIssues?.length > 0)) {
+                if (json.data.userRepos?.length > 0 || json.data.myPrs?.length > 0) {
+                  setData(json.data);
+                }
+              } else {
+                setData(json.data);
+              }
+              if (forceRefresh) showToast("❌ 刷新失败：" + failReason);
+            } else {
+              setData(json.data);
+              saveStoredGlobalOverview(json.data); // 写入持久化快照
+              var syncTs = json.fromCache && json.data.lastUpdated
+                ? (Date.parse(json.data.lastUpdated) || Date.now())
+                : Date.now();
+              setLastSyncedAt(syncTs);
+              setSyncStatus(json.fromCache ? "cached" : "fresh");
+              setError(null);
+              if (forceRefresh) showToast("✅ 刷新成功，已同步最新数据");
+            }
 
             if (json.data.updateInfo) {
               setUpdateInfo(json.data.updateInfo);
@@ -3815,23 +4117,18 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
               setError("工作区列表读取失败：" + json.data.workspaceError);
             }
           } else {
-            if (data) {
-              setSyncStatus("failed");
-            } else {
-              setError(json.error || "获取全局数据失败");
-            }
+            setSyncStatus("failed");
+            var errPayload = String(json?.error || "获取全局数据失败");
+            setError(errPayload);
+            if (forceRefresh) showToast("❌ 刷新失败：" + errPayload);
           }
         } catch (err: any) {
-          if (data) {
-            // 后台网络故障时，旧数据依然完整可用
-            setSyncStatus("failed");
-          } else {
-            if (timedOut || err.name === "AbortError") {
-              setError("获取超时（45 秒）：本机 gh 命令响应过慢或网络代理劫持了回环请求。可稍后重试，或在「⚙️ 设置 → 🌐 网络代理」确认代理已放行 127.0.0.1。");
-            } else {
-              setError("无法连接后端服务：" + (err.message || err));
-            }
-          }
+          setSyncStatus("failed");
+          var failReason = (timedOut || err.name === "AbortError")
+            ? "获取超时（45 秒）：本机 gh 命令响应过慢或网络代理劫持了回环请求。可稍后重试，或在「⚙️ 设置 → 🌐 网络代理」确认代理已放行 127.0.0.1。"
+            : ("无法连接后端服务：" + (err.message || err));
+          setError(failReason);
+          if (forceRefresh) showToast("❌ 刷新失败：" + failReason);
         } finally {
           clearTimeout(timer);
           setLoading(false);
@@ -4010,16 +4307,20 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
           h(
             "div",
             { className: "dsh-github-card-value" },
-            auth?.loggedIn
-              ? `👤 ${auth.user}`
-              : !auth?.installed
-                ? "❌ 未安装 CLI"
-                : "⚠️ 未登录",
-            auth?.loggedIn
-              ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "Active")
-              : !auth?.installed
-                ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "Missing")
-                : h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "Required")
+            auth?.networkError
+              ? (auth.user ? `👤 ${auth.user} (离线)` : "🌐 网络连接受限")
+              : auth?.loggedIn
+                ? `👤 ${auth.user}`
+                : !auth?.installed
+                  ? "❌ 未安装 CLI"
+                  : "⚠️ 未登录",
+            auth?.networkError
+              ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "Offline")
+              : auth?.loggedIn
+                ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "Active")
+                : !auth?.installed
+                  ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "Missing")
+                  : h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "Required")
           )
         ),
         h(
@@ -4047,8 +4348,8 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
         )
       );
 
-      // 安装与登录引导组件（未登录或未安装时显式展开）
-      var authGuideEl = !auth?.loggedIn
+      // 安装与登录引导组件（未登录且无网络错误时显式展开；网络错误时由上方 NetworkAlertBanner 统一承接）
+      var authGuideEl = (!auth?.loggedIn && !auth?.networkError && syncStatus !== "failed")
         ? h(AuthGuideCard, { auth, onRefresh: () => loadData(true), isRightbar: false })
         : null;
 
@@ -4291,10 +4592,48 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
         }
       }
 
+      var toastEl = toastMsg
+        ? h(
+            "div",
+            {
+              style: {
+                padding: "8px 12px",
+                marginBottom: "12px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                background: toastMsg.startsWith("✅") ? "rgba(46, 160, 67, 0.15)" : "rgba(207, 34, 46, 0.15)",
+                color: toastMsg.startsWith("✅") ? "var(--dsw-alias-state-success, #2ea043)" : "var(--dsw-alias-state-error-primary, #cf222e)",
+                border: "1px solid " + (toastMsg.startsWith("✅") ? "rgba(46, 160, 67, 0.35)" : "rgba(207, 34, 46, 0.35)"),
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "8px",
+              },
+            },
+            h("span", null, toastMsg),
+            h("button", { onClick: () => setToastMsg(null), style: { background: "none", border: "none", cursor: "pointer", color: "inherit", fontSize: "14px" } }, "✕")
+          )
+        : null;
+
+      var networkAlertBannerEl = (syncStatus === "failed" || auth?.networkError || (error && data))
+        ? h(NetworkAlertBanner, {
+            isRightbar: false,
+            networkErrorReason: auth?.networkErrorReason || error || "连接 GitHub API 超时或网络不可达，本次未能获取最新数据。",
+            lastSyncedAt,
+            onRefresh: () => loadData(true),
+            onOpenProxy: function () {
+              setSettingsInitialSection("proxy");
+              setIsSettingsModalOpen(true);
+            },
+          })
+        : null;
+
       return h(
         "div",
         { className: "dsh-github-panel", ref: panelRef },
+        toastEl,
         headerEl,
+        networkAlertBannerEl,
         upgradeBannerEl,
         errorEl,
         statsCardsEl,

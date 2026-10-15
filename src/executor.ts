@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { findMostRecentWorkspacePath, findWorkspacePathBySession, hasGitDir } from './workspace.js';
 import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry } from './types.js';
@@ -366,42 +367,30 @@ export class GhExecutor {
   }
 
   /**
-   * 智能解析最可靠的工作区物理路径：
-   * 1. 优先使用显式指定的有效 cwd（若包含 .git 目录）
-   * 2. 使用显式传入的 sessionId 或环境变量 DSH_SESSION_ID 精确反查工作区
-   * 3. 递归探测：若传入了 explicitCwd（如聚合父目录），自动检查其直系子目录中是否包含 Git 仓库
-   * 4. 匹配 ~/.dsh/storages/workspace.json 中最近活跃且存在 .git 的仓库工作区
-   * 5. 回退到 process.cwd()
+   * 解析命令实际执行的工作区根目录
+   * 严格遵循数据事实源与工作区物理所有权，消除越权篡改：
+   * 1. 显式路径第一优先级：调用方只要显式指定了路径，该物理路径即为唯一事实源，原样返回自身；
+   *    绝不递归扫描子目录、绝不越权篡改；无 Git 目录则让下游探测真实反映无 Git 状态；
+   * 2. 仅在未显式指定 cwd 时，才尝试使用 sessionId 或环境变量 DSH_SESSION_ID 反查工作区；
+   * 3. 仅在完全未指定 cwd 且无会话时（全局命令行调用），才兜底回退到最近活跃的 Git 工作区或 process.cwd()。
    */
   resolveWorkspaceCwd(explicitCwd?: string, explicitSessionId?: string): string {
-    // 1. 显式路径优先，若有效且直接包含 .git 目录，则直接使用
-    if (explicitCwd && hasGitDir(explicitCwd)) {
+    // 1. 显式路径第一优先级：只要显式指定了路径且在磁盘真实存在，原样返回该目录作为唯一事实源！
+    // 绝不进入子目录去“借用”子项目的 Git 仓库，杜绝在聚合目录或未绑定工作区中张冠李戴！
+    if (explicitCwd && fs.existsSync(explicitCwd)) {
       return explicitCwd;
     }
 
-    // 2. 使用显式传入的 sessionId 或环境变量中的 DSH_SESSION_ID 反查
+    // 2. 仅在未显式指定 cwd 时，使用显式传入的 sessionId 或环境变量中的 DSH_SESSION_ID 反查
     const targetSessionId = explicitSessionId || process.env.DSH_SESSION_ID;
     if (targetSessionId) {
-      const bySession = findWorkspacePathBySession(targetSessionId);
-      if (bySession && hasGitDir(bySession)) return bySession;
+      const sessionPath = findWorkspacePathBySession(targetSessionId);
+      if (sessionPath && fs.existsSync(sessionPath)) {
+        return sessionPath;
+      }
     }
 
-    // 3. 递归探测：若传入了 explicitCwd（如非 Git 的父工作区目录），检查其一级子目录中是否存在 Git 仓库
-    if (explicitCwd && fs.existsSync(explicitCwd)) {
-      try {
-        const entries = fs.readdirSync(explicitCwd, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            const subDir = path.join(explicitCwd, entry.name);
-            if (hasGitDir(subDir)) {
-              return subDir;
-            }
-          }
-        }
-      } catch {}
-    }
-
-    // 4. 从工作区配置中匹配最近活跃且明确具备 .git 的仓库路径
+    // 3. 仅在完全没有显式指定目录与会话工作区（如无上下文的全局调用）时，才从工作区配置中匹配最近活跃且明确具备 .git 的仓库路径
     const recent = findMostRecentWorkspacePath();
     if (recent) return recent;
 
@@ -531,10 +520,17 @@ export class GhExecutor {
       return this.authCache.value;
     }
     const value = await this.probeAuth(cwd);
-    // 只缓存确定的结果：出错时（未安装/未登录/网络异常）不缓存，
-    // 否则用户 `gh auth login` 之后还要再等满一个 TTL 才能看到面板恢复。
-    if (value.loggedIn) {
+    // 成功登录且无网络故障时落缓存
+    if (value.loggedIn && !value.networkError) {
       this.authCache = { at: now, value };
+    } else if (value.networkError && this.authCache && this.authCache.value.loggedIn) {
+      // 容灾保全：若本次刷新遭遇网络波动，但之前已有确凿的有效登录缓存，
+      // 保全已有登录身份，仅追加网络异常标识，绝不让界面闪烁误报为「未登录」
+      return {
+        ...this.authCache.value,
+        networkError: true,
+        networkErrorReason: value.networkErrorReason,
+      };
     }
     return value;
   }
@@ -785,30 +781,78 @@ export class GhExecutor {
     };
   }
 
-  /** 实际执行 `gh auth status` 并解析结果，不含缓存逻辑 */
-  private async probeAuth(cwd?: string): Promise<AuthStatus> {
-    const res = await this.run(['auth', 'status'], { cwd, timeoutMs: 10_000, rawText: true });
+  /**
+   * 纯本地检测宿主机 GitHub CLI 配置文件中是否存在已配置的账号凭据。
+   * 零子进程、零网络往返，毫秒级读取，专供断网与网络卡顿时的 Fail-Safe 容灾降级。
+   */
+  checkLocalGhCredential(): { user?: string; hasToken: boolean } | null {
+    try {
+      const candidates: string[] = [];
+      if (process.platform === 'win32') {
+        const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+        candidates.push(path.join(appData, 'GitHub CLI', 'hosts.yml'));
+      }
+      candidates.push(path.join(os.homedir(), '.config', 'gh', 'hosts.yml'));
 
+      for (const file of candidates) {
+        if (fs.existsSync(file)) {
+          const content = fs.readFileSync(file, 'utf8');
+          // 匹配 hosts.yml 中的 user: xxx 或 users:\n  xxx:
+          const userMatch = content.match(/user:\s*([A-Za-z0-9_-]+)/i) || content.match(/users:\s*[\r\n]+\s+([A-Za-z0-9_-]+):/i);
+          const hasOauth = content.includes('oauth_token') || content.includes('users:');
+          if (userMatch || hasOauth) {
+            return {
+              user: userMatch ? userMatch[1] : undefined,
+              hasToken: true,
+            };
+          }
+        }
+      }
+    } catch {}
+    return null;
+  }
+
+  /**
+   * 实际执行认证探测并解析结果，不含外部缓存逻辑。
+   * 解耦本地安装态、本地凭据态与网络可达态：
+   * 1. 安装态通过 getGhVersion 本地轻量确认，网络超时/断网绝不篡改 installed 结论；
+   * 2. 本地凭据通过 checkLocalGhCredential 读取，断网时仍可识别人类账号；
+   * 3. 精准分流网络超时/异常（networkError）与真正的未认证（explicitLoggedOut）。
+   */
+  private async probeAuth(cwd?: string): Promise<AuthStatus> {
+    // 1. 本地安装态先行探测（纯本地进程调用，零网络依赖）
+    const version = await this.getGhVersion().catch(() => null);
+    const isInstalledLocally = Boolean(version);
+
+    // 2. 本地已存登录凭据探测（纯本地文件读取，零网络依赖）
+    const localCred = this.checkLocalGhCredential();
+
+    // 3. 执行 gh auth status 校验远端有效性
+    const res = await this.run(['auth', 'status'], { cwd, timeoutMs: 10_000, rawText: true });
     const raw = (res.rawOutput || '') + '\n' + (res.error || '');
 
-    // 多重维度强健判定登录态 (容错 Windows Unicode 乱码、Keyring 告警与不同版本 CLI 输出差分)
+    // 4. 精准网络异常特征检测（超时、DNS解析失败、代理拒绝、连接重置）
+    const isTimeout = Boolean(res.error && (res.error.includes('执行超时') || res.error.includes('timed out')));
+    const isNetworkError = isTimeout || /dial\s+tcp|connectex|connection\s+refused|lookup\s+api\.github\.com|getaddrinfow|TLS\s+handshake|proxyconnect|network\s+is\s+unreachable|i\/o\s+timeout/i.test(raw);
+
+    // 5. 显式未登录特征（必须排除网络错误干扰，仅在无网络问题且 CLI 明确指示未登录时成立）
+    const isExplicitlyLoggedOut = !isNetworkError && (
+      /not\s+logged\s+in/i.test(raw) ||
+      raw.includes('gh auth login') ||
+      raw.includes('authentication required') ||
+      raw.includes('No accounts found')
+    );
+
+    // 6. 成功登录特征判定
     const hasLoggedInFlag = /logged\s+in\s+to/i.test(raw) || raw.includes('✓') || raw.includes('√');
     const hasActiveFlag = /active\s+account:\s*true/i.test(raw);
     const hasTokenFlag = raw.includes('Token:') || raw.includes('Token scopes:');
     const accountMatch = raw.match(/account\s+([A-Za-z0-9_-]+)/i);
     const hasAccount = Boolean(accountMatch && accountMatch[1] && accountMatch[1].toLowerCase() !== 'none');
 
-    // 显式未登录特征排查
-    const isExplicitlyLoggedOut = /not\s+logged\s+in/i.test(raw) ||
-      raw.includes('gh auth login') ||
-      raw.includes('authentication required') ||
-      raw.includes('No accounts found');
-
-    const loggedIn = !isExplicitlyLoggedOut && (hasLoggedInFlag || hasActiveFlag || (hasTokenFlag && hasAccount));
-
-    // 只要已登录或有常规输出，则必然安装了 gh
-    const isNotInstalled = Boolean(res.error && (res.error.includes('系统未检测到 GitHub CLI') || res.error.includes('ENOENT')));
-    const installed = loggedIn || !isNotInstalled;
+    // 7. 安装状态结论：若本地版本已确认，或者命令返回了非 ENOENT 的输出，必然已安装
+    const isNotInstalled = !isInstalledLocally && Boolean(res.error && (res.error.includes('系统未检测到 GitHub CLI') || res.error.includes('ENOENT')));
+    const installed = isInstalledLocally || !isNotInstalled;
 
     if (!installed) {
       return {
@@ -820,6 +864,27 @@ export class GhExecutor {
       };
     }
 
+    // 8. 网络异常处理：绝不能把网络超时/断网归咎为“未登录”或“未安装”
+    if (isNetworkError) {
+      const errorReason = isTimeout
+        ? '连接 GitHub API 超时 (10 秒)。请检查网络连通性或代理配置。'
+        : '无法连接至 GitHub 服务器（网络波动或被系统代理阻断）。';
+
+      return {
+        installed: true,
+        // 若本地确认有配置好的账号，保持 loggedIn 为 true（Fail-Safe 容灾），并标记 networkError
+        loggedIn: Boolean(localCred?.hasToken || hasLoggedInFlag),
+        user: localCred?.user || (accountMatch ? accountMatch[1] : undefined),
+        host: 'github.com',
+        platform: process.platform,
+        networkError: true,
+        networkErrorReason: errorReason,
+        hasLocalToken: Boolean(localCred?.hasToken),
+        raw,
+      };
+    }
+
+    const loggedIn = !isExplicitlyLoggedOut && (hasLoggedInFlag || hasActiveFlag || (hasTokenFlag && hasAccount));
     if (!loggedIn) {
       return {
         installed: true,
@@ -830,7 +895,7 @@ export class GhExecutor {
     }
 
     // 解析用户名
-    let user: string | undefined;
+    let user: string | undefined = localCred?.user;
     if (accountMatch) {
       user = accountMatch[1];
     }
@@ -899,6 +964,12 @@ export class GhExecutor {
    */
   async getRepoMetadata(cwd?: string, sessionId?: string): Promise<RepoMetadata | null> {
     const targetCwd = this.resolveWorkspaceCwd(cwd, sessionId);
+
+    // 绝对前置门禁：当前目录若自身不存在 .git 目录，铁证如山判定为未关联本地 Git 仓库
+    // 直接返回 null，杜绝一切在非 Git 目录误报关联的可能！
+    if (!hasGitDir(targetCwd)) {
+      return null;
+    }
 
     // 1. 优先尝试由 gh 直接根据当前上下文识别
     const res = await this.run<any>(

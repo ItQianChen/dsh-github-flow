@@ -6,6 +6,8 @@
  */
 export class TtlCache<T> {
   private store = new Map<string, { data: T; time: number }>();
+  /** 容灾备份底座：记录最后一次成功的有效快照，不受 TTL 过期或主动 refresh 清空的影响 */
+  private fallbackStore = new Map<string, T>();
 
   /**
    * @param ttlMs 命中有效期；由面向用户的 cacheTtlMs 配置驱动
@@ -29,11 +31,22 @@ export class TtlCache<T> {
 
   set(key: string, data: T, now: number): void {
     this.store.set(key, { data, time: now });
+    this.fallbackStore.set(key, data);
     while (this.store.size > this.maxEntries) {
       const oldest = this.store.keys().next();
       if (oldest.done) break;
       this.store.delete(oldest.value);
     }
+    while (this.fallbackStore.size > this.maxEntries) {
+      const oldest = this.fallbackStore.keys().next();
+      if (oldest.done) break;
+      this.fallbackStore.delete(oldest.value);
+    }
+  }
+
+  /** 获取最后一次有效成功的容灾底座数据（专供网络故障、超时时的 Fail-Safe 保全） */
+  getFallback(key: string): T | undefined {
+    return this.fallbackStore.get(key);
   }
 
   get size(): number {
@@ -41,6 +54,7 @@ export class TtlCache<T> {
   }
 
   clear(): void {
+    // 清空活动缓存以迫使后续请求重新发起网络拉取，但保留 fallbackStore 用于网络故障容灾
     this.store.clear();
   }
 }

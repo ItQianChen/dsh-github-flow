@@ -36,6 +36,7 @@ export function registerOverviewRoutes(
         const url = new URL(req.url || '', 'http://127.0.0.1');
         let cwd = url.searchParams.get('cwd');
         const sessionId = url.searchParams.get('sessionId');
+        const force = url.searchParams.get('force') === 'true';
 
         // 会话 ID → 物理路径，以及「最近活跃工作区」兜底，统一由 workspace 模块提供
         if (!cwd && sessionId) {
@@ -50,7 +51,7 @@ export function registerOverviewRoutes(
 
         const now = Date.now();
         const cachedData = cacheMap.get(cwd, now);
-        if (cachedData) {
+        if (cachedData && !force) {
           sendJson(res, 200, {
             ok: true,
             data: { ...cachedData, updateInfo: checker.getQuickStatus() },
@@ -61,7 +62,26 @@ export function registerOverviewRoutes(
         }
 
         const auth = await executor.checkAuth(cwd);
-        const repo = await executor.getRepoMetadata(cwd);
+        // 先行检查当前工作区是否真实包含 .git，无 .git 铁证判定为未关联仓库
+        const isGitRepo = hasGitDir(cwd);
+        const repo = isGitRepo ? await executor.getRepoMetadata(cwd) : null;
+
+        // 若当前工作区未关联 Git 仓库，直接返回纯净空状态，坚决不拉取远端数据
+        if (!isGitRepo || !repo) {
+          const emptyData: GitHubOverviewData = {
+            auth,
+            repo: undefined,
+            pullRequests: [],
+            issues: [],
+            issueStats: { total: 0, reported: 0, assigned: 0, created: 0 },
+            runs: [],
+            lastUpdated: new Date().toISOString(),
+            updateInfo: checker.getQuickStatus(),
+          };
+          cacheMap.set(cwd, emptyData, now);
+          sendJson(res, 200, { ok: true, data: emptyData, fromCache: false, cwd });
+          return;
+        }
 
         let pullRequests: PrItem[] = [];
         let issues: IssueItem[] = [];
@@ -86,6 +106,51 @@ export function registerOverviewRoutes(
               { cwd, timeoutMs: 8_000 }
             ),
           ]);
+
+          // 核心数据拉取故障检测：若拉取核心业务数据遭遇失败（网络超时/断网/接口报错），
+          // 绝对不能把失败伪装成「0 个 PR、0 个 Issue」并假装成功返回！
+          const failures: string[] = [];
+          if (!prsRes.ok) failures.push(`PR 获取失败: ${prsRes.error || '网络或接口异常'}`);
+          if (!issuesRes.ok) failures.push(`Issue 获取失败: ${issuesRes.error || '网络或接口异常'}`);
+          if (!runsRes.ok) failures.push(`Actions 获取失败: ${runsRes.error || '网络或接口异常'}`);
+
+          if (failures.length > 0) {
+            const failureReason = failures.join('；');
+            // 若此前内存有缓存，保全已有缓存内容，附加 networkError 与 partialFailure
+            const fallbackCached = cacheMap.getFallback(cwd) || cacheMap.get(cwd, now);
+            if (fallbackCached && (fallbackCached.pullRequests.length > 0 || fallbackCached.issues.length > 0 || fallbackCached.runs.length > 0)) {
+              sendJson(res, 200, {
+                ok: true,
+                fromCache: true,
+                partialFailure: true,
+                error: failureReason,
+                data: {
+                  ...fallbackCached,
+                  networkError: true,
+                  networkErrorReason: failureReason,
+                  auth: { ...fallbackCached.auth, networkError: true, networkErrorReason: failureReason },
+                },
+                cwd,
+              });
+              return;
+            } else {
+              const freshData: GitHubOverviewData = {
+                auth: { ...auth, networkError: true, networkErrorReason: failureReason },
+                repo: repo || undefined,
+                pullRequests: [],
+                issues: [],
+                issueStats: { total: 0, reported: 0, assigned: 0, created: 0 },
+                runs: [],
+                networkError: true,
+                networkErrorReason: failureReason,
+                lastUpdated: new Date().toISOString(),
+                updateInfo: checker.getQuickStatus(),
+              };
+              sendJson(res, 200, { ok: true, partialFailure: true, error: failureReason, data: freshData, cwd });
+              return;
+            }
+          }
+
           if (prsRes.ok && Array.isArray(prsRes.data)) pullRequests = prsRes.data;
           if (issuesRes.ok && Array.isArray(issuesRes.data)) {
             const currentUser = auth.user;
@@ -226,6 +291,31 @@ export function registerOverviewRoutes(
           const ownerIssuesRes = queryResults[2].status === 'fulfilled' ? queryResults[2].value : { ok: false };
           const assignedIssuesRes = queryResults[3].status === 'fulfilled' ? queryResults[3].value : { ok: false };
           const authorIssuesRes = queryResults[4].status === 'fulfilled' ? queryResults[4].value : { ok: false };
+
+          // 检测全局拉取是否发生网络故障，绝不把网络失败当作「0 仓库、0 PR」伪造成功
+          const globalFailures: string[] = [];
+          if (!reposRes.ok) globalFailures.push(`仓库列表拉取失败: ${(reposRes as any).error || '网络或接口异常'}`);
+          if (!prsRes.ok) globalFailures.push(`个人 PR 拉取失败: ${(prsRes as any).error || '网络或接口异常'}`);
+
+          if (globalFailures.length > 0) {
+            const globalNetReason = globalFailures.join('；');
+            const fallbackGlobal = globalCache.getFallback('global') || globalCache.get('global', now);
+            if (fallbackGlobal) {
+              sendJson(res, 200, {
+                ok: true,
+                fromCache: true,
+                partialFailure: true,
+                error: globalNetReason,
+                data: {
+                  ...fallbackGlobal,
+                  networkError: true,
+                  networkErrorReason: globalNetReason,
+                  auth: { ...fallbackGlobal.auth, networkError: true, networkErrorReason: globalNetReason },
+                },
+              });
+              return;
+            }
+          }
 
           if (reposRes.ok && Array.isArray(reposRes.data)) {
             userRepos = reposRes.data.map((r: any) => ({

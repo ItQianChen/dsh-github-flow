@@ -78,12 +78,12 @@ export declare class GhExecutor {
     /** 注入代理管理器（main.ts 装配时调用一次；测试可注入 mock） */
     attachProxyManager(manager: ProxyManager): void;
     /**
-     * 智能解析最可靠的工作区物理路径：
-     * 1. 优先使用显式指定的有效 cwd（若包含 .git 目录）
-     * 2. 使用显式传入的 sessionId 或环境变量 DSH_SESSION_ID 精确反查工作区
-     * 3. 递归探测：若传入了 explicitCwd（如聚合父目录），自动检查其直系子目录中是否包含 Git 仓库
-     * 4. 匹配 ~/.dsh/storages/workspace.json 中最近活跃且存在 .git 的仓库工作区
-     * 5. 回退到 process.cwd()
+     * 解析命令实际执行的工作区根目录
+     * 严格遵循数据事实源与工作区物理所有权，消除越权篡改：
+     * 1. 显式路径第一优先级：调用方只要显式指定了路径，该物理路径即为唯一事实源，原样返回自身；
+     *    绝不递归扫描子目录、绝不越权篡改；无 Git 目录则让下游探测真实反映无 Git 状态；
+     * 2. 仅在未显式指定 cwd 时，才尝试使用 sessionId 或环境变量 DSH_SESSION_ID 反查工作区；
+     * 3. 仅在完全未指定 cwd 且无会话时（全局命令行调用），才兜底回退到最近活跃的 Git 工作区或 process.cwd()。
      */
     resolveWorkspaceCwd(explicitCwd?: string, explicitSessionId?: string): string;
     /**
@@ -176,7 +176,21 @@ export declare class GhExecutor {
     getGitCommitDetail(cwd: string | undefined, sha: string): Promise<string | null>;
     /** 生成当前操作系统平台的推荐安装引导与命令 */
     private getPlatformInstallGuide;
-    /** 实际执行 `gh auth status` 并解析结果，不含缓存逻辑 */
+    /**
+     * 纯本地检测宿主机 GitHub CLI 配置文件中是否存在已配置的账号凭据。
+     * 零子进程、零网络往返，毫秒级读取，专供断网与网络卡顿时的 Fail-Safe 容灾降级。
+     */
+    checkLocalGhCredential(): {
+        user?: string;
+        hasToken: boolean;
+    } | null;
+    /**
+     * 实际执行认证探测并解析结果，不含外部缓存逻辑。
+     * 解耦本地安装态、本地凭据态与网络可达态：
+     * 1. 安装态通过 getGhVersion 本地轻量确认，网络超时/断网绝不篡改 installed 结论；
+     * 2. 本地凭据通过 checkLocalGhCredential 读取，断网时仍可识别人类账号；
+     * 3. 精准分流网络超时/异常（networkError）与真正的未认证（explicitLoggedOut）。
+     */
     private probeAuth;
     /**
      * 仅从本地 .git/config 解析仓库身份，绝不发起网络请求。

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-const phases = ['phase1.test.mjs', 'phase2.test.mjs', 'phase3.test.mjs', 'phase4.test.mjs', 'phase5.test.mjs', 'phase6.test.mjs', 'phase7.test.mjs', 'phase8.test.mjs', 'phase9.test.mjs', 'phase10.test.mjs', 'phase11.test.mjs'];
+const phases = ['phase1.test.mjs', 'phase2.test.mjs', 'phase3.test.mjs', 'phase4.test.mjs', 'phase5.test.mjs', 'phase6.test.mjs', 'phase7.test.mjs', 'phase8.test.mjs', 'phase9.test.mjs', 'phase10.test.mjs', 'phase11.test.mjs', 'phase12.test.mjs'];
 
 function runPhase(file) {
   return new Promise((resolve) => {

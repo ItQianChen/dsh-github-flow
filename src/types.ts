@@ -96,6 +96,12 @@ export interface AuthStatus {
   scopes?: string[];
   installGuide?: AuthInstallGuide;
   raw?: string;
+  /** 网络是否发生异常（超时、DNS解析失败、连接被拒、代理阻断等） */
+  networkError?: boolean;
+  /** 网络异常的人类可读原因或排查建议 */
+  networkErrorReason?: string;
+  /** 本地是否已检测到持久化凭据（如 hosts.yml 或 Keyring） */
+  hasLocalToken?: boolean;
 }
 
 export interface RepoMetadata {
@@ -222,6 +228,10 @@ export interface GitHubOverviewData {
   runs: WorkflowRunItem[];
   lastUpdated: string;
   error?: string;
+  /** 网络是否发生异常（超时、连接拒绝、代理阻断等） */
+  networkError?: boolean;
+  /** 网络异常的原因或提示 */
+  networkErrorReason?: string;
   /** 插件版本与升级信息（由内存缓存快速读取，不阻塞首屏业务） */
   updateInfo?: UpdateInfo;
   /** 本地 Git 状态（ahead/behind/dirty，remote-tracking 快照语义）；非 Git 工作区为 undefined */
@@ -284,6 +294,10 @@ export interface GlobalOverviewData {
   issueStats?: IssueStats;
   lastUpdated: string;
   error?: string;
+  /** 网络是否发生异常（超时、连接拒绝、代理阻断等） */
+  networkError?: boolean;
+  /** 网络异常的原因或提示 */
+  networkErrorReason?: string;
   /** 工作区矩阵读取失败的原因。区分「没有工作区」与「读不到工作区」，避免把故障显示成空状态 */
   workspaceError?: string;
   /** 插件版本与升级信息（由内存缓存快速读取，不阻塞首屏业务） */
