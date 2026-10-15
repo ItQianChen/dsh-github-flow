@@ -1,35 +1,13 @@
 /**
- * DSH GitHub Flow - Native Markdown 格式化渲染引擎
+ * DSH GitHub Flow - Native Markdown 格式化渲染引擎门面入口
  *
- * 核心目标：
- * 1. 终结机械多行 JSON 输出，为列表和详情产出高密度 Markdown 表格与卡片；
- * 2. 节省 70%+ 的会话上下文 Token，极大加速长对话推理速度；
- * 3. 嵌入可点击超链接与直观的状态药丸 Emoji，提升人类与模型阅读体验；
- * 4. 严谨防御 Markdown 表格竖线破坏、缺失值回退与异常对象降级。
+ * 为保持向后兼容性与构建产物一致性，本入口统一 Re-export 全部领域渲染器
+ * 与通用徽章工具，各 Agent Tool 与自动化单测可无感引用。
  */
-/** 安全清洗表格单元格文本：转义竖线，压缩换行，限制最大长度 */
-export declare function sanitizeCell(text: any, maxLen?: number): string;
-/** 格式化 PR / Issue 状态药丸徽章 */
-export declare function formatStateBadge(state?: string, isDraft?: boolean): string;
-/**
- * 格式化 CI 工作流状态徽章。
- * 第二参数按调用域语义不同：run 域传 conclusion（success/failure/cancelled/skipped），
- * pr checks 域传 bucket（pass/fail/pending/skipping/cancel）——取值族不同但映射到
- * 同一组徽章；state 参数兜底（in_progress/queued 等进行中态）。
- */
-export declare function formatCiBadge(status?: string, conclusion?: string): string;
-/** 格式化合并冲突状态 */
-export declare function formatConflictBadge(status?: string): string;
-/**
- * 降级链路可见标注（runGuarded 契约的渲染兑现）。
- * 为什么必须可见：降级若是静默的，Agent 就无法感知能力边界（同一 action 在
- * 不同 gh 版本上走不同链路）；一条 blockquote 注释成本一行，换链路透明。
- */
-export declare function appendDegradedNote(value: any): string;
-export declare function renderPrMarkdown(args: any, value: any): string;
-export declare function renderIssueMarkdown(args: any, value: any): string;
-export declare function renderRunMarkdown(args: any, value: any): string;
-export declare function renderRepoMarkdown(args: any, value: any): string;
-export declare function formatReleaseBadge(isDraft?: boolean, isPrerelease?: boolean): string;
-export declare function renderReleaseMarkdown(args: any, value: any): string;
-export declare function renderSkillMarkdown(args: any, value: any): string;
+export * from './common.js';
+export * from './pr.js';
+export * from './issue.js';
+export * from './run.js';
+export * from './repo.js';
+export * from './release.js';
+export * from './skill.js';
