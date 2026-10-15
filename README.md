@@ -29,7 +29,8 @@
 | **CI / Actions 构建报错修复** | 构建挂了后，开发者在网页翻几十页 Actions 日志，复制报错贴给 Agent 调试。 | **精准抓取报错**：对 Agent 说“看下 CI 为什么失败”，Agent 调 `github_run(log_failed)` 秒级定位失败步骤并自动修复代码。 |
 | **安全性与鉴权维护** | 必须在插件配置文件里贴明文 GitHub Token（PAT），面临权限失控与密钥泄漏风险。 | **0 密钥泄露风险**：直接复用机器本地已认证的 `gh auth login` 凭据，使用系统安全 Keyring。 |
 | **多任务切屏困扰** | 必须在 VS Code、浏览器 GitHub 标签页和 DSH 聊天窗之间反复切屏，上下文频繁丢失。 | **内置沉浸式全景工作台**：DSH 内部常驻 PR 门禁、CI 流水线、三维待办 Issue 矩阵，一目了然。 |
-| **首屏加载与性能等待** | 每次打开全景驾驶舱全屏白屏卡死转圈 8~15 秒，等待所有网络与子进程请求返回。 | **SWR 0ms 瞬间秒开**：打开立即呈现本地持久化快照，后台静默重验；提供专属设置面板自主调节拉取间隔与纯手动模式。 |
+| **分支切换与本地改动感知** | 切分支需切回终端敲命令，且右侧栏无法感知本地代码暂存与提交改动，数据频频过时。 | **界面安全切分支 + 本地 Git 实时感知**：支持关键词过滤与未提交改动安全拦截；基于定向 `.git` 监听实现毫秒级自动对齐。 |
+| **首屏加载与性能等待** | 每次打开全景驾驶舱全屏白屏卡死转圈 8~15 秒，等待所有网络与子进程请求返回。 | **SWR 0ms 瞬间秒开 + 云端定时同步**：打开立即呈现本地快照；支持 SWR 秒开、云端定时轮询（5~60m 息屏避让）与纯手动刷新三选一互斥模式。 |
 | **插件维护与升级** | 插件更新全靠开发者去 npm 碰运气看版本号，命令复杂不敢升。 | **闲时静默探测 + Web 一键自动升级**：双源极速探测，自动适配 Mac/Windows 跨平台命令，界面点击即升。 |
 
 ---
@@ -98,146 +99,144 @@ dsh plugin --profile web add dsh-github-flow
 
 ---
 
-### 2. `github_run`：CI 流水线排查与失败定位神器（Agent 自动修 Bug 核心）
+### 2. `github_issue`：Issue 任务流转与关联开发分支
 > **典型对话指令**：
-> - *"最近一次 Actions 工作流为什么挂了？提取失败步骤日志并帮我修复"*
-> - *"看一下当前仓库最近 5 次 CI 构建的状态"*
-> - *"重新运行刚才失败的工作流"*
+> - *"列出分配给我的所有待办 Issue"*
+> - *"从 Issue #42 一键切出一个本地开发分支 'fix-login-error' 并开始修复"*
+> - *"在 Issue #15 下追加评论，汇报我们刚才测试发现的边界情况"*
 
 * **支持操作 (`action`)**：
-  * `log_failed`（🔥 **核心杀手锏**）：**专供 Agent 快速诊断**，自动抓取并剥离无关日志，精准提取失败 Step 的关键错误堆栈，供 Agent 直击问题修复代码；
-  * `list`：查看当前仓库的 Workflow 运行历史与结论（支持 `branch` / `status: failure` 快速锁定失败构建）；
-  * `view`：查看指定 run_id 的详细阶段（Jobs & Steps）；
-  * `trigger`：🆕 主动触发 `workflow_dispatch` 工作流（提交修复后立即验证远端 CI）；
-  * `workflow_list`：🆕 工作流清单查询（默认仅 active；`all: true` 含 disabled——排查「工作流为何不跑」时 disabled 状态本身就是答案）；
-  * `workflow_view`：🆕 工作流详情（名称/ID/文件名定位，含最近运行记录）；
-  * `workflow_enable` / `workflow_disable`：🆕 启停工作流（disable 会显式警告「下次 trigger 将静默失败」）；
-  * `download`：🆕 下载构建产物到插件管理目录（按仓库与 run 隔离，返回文件清单；低版本 gh 附安全升级提示）；
-  * `rerun`：重新触发失败的 CI 运行；
-  * `cancel`：取消在途的工作流。
+  * `list`：列出仓库 Issues（支持 `state` / `labels` / `assignees` 组合筛选，返回三维多标签）；
+  * `view`：查看 Issue 完整讨论、正文与指派人；
+  * `create`：新建 Issue 任务；
+  * `comment`：向指定 Issue 追加讨论评论；
+  * `edit`：编辑 Issue 标题、追加标签 (`add_labels`)、移除标签 (`remove_labels`)；
+  * `close` / `reopen`：关闭或重新激活议题（`close` 需 `confirm: true`）；
+  * `develop`：🆕 关联当前 Issue 一键创建本地 Git 开发分支；
+  * `delete`：🆕 物理删除不可恢复（需 `confirm: true`，高危操作物理防误触）；
+  * `transfer`：🆕 跨仓库迁移 Issue（原 URL 301 重定向，需 `confirm: true`）；
+  * `pin` / `unpin`：🆕 仓库 Issue 置顶状态管理；
+  * `lock` / `unlock`：🆕 锁定讨论区，支持 4 种官方合法理由（`off_topic` / `resolved` / `spam` / `too_heated`）；
+  * `status`：🆕 检索指派给当前登录用户的待办议题全景面板；
+  * `view_images`：🆕 下载 Issue 报障截图（正文+评论全量识别并转为本地图片块，Agent 直接"看"截图）。
 
 ---
 
-### 3. `github_issue`：缺陷跟踪与待办任务闭环
+### 3. `github_run`：GitHub Actions 构建状态与智能排障修复
 > **典型对话指令**：
-> - *"把刚才复现的内存泄漏 Bug 提一个 Issue，打上 'bug' 和 'backend' 标签"*
-> - *"查看指派给我的所有待办 Issue"*
-> - *"给 Issue #45 追加评论：'已经在 master 分支修复，等待发版验证'"*
-> - *"把 Issue #45 关闭"*
+> - *"检查 main 分支最近一次 CI 工作流跑挂了吗？"*
+> - *"提取刚刚失败构建的日志，帮我分析是哪个测试用例挂了"*
+> - *"重新运行最近一次失败的 CI 流水线"*
 
 * **支持操作 (`action`)**：
-  * `list`：多条件检索 Issue 列表（`state` / `labels` / `assignees` / `limit`）；
-  * `view`：查看 Issue 正文与评论历史；
-  * `create`：创建新 Issue（支持标题、正文、标签、指派人）；
-  * `edit`：🆕 修改标题、正文与增删标签；
-  * `develop`：🆕 从 Issue 一键切出关联开发分支并本地检出，打通「读需求 → 写代码」闭环；
-  * `comment`：在指定 Issue 中追加排查进展或评论；
-  * `close`（需 `confirm: true`）/ `reopen`：开启或关闭 Issue；
-  * `delete`：🆕 **物理删除** Issue（需 `confirm: true`；编号永久消失、评论湮灭不可恢复——与 close 可 reopen 有本质区别，拦截级别更高）；
-  * `transfer`：🆕 跨仓库迁移 Issue（需 `confirm: true`；原 URL 301 重定向，归属不可静默撤回）；
-  * `pin` / `unpin`：🆕 置顶/取消置顶（可逆状态位）；
-  * `lock` / `unlock`：🆕 锁定/解锁对话（`lock_reason` 支持 off_topic/resolved/spam/too_heated）；
-  * `status`：🆕 账号维度的分配议题面板（Assigned / Mentioning 分段）；
-  * `view_images`：🆕 下载 Issue 报障截图（正文+评论全量提取，支持 `image_urls` 按 URL 精准提取，触顶自动返回续传清单）。
+  * `list`：列出指定分支或状态的 CI 构建记录；
+  * `view`：查看工作流运行详情与各步骤状态；
+  * `log_failed`：**🔥 排障神器**！自动精准定位失败的 Job 与 Step，仅提取报错那几十行核心日志，告别人工翻几万行日志；
+  * `rerun`：一键重新运行失败的构建；
+  * `cancel`：取消正在排队或执行的构建；
+  * `trigger`：手动触发 `workflow_dispatch` 工作流，支持自定义入参；
+  * `workflow_list`：🆕 列出仓库所有工作流（可传 `all: true` 显示被禁用的工作流）；
+  * `workflow_view`：🆕 查看工作流 YAML 文件配置与累计运行次数；
+  * `workflow_enable` / `workflow_disable`：🆕 动态启停指定工作流；
+  * `download`：🆕 下载构建产物 Artifact（严格遵循 GHSA 路径隔离纪律落盘至插件管理目录）。
 
 ---
 
-### 4. `github_repo`：仓库探索与跨代码库检索
+### 4. `github_repo`：仓库元数据、Fork 同步、免 Clone 读文件与跨仓检索
 > **典型对话指令**：
-> - *"在当前关联的 GitHub 仓库里搜索使用到 'createPrTool' 的代码行"*
-> - *"在 GitHub 上检索关于 'dsh-plugin' 的优秀开源项目"*
-> - *"查看仓库 cli/cli 的基本信息与星标数"*
+> - *"帮我把当前 Fork 的仓库主干同步拉平"*
+> - *"在当前仓库检索哪里用到了 'useAuthToken' 这个函数"*
+> - *"免 clone 查看一下远程仓库 'src/utils.ts' 的文件内容"*
+> - *"读取当前仓库的 README 看看架构设计，并把里面的流程图下载下来分析"*
 
 * **支持操作 (`action`)**：
-  * `view`：查看当前或目标仓库的元数据（默认分支、星标、描述、Topics 与开源协议）；
-  * `readme`：🆕 读取仓库 README 原文（支持指定分支，相对路径截图自动解析下载）；
-  * `sync`：🆕 一键拉平 Fork 仓库与上游主干，解决贡献开源项目时 Fork 落后导致 CI 门禁失败；
-  * `search_code`：跨仓库或当前仓库检索特定代码符号；
-  * `search_repos`：跨全站检索 GitHub 开源仓库；
-  * `search_issues` / `search_prs` / `search_commits`：🆕 全站检索 Issue / PR / 提交记录（限定符直接写进 query，如 `repo:o/r state:open`；commits 必须含搜索文本）；
-  * `read_file`：🆕 **免 clone 读取任意路径单文件**（gh ≥2.95 直连，低版本自动降级 contents API 并显式标注降级链路；二进制文件拒绝并引导 `github_api`）；
-  * `read_dir`：🆕 免 clone 列出目录清单（dir 置顶 + 文件大小，降级链路同上）。
+  * `view`：查看仓库基本信息、默认分支、Star/Fork 数、License 与 Topics 标签；
+  * `readme`：🆕 读取当前仓库 README 原文并自动提取内部所有图片链接，可传 `image_urls` 精准下载指定插图；
+  * `sync`：一键自动同步 Fork 仓库的主干分支（支持 `--force` 硬重置解决分叉冲突）；
+  * `read_file`：🆕 免 clone 直接读取任意分支/Tag/Commit 的指定文件内容（`gh ≥ 2.95` 直读，旧版自动降级 REST API 链路）；
+  * `read_dir`：🆕 免 clone 读取任意分支目录树清单（文件类型、名称与人性化体积）；
+  * `search_code`：跨仓库代码检索（需包含搜索关键词，支持高级限定符）；
+  * `search_repos`：跨全站仓库关键词检索；
+  * `search_issues` / `search_prs`：全局 Issue/PR 关键词复合检索；
+  * `search_commits`：全局提交记录关键词检索。
 
 ---
 
-### 5. `github_api`：底层的灵活“逃生门”
+### 5. `github_release`：版本发布交付与构建资产管理
 > **典型对话指令**：
-> - *"调用 GitHub API 获取当前仓库最新的 Release 列表，用 jq 提取 tag 名称"*
-
-* **核心优势**：直接复用本地认证环境调用任意 REST / GraphQL API，支持 `--jq` 预过滤、`raw` 原始响应模式与 `paginate` 自动翻页聚合，绝不因插件未封装特定接口而受限。
-
----
-
-### 6. `github_release`：版本发布与构建资产交付 🆕
-> **典型对话指令**：
-> - *"给当前仓库发布 v0.2.0 版本，自动根据提交记录生成发版说明"*
-> - *"把刚打好的 dsh-github-flow-0.2.0.tgz 上传到 v0.2.0 Release"*
+> - *"查看当前仓库最新的 Release 版本与更新日志"*
+> - *"基于最近的提交记录，自动生成 v0.4.0 的发版说明并创建一个草稿 Release"*
+> - *"把本地构建产物 'dsh-github-flow-0.4.0.tgz' 上传到最新 Release 中"*
 
 * **支持操作 (`action`)**：
-  * `list` / `view`：查看发版历史与任意版本详情（资产清单、发版说明）；
-  * `create`：创建 Release（`generate_notes` 自动生成说明、`draft` / `prerelease` 标记、可直接附带资产）；
-  * `upload` / `download`：上传 `.tgz` 等构建产物或按 glob 下载资产；
-  * `delete`（需 `confirm: true`）：删除 Release，可选连 Tag 一起清理。
+  * `list`：查看历史 Release 版本清单；
+  * `view`：查看指定 Tag 的发布说明与附属构建资产清单；
+  * `create`：创建新版本 Release（支持 `generate_notes` 自动从 commit 生成说明，支持 `draft` / `prerelease` / 预置资产上传）；
+  * `upload`：向已有 Release 追加上传本地资产（支持 `clobber: true` 覆盖上传，需 `confirm: true`）；
+  * `download`：下载 Release 产物文件（支持 `pattern` glob 模式过滤）；
+  * `delete`：删除 Release（支持 `cleanup_tag: true` 连同 Git Tag 一并清理，需 `confirm: true`）。
 
 ---
 
-### 7. `github_secret`：CI/CD 密钥与变量管理 🆕
+### 6. `github_secret`：CI/CD 密钥 (Secret) 与变量 (Variable) 管理
 > **典型对话指令**：
-> - *"帮我把新的 NPM_TOKEN 更新到当前仓库的 Secrets 里"*
-> - *"看一下这个仓库配了哪些密钥"*
-> - *"把 DEPLOY_ENV 变量设为 staging，并回读确认"*
+> - *"列出当前仓库配置了哪些 Actions Secrets"*
+> - *"帮我设置一个名为主机发布的 secret 'DEPLOY_KEY'"*
+> - *"查看明文变量 'NODE_ENV' 的当前值"*
 
 * **支持操作 (`action`)**：
-  * `list`：查看密钥/变量名称清单（仅名称与更新时间，GitHub API 设计上不允许读取密文）；
-  * `set`：设置/更新密钥值——**密文经子进程标准输入传递，绝不出现在命令行参数（防 `ps` 窃取），输出永不回显**；
-  * `delete`（需 `confirm: true`）：删除密钥。
-  * 支持 `kind: 'variable'` 切换到 **Actions 明文变量**：`set` 走参数直传、`get` 可回显值（这正是变量与密钥的设计区别——secret 写入后 GitHub 侧加密，物理不可读取）；两类对象的安全语义在渲染层物理隔离。
-  * 支持仓库 / 组织 (`org`) / 环境 (`env`) 三级作用域与 `actions` / `codespaces` / `dependabot` / `agents` 应用归属。
+  * `list`：列出仓库配置的密钥或变量名称清单（密文永不回显，变量可读）；
+  * `set`：设置或更新密钥（**安全纪律：密文经子进程标准输入 stdin 安全写入，全程不出现在命令行参数与进程列表中**）或设置明文变量；
+  * `get`：🆕 获取明文变量的值（仅 `kind: 'variable'` 可用；Secret 受 GitHub 物理加密保护不可读取）；
+  * `delete`：删除密钥或变量（删除 Secret 需 `confirm: true`）。
 
 ---
 
-### 8. `github_skill`：跨 Agent 开源 Skills 生态发现 🆕
+### 7. `github_skill`：Agent Skills 生态发现与本地安装
 > **典型对话指令**：
-> - *"在 GitHub 上搜一下有没有关于 code-review 的 Agent Skill"*
-> - *"预览一下那个 Skill 的内容，合适就装到当前项目"*
+> - *"在 GitHub 开源社区检索关于 'markdown' 的 Agent Skills"*
+> - *"预览并安装 'github/awesome-copilot' 仓库里的代码审查 Skill 到当前项目"*
 
 * **支持操作 (`action`)**：
-  * `search`：基于 GitHub Code Search 跨仓库检索开源 `SKILL.md` 技能（带 Stars 排序）；
-  * `preview`：只读预览 Skill 内容，安装前审阅行为约束，不落盘；
-  * `install`（需 `confirm: true`）：安装到本地 Agent 宿主（Claude Code / Cursor / Copilot 等 50+），支持 `project` / `user` 两种范围；
-  * `list`：查看本机已安装的全部 Skills。
-  * 依赖 GitHub CLI 2.9x+ 的 `gh skill` 官方 preview 特性。
+  * `search`：跨 GitHub 开源仓库检索符合规范的 Agent Skills；
+  * `preview`：免安装直接在线预览指定 Skill 的 `SKILL.md` 规则与行为指令；
+  * `install`：一键安装指定 Skill 至本地环境（支持 `scope: 'project'` 或 `'user'`，需 `confirm: true`）；
+  * `list`：查看当前环境已安装的 Skills 清单。
 
 ---
 
-### 9. `github_help`：元指南与故障自愈中枢 🆕
+### 8. `github_help`：全景映射总表、官方语法速查与故障自愈
 > **典型对话指令**：
-> - *"我不确定该用哪个 GitHub 工具做这件事"*
-> - *"GitHub 搜索的高级语法怎么写？"*
+> - *"我不确定用哪个工具操作 Discussions，帮我查查映射表"*
+> - *"查询一下 GitHub 搜索日期的过滤语法是什么"*
+> - *"调用 gh 命令报错 'authentication failed'，该怎么排查？"*
 
-* **核心能力**：
-  * 9 大工具任务路由导航（「什么任务调什么工具」一查便知）；
-  * 官方高级检索语法速查（日期区间、状态修饰符、代码搜索范围限定）；
-  * 常见故障自愈配方（403 限流、422 参数缺失、Fork 落后拉平、CLI 版本过低）；
-  * 直接透传 `gh help <command>` 官方离线手册。
-
----
-
-## 🛡️ 安全防线设计
-
-* **高危操作双重确认**：`merge`、`close`、`release delete`、覆盖上传 (`clobber`)、`secret delete`、`skill install` 等不可逆或写盘操作强制要求 `confirm: true` 参数；未确认时只返回影响评估报告，绝不执行。杜绝模型幻觉导致的意外合并或删除。
-* **密文标准输入通道**：`github_secret` 的密钥值经子进程 stdin 传递，全程不出现在命令行参数（防 `ps` / 任务管理器窃取）、不落盘、不在输出中回显；gh 在本地用仓库公钥加密后才上传。
-* **命令注入免疫**：所有 gh 调用采用 `execFile` 数组参数隔离执行，零 Shell 字符串拼接。
+* **支持操作 (`topic` / `gh_command`)**：
+  * `overview`：输出全景工具箱导航与核心职责速查；
+  * `mapping`：**官方命令映射总表**，精准指示任意 `gh <command>` 对应哪个插件工具，以及未覆盖域对应的 GitHub REST/GraphQL 端点；
+  * `search_syntax`：日期区间、状态筛选与高级布尔搜索语法指南；
+  * `troubleshooting`：常见错误自愈配方（认证失效、网络超时、SOCKS5 代理配置、权限不足等）；
+  * 领域速查：`pr` / `issue` / `run` / `repo` / `release` / `secret` / `skill` 专项高阶用法；
+  * `gh_command`：直接透传查询官方原生手册（如 `gh_command: 'ruleset'`）。
 
 ---
 
-## 🖥️ 原生 Web UI 沉浸式工作台与设置中心
+### 9. `github_api`：原生 GitHub REST / GraphQL 逃生门
+> **典型对话指令**：
+> - *"调用 GitHub API 获取当前登录用户的 Profile 信息"*
+> - *"调用 GraphQL 查询指定仓库的 Discussions 列表"*
 
-### 1. 全局全景驾驶舱 (Global Cockpit)
+* **支持功能**：直接通过宿主机已认证的 GitHub CLI 环境调用任意 REST 或 GraphQL 端点，支持 `--jq` 结果精简、自动分页 (`paginate: true`)、请求参数字面量直传与 `raw: true` 原始响应流（如免 Base64 读取文本文件）。
 
-点击 DSH 左侧主导航的 GitHub 图标进入：
-* **⚡ 0ms 瞬间秒开直出 (SWR 本地持久化缓存)**：利用客户端本地持久化快照，告别每次进入转圈等待 8~15 秒的烦躁感，打开瞬间完整渲染全部卡片与列表；
-* **📦 实时数据新鲜度胶囊**：标题栏旁直观展示数据状态（`[📦 本地快照 (21分钟前)]` ➔ `[⏳ 后台同步中...]` ➔ `[✅ 已是最新 (15:30)]` ➔ `[⚠️ 同步超时已保留缓存]`）；
+---
+
+## 🖥️ Web UI 全景驾驶舱与右侧栏工作台
+
+不仅仅是给 Agent 调用的工具，`dsh-github-flow` 为人类开发者提供了无缝融合的图形化控制面板：
+
+### 1. 全景驾驶舱 (Main Dashboard)
+点击 DSH 左侧导航栏的 **Octocat 徽标** 即可瞬间打开全屏驾驶舱：
+* **📦 实时数据新鲜度胶囊**：标题栏旁直观展示数据状态（`[📦 本地快照 (21分钟前)]` ➔ `[⏳ 后台同步中...]` ➔ `[✅ 已是最新 (15:30)]` ➔ `[⚠️ 网络连接失败，当前展示离线历史数据]`）；
 * **账号全景概览**：实时透视名下所有 GitHub 仓库、默认分支与 Star 状态；
 * **本地工作区联动矩阵**：自动探测本机所有打开的项目，显示当前工作区与远程 GitHub 仓库的关联状态；
 * **三维待办 Issue 矩阵**：智能划分「📥 用户提单（反馈到我名下仓库）」、「🎯 指派待办（分配给我）」与「✍️ 我发起的」，支持一键药丸过滤；
@@ -250,6 +249,11 @@ dsh plugin --profile web add dsh-github-flow
 ### 2. 会话右侧栏工作区面板 (Session Workspace Panel)
 位于每个对话工作区的右侧抽屉栏，深度联动本地 Git 状态与远程 GitHub 仓库：
 * **当前仓库上下文绑定**：自动锁定当前会话的物理 Git 仓库，展示远程关联与认证账号；
+* **⎇ 分支查看与无损切换 (Branch Selector)**：
+  * 在当前仓库卡片中直观展示当前分支与下拉选择器；
+  * 采用标准 **Git 官方菱形分支矢量组件（`#1296db` SVG）**，完全杜绝植物/草符号；
+  * 随 overview 接口预取分支数据，点击 **0ms 瞬间展开**下拉菜单，支持输入关键词即时过滤本地与远程分支；
+  * **未提交变更防护（Dirty File Guard）**：切换前后端严格执行工作区干净度校验，存在未暂存或未提交代码时强阻断切换，彻底防止代码被破坏性覆盖；
 * **数据新鲜度胶囊对齐**：标题旁紧凑呈现 `[📦 本地快照 (2分钟前)]` 与 `[🔄 刷新]` 按钮，与主页规则 100% 保持一致，首屏 0ms 瞬间直出；
 * **快捷操作网格**：一键在浏览器打开仓库、直达 Issues/PRs、一键创建 PR；
 * **五大 Tab 布局响应式互斥切换**：快捷操作下方采用紧凑 Tab 架构，内容区互斥展示、大幅降低纵向滚动需求：
@@ -257,13 +261,12 @@ dsh plugin --profile web add dsh-github-flow
     * 分支与同步状态：展示当前分支（如 `master`）与远程同步快照（`✓ 与远程同步` 或 `↑N 待 push` / `↓N 待 pull`）；
     * 三段式提交视图：待推送提交（本地领先）、待拉取提交（远程领先）及最近提交列表；
     * 默认展示 15 条，支持**向下滑动触底自动分页加载**（伴随 `15 / 74` 实时进度提示与点击后备）；
-    * 右上角锚定最新发布 Release 徽章（`🏷️ v0.2.1`），悬停查看发布时间与预发布标示，点击直达；
-    * **提交详情模态弹窗**：点击任意提交记录行，在右侧栏内局部居中弹出（与设置弹窗同构，不全屏越界），内置上下滑动区域，完整展示 40 位 SHA、提交者姓名邮箱、日期、多行详细正文说明与文件变更统计（`--stat`），纯本地 0ms 秒开，支持按 `Esc` 或点击遮罩随时关闭；
+    * 右上角锚定最新发布 Release 徽章（`🏷️ v0.3.0`），悬停查看发布时间与预发布标示，点击直达；
+    * **提交详情模态弹窗**：点击任意提交记录行，在右侧栏内局部居中弹出，内置上下滑动区域，完整展示 40 位 SHA、提交者姓名邮箱、日期、多行详细正文说明与文件变更统计（`--stat`），纯本地 0ms 秒开，支持按 `Esc` 或点击遮罩随时关闭；
   * **未提交清单 (`📁 未提交 (N)`)**：展示工作区未提交的文件清单，状态码色彩区分（`??` 新增、`M` 修改、`D` 删除、`R` 重命名）与变更总数；
   * **拉取请求 (`🔀 PR (N)`)**：展示当前开放 PR，带有三态 CI 门禁（`✅ CI 通过` / `❌ CI 失败` / `⏳ CI 运行中`）、冲突检测、审核判定（`✔ 已批准` / `✋ 需修改` / `👀 待审查`）、Draft 草稿标示与人性化相对时间；
   * **仓库议题 (`📋 Issues (N)`)**：直接在侧边栏审查待办任务，支持指派者、标签与多维状态药丸；
   * **构建流水线 (`⚡ Actions (N)`)**：实时关注工作流 CI 状态，展示触发方式（`push`/`定时`/`手动`/`PR`）、相对时间与失败构建的 Agent 自愈诊断指引（嵌入 run_id）；
-* **全库统一 Git 官方矢量图标**：采用标准 Git 菱形分支官方矢量组件（`#1296db` SVG），全面统一各处 Git 标识；
 * **⚙️ 完整设置入口**：右侧栏提供设置按钮，与主页复用同一设置弹窗（数据同步 / 网络代理 / 更新设置 / 关于 四分区完整可用），无需切回主页调整。
 
 <p align="center">
@@ -273,10 +276,13 @@ dsh plugin --profile web add dsh-github-flow
 ### 3. 设置中心 (Settings Modal)
 点击全景驾驶舱右上角 **`[⚙️ 设置]`**（或右侧栏的 ⚙️ 按钮）打开分区式设置弹窗，左侧分区导航、右侧内容独立滚动（窄屏自动折叠为横向页签）：
 
-**🔄 数据同步分区**——调优数据拉取节奏：
-* **两种同步策略**：
-  * **⚡ 秒开模式 (SWR, 推荐)**：打开驾驶舱立即展示上次本地缓存（0ms秒开），并在 300ms 内后台静默同步最新状态——无论缓存多旧，打开即可自愈为最新；
+**🔄 数据同步分区**——调优数据拉取节奏与感知灵敏度：
+* **数据刷新策略（三选一互斥模型）**：
+  * **⚡ 秒开展示旧数据 (SWR, 默认)**：打开驾驶舱立即展示上次本地缓存（0ms秒开），并在首屏后台静默拉新一次——无论缓存多旧，打开即可自愈为最新；
+  * **☁️ 云端数据定时自动同步 (SWR + 定时轮询)**：首屏秒开旧数据并立即拉新，拉取结算后开始计时；循环静默更新 PR、Issue 与 Actions（支持 **5/10/30/60 分钟** 多档可选，内置窗口息屏自动避让，防止后台耗尽 API 配额）；
   * **📋 仅在手动点击时拉取 (Manual Only)**：打开只浏览本地缓存，绝不自动触发后台 gh 进程，最省电、最省资源；想更新时点击「🔄 刷新」即可。
+* **高级自动化与状态感知**：
+  * **📁 本地 Git 改动实时感知 (仅右侧栏生效，默认开启)**：定向监听当前仓库的 `.git/HEAD` 与 `.git/index` 元数据，代码修改、暂存与分支切换在 800ms 防抖后毫秒级自动对齐右侧栏，零外部网络流量消耗；全景首页保持轻量不开启。
 * **本地缓存可视化管理**：透明查看本地快照体积与保存时间戳，支持一键 `[🗑️ 清空缓存]` 重置。
 
 **🌐 网络代理分区**——让插件全部外联流量走你的代理：
@@ -329,21 +335,23 @@ dsh plugin --profile web add dsh-github-flow
 
 为什么以前打开全景驾驶舱需要等待好几秒？因为全景数据要并发调用十余次 `gh` 进程扫描多个仓库与工作区。本插件引入了 **Stale-While-Revalidate (SWR)** 缓存体系，并把控制权完全交还给用户：
 
-```
-首次渲染 (0ms) ──────────> 恢复本地持久化快照，瞬间完整上屏
+```text
+首次挂载 (0ms) ──────────> 恢复本地持久化快照，瞬间完整上屏
                                 │
-                                ├── SWR 模式: 延迟 300ms 后台静默拉取，平滑对齐最新数据
-                                └── 手动模式: 仅浏览本地快照，点击「🔄 刷新」才发起拉取
+                                ├── SWR 秒开模式: 延迟 300ms 后台静默拉新一次，平滑对齐最新数据
+                                ├── 云端定时自动同步: 首屏拉新结算后开启周期计时器 (5/10/30/60m 息屏避让)
+                                └── 纯手动模式: 仅浏览本地快照，点击「🔄 刷新」才发起拉取
 ```
 
-### 两种刷新策略对比与选用建议：
+### 三种刷新策略对比与选用建议：
 
 | 刷新模式 | 运行机制 | 适用人群与场景 |
 | :--- | :--- | :--- |
-| **⚡ 秒开模式 (SWR, 默认)** | 打开驾驶舱 **0ms 立即呈现** 上次保存的本地离线快照，并在 300ms 内后台静默更新——无论快照多旧，打开即自愈为最新。 | **强烈推荐所有开发者**。消灭白屏转圈，体验最顺畅丝滑。 |
+| **⚡ 秒开模式 (SWR, 默认)** | 打开驾驶舱 **0ms 立即呈现** 上次保存的本地离线快照，并在首屏后台静默更新——无论快照多旧，打开即自愈为最新。 | **强烈推荐所有开发者**。消灭白屏转圈，体验最顺畅丝滑。 |
+| **☁️ 云端定时自动同步 (SWR + 定时轮询)** | 首屏秒开旧数据并立即拉新，拉取结算后开始周期倒计时（5/10/30/60分钟）；内置息屏避让，后台标签页不耗配额。 | **需要持续关注多仓库动态、CI 状态与团队 Issue 流转的深度用户**。 |
 | **📋 仅手动刷新 (Manual Only)** | 仅浏览本地已有数据，绝对不自动发起任何后台 `gh` 网络拉取。 | **笔记本电池供电、低配设备或弱网环境**。极致节能，杜绝无谓后台开销。 |
 
-* **离线韧性保障 (Fail-Safe)**：即使完全断网或后台请求超时，**界面依然完整保留本地快照供您浏览与检索，绝不发生白屏或红字崩溃报错！**
+* **离线韧性保障 (Fail-Safe)**：即使完全断网或后台请求超时，**界面依然完整保留本地快照供您浏览与检索，配合醒目的网络异常横幅与 Toast 提示，绝不静默欺骗，更绝不白屏崩溃！**
 
 ---
 
@@ -357,26 +365,25 @@ dsh plugin --profile web add dsh-github-flow
 
 ---
 
-## ⚙️ 配置项说明 (`cordis.patch.yml`)
+## ⚙️ 插件配置项参考 (`cordis.yml`)
 
-插件具备开箱即用的默认行为，也可在 `cordis.patch.yml` 或 Profile 中按需调优：
+插件支持通过 DSH 配置文件进行精细化微调：
 
 ```yaml
-- insert:
-    - id: github-flow
-      name: dsh-github-flow
-      config:
-        ghPath: 'gh'              # GitHub CLI 可执行程序路径（内网特定环境可指定绝对路径）
-        defaultTimeoutMs: 30000   # 命令执行超时时间（毫秒，默认 30 秒）
-        maxOutputChars: 24000     # 单次命令安全返回字符数上限（Token 防溢出保护）
-        maxOutputBytes: 96000     # 单次命令 UTF-8 字节数硬上限，默认 maxOutputChars × 4
-        defaultListLimit: 20      # 列表类查询默认返回条数（pr/issue/run/release/skill 通用）
-        cacheTtlMs: 15000         # 单仓库概览缓存时长（毫秒，默认 15 秒）
-        checkUpdate: true         # 是否开启新版本自动检查提示（默认开启；false 时熔断自动探测，显式升级不受限）
-        agentEnvInjection: true   # 向 gh 注入 AI_AGENT=dsh 识别信号（gh ≥2.99 自动适配 Agent 输出；false 恢复 gh 原生行为）
-        updateCheckIntervalMs: 86400000 # 检查更新间隔（毫秒，默认 24 小时）
-        registryUrl: ''           # 自定义私有 npm 镜像地址（留空走「更新设置」所选源，界面设置优先）
-        proxyUrl: ''              # 代理地址预置默认值（如 'http://127.0.0.1:7890'；仅未在驾驶舱设置过时生效，界面设置优先）
+- id: github-flow
+  name: dsh-github-flow
+  config:
+    ghPath: 'gh'              # GitHub CLI 可执行文件路径（默认 'gh'，从系统 PATH 查找）
+    defaultTimeoutMs: 30000   # 命令执行超时时间（毫秒，默认 30 秒）
+    maxOutputChars: 24000     # 单次命令安全返回字符数上限（Token 防溢出保护）
+    maxOutputBytes: 96000     # 单次命令 UTF-8 字节数硬上限，默认 maxOutputChars × 4
+    defaultListLimit: 20      # 列表类查询默认返回条数（pr/issue/run/release/skill 通用）
+    cacheTtlMs: 15000         # 单仓库概览缓存时长（毫秒，默认 15 秒）
+    checkUpdate: true         # 是否开启新版本自动检查提示（默认开启；false 时熔断自动探测，显式升级不受限）
+    agentEnvInjection: true   # 向 gh 注入 AI_AGENT=dsh 识别信号（gh ≥2.99 自动适配 Agent 输出；false 恢复 gh 原生行为）
+    updateCheckIntervalMs: 86400000 # 检查更新间隔（毫秒，默认 24 小时）
+    registryUrl: ''           # 自定义私有 npm 镜像地址（留空走「更新设置」所选源，界面设置优先）
+    proxyUrl: ''              # 代理地址预置默认值（如 'http://127.0.0.1:7890'；仅未在驾驶舱设置过时生效，界面设置优先）
 ```
 
 ---
@@ -404,9 +411,10 @@ export function apply(ctx: Context) {
 
 - [npm 发布与自动化 CI 发版指南](./docs/npm-publish-guide.md)
 - [架构设计与技术规范](./docs/architecture.md)
-
+- [发版必改清单与避坑指南](./docs/UPGRADE-NOTES.md)
 
 ---
+
 ## 友情链接
 
 - [LINUX DO - 新的理想型社区](https://linux.do/)

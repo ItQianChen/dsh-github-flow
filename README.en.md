@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>Give DeepSeek Harness Agents native hands and feet to operate GitHub, crafting an immersive collaboration cockpit for developers.</b><br>
-  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>9 core domain Agent tools</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
+  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>9 core domain Agent tools (76+ actions covering PR/Issue/Actions workflow governance/clone-free file reads/secrets & variables)</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
 </p>
 
 <p align="center">
@@ -29,7 +29,8 @@ When using AI Agents for collaborative coding, developers frequently hit these f
 | **CI / Actions Failure Debugging** | Sifting through pages of Actions logs in a browser, copying stack traces to chat for debugging. | **Pinpoint Error Extraction**: Tell the Agent *"Why did CI fail?"*; Agent calls `github_run(log_failed)` to grab failed step logs and patch code instantly. |
 | **Security & Token Management** | Pasting plain-text Personal Access Tokens (PATs) in plugin configs, risking token leaks and permission sprawl. | **Zero Token Exposure**: Directly reuses local `gh auth login` credentials via native OS Keychains/Keyrings securely. |
 | **Context Switching Overhead** | Jumping back and forth between VS Code, browser GitHub tabs, and DSH chat windows. | **Immersive Dual Cockpit**: Live PR status, Actions pipelines, and 3D issue matrices right inside DSH. |
-| **First-Screen Latency & Loading** | Staring at full-screen spinners for 8~15s while waiting for heavy background `gh` processes. | **SWR 0ms Instant Render**: Instantly displays local persistent snapshots; dedicated settings modal to switch between SWR auto-sync and manual mode. |
+| **Branch Switching & Real-Time Sync** | Switching branches requires hopping into a terminal, while the sidebar remains stale regarding local stage/commit changes. | **Safe In-UI Branch Switching + Live Git Watch**: Instant keyword filter with uncommitted dirty change guard; 800ms debounced `.git` watcher aligns right sidebar in milliseconds. |
+| **First-Screen Latency & Loading** | Staring at full-screen spinners for 8~15s while waiting for heavy background `gh` processes. | **SWR 0ms Instant Render + Scheduled Sync**: Instantly displays local persistent snapshots; features a 3-way mutually exclusive sync model (SWR, Cloud Auto-Sync with visibility pause, Manual) and standalone local Git watch. |
 | **Plugin Upgrades & Maintenance** | Manually checking npm registry versions, complicated commands, fear of breaking configs. | **Idle Silent Detection + One-Click Upgrade**: Dual-registry acceleration, auto macOS/Windows adaptation, upgrade with one click. |
 
 ---
@@ -98,147 +99,145 @@ Consolidates scattered GitHub endpoints into **9 core domain tools (76+ actions 
 
 ---
 
-### 2. `github_run`: Actions CI Pipeline & Failure Diagnostics (Agent Auto-Fix Core)
+### 2. `github_issue`: Issue Tracking & Branch Creation
 > **Example Agent Prompts**:
-> - *"Why did the latest Actions workflow fail? Extract failed step logs and fix the code."*
-> - *"Show me the status of the last 5 CI runs in this repository."*
-> - *"Rerun the failed workflow from earlier."*
-
-* **Supported Actions**:
-  * `log_failed` (🔥 **Killer Feature**): **Optimized for Agents**; automatically extracts isolated error logs from failed steps for instant root-cause analysis;
-  * `list`: View recent workflow runs and conclusions (`branch` / `status: failure` filters to pin down broken builds);
-  * `view`: Inspect jobs and steps for a specific run ID;
-  * `trigger`: 🆕 Manually dispatch `workflow_dispatch` workflows to verify fixes immediately;
-  * `workflow_list`: 🆕 List workflows (active only by default; `all: true` includes disabled — when diagnosing "why didn't my workflow run", the disabled state itself is the answer);
-  * `workflow_view`: 🆕 Workflow details (locate by name/ID/filename, with recent runs);
-  * `workflow_enable` / `workflow_disable`: 🆕 Toggle workflows (disable explicitly warns "the next trigger will fail silently");
-  * `download`: 🆕 Download build artifacts to a plugin-managed directory (isolated per repo and run, returns file manifest; older gh versions get a security upgrade note);
-  * `rerun`: Re-trigger failed CI runs;
-  * `cancel`: Cancel in-progress workflows.
-
----
-
-### 3. `github_issue`: Issue Tracking & Closed-Loop Tasks
-> **Example Agent Prompts**:
-> - *"File an issue for the memory leak we just reproduced, labeled 'bug' and 'backend'."*
 > - *"List all open issues assigned to me."*
-> - *"Comment on Issue #45: 'Fixed on master branch, awaiting verification'."*
-> - *"Close Issue #45."*
+> - *"Branch off a local fix branch 'fix-login-error' from Issue #42 and start working."*
+> - *"Add a comment to Issue #15 summarizing the edge cases we just discovered."*
 
 * **Supported Actions**:
-  * `list`: Query issues with flexible filters (`state` / `labels` / `assignees` / `limit`);
-  * `view`: Read issue body and discussion history;
-  * `create`: Create new issues (title, body, labels, assignees);
-  * `edit`: 🆕 Update title, body, and add/remove labels;
-  * `develop`: 🆕 Create a linked development branch from an issue and check it out locally;
-  * `comment`: Append debugging updates or notes;
-  * `close` (requires `confirm: true`) / `reopen`: Manage issue lifecycle states;
-  * `delete`: 🆕 **Permanently delete** an issue (requires `confirm: true`; the number is gone forever and comments are destroyed — fundamentally different from close, which can be reopened);
-  * `transfer`: 🆕 Transfer an issue to another repository (requires `confirm: true`; original URL 301-redirects, ownership cannot be silently reverted);
-  * `pin` / `unpin`: 🆕 Toggle issue pinning (reversible state flag);
-  * `lock` / `unlock`: 🆕 Lock/unlock conversation (`lock_reason` supports off_topic/resolved/spam/too_heated);
-  * `status`: 🆕 Account-level assigned-issues panel (Assigned / Mentioning sections);
-  * `view_images`: 🆕 Download issue attachment screenshots (body + comments; `image_urls` targeting with resume list).
+  * `list`: List issues with flexible filtering (`state` / `labels` / `assignees`);
+  * `view`: Inspect full issue threads, body descriptions, and assignees;
+  * `create`: Create new issue tickets;
+  * `comment`: Add comments to issue threads;
+  * `edit`: Update titles, `add_labels`, or `remove_labels`;
+  * `close` / `reopen`: Manage lifecycle status (`close` requires `confirm: true`);
+  * `develop`: 🆕 Automatically branch off a local Git branch linked to the issue;
+  * `delete`: 🆕 Irreversible physical deletion (requires `confirm: true`);
+  * `transfer`: 🆕 Move issue to another repository with 301 redirects (requires `confirm: true`);
+  * `pin` / `unpin`: 🆕 Manage pinned issues on the repository;
+  * `lock` / `unlock`: 🆕 Lock discussions with standard reasons (`off_topic`, `resolved`, `spam`, `too_heated`);
+  * `status`: 🆕 Retrieve a comprehensive dashboard of issues assigned to the active user;
+  * `view_images`: 🆕 Download screenshot attachments from issue descriptions and comments into local image blocks.
 
 ---
 
-### 4. `github_repo`: Repository Exploration & Cross-Repo Code Search
+### 3. `github_run`: Actions Monitoring & Intelligent Troubleshooting
 > **Example Agent Prompts**:
-> - *"Search for usages of 'createPrTool' across this repository."*
-> - *"Search GitHub for popular open-source repositories related to 'dsh-plugin'."*
-> - *"Show repository metadata and star count for cli/cli."*
+> - *"Did the latest CI run on main fail?"*
+> - *"Extract the failed step logs from the recent failed run and debug the root cause."*
+> - *"Re-run the latest failed CI pipeline."*
 
 * **Supported Actions**:
-  * `view`: View repository metadata (default branch, stars, description, topics & license);
-  * `readme`: 🆕 Read repository README raw content (branch-selectable; relative-path screenshots auto-resolved and downloaded);
-  * `sync`: 🆕 One-click fork sync with upstream to fix stale-fork CI gate failures;
-  * `search_code`: Search code symbols in current or specified repositories;
-  * `search_repos`: Search open-source GitHub repositories globally;
-  * `search_issues` / `search_prs` / `search_commits`: 🆕 Global search over issues / PRs / commits (qualifiers go inline in the query, e.g. `repo:o/r state:open`; commits require search text);
-  * `read_file`: 🆕 **Clone-free single-file read at any path** (native on gh ≥2.95; older versions auto-degrade to the contents API with an explicit degraded-path note; binary files are rejected with `github_api` guidance);
-  * `read_dir`: 🆕 Clone-free directory listing (dirs first + file sizes, same degradation path).
+  * `list`: Query workflow runs by branch or status;
+  * `view`: Inspect step breakdown and conclusion states;
+  * `log_failed`: **🔥 Troubleshooting Swiss Army Knife**! Pinpoints exact failing jobs and steps, extracting only the critical failure lines;
+  * `rerun`: Re-trigger failed workflows with one click;
+  * `cancel`: Cancel in-progress or queued runs;
+  * `trigger`: Manually dispatch `workflow_dispatch` workflows with custom parameters;
+  * `workflow_list`: 🆕 List all workflows in the repository (`all: true` includes disabled ones);
+  * `workflow_view`: 🆕 Inspect workflow YAML definitions and total run metrics;
+  * `workflow_enable` / `workflow_disable`: 🆕 Toggle workflow status dynamically;
+  * `download`: 🆕 Download build artifacts (strictly adhering to GHSA path-traversal safeguards).
 
 ---
 
-### 5. `github_api`: Low-Level Escape Hatch
+### 4. `github_repo`: Metadata, Fork Sync, Clone-Free File Reads & Global Search
 > **Example Agent Prompts**:
-> - *"Call GitHub API to fetch latest releases of current repository and parse tag names with jq."*
-
-* **Core Strength**: Call any GitHub REST or GraphQL API using local credentials with `--jq` filtering, `raw` text mode, and `paginate` auto-aggregation.
-
----
-
-### 6. `github_release`: Version Releases & Build Asset Delivery 🆕
-> **Example Agent Prompts**:
-> - *"Publish v0.2.0 for this repository with auto-generated release notes."*
-> - *"Upload dsh-github-flow-0.2.0.tgz to the v0.2.0 release."*
+> - *"Sync my fork with the upstream repository."*
+> - *"Search where 'useAuthToken' is used across this repository."*
+> - *"Read 'src/utils.ts' on the remote repository without cloning."*
+> - *"Fetch the README, and download the architecture diagrams inside it."*
 
 * **Supported Actions**:
-  * `list` / `view`: Browse release history and per-version details (assets, notes);
-  * `create`: Create releases (`generate_notes` auto-notes, `draft` / `prerelease` flags, attach assets directly);
-  * `upload` / `download`: Upload `.tgz` build artifacts or download assets by glob pattern;
-  * `delete` (requires `confirm: true`): Delete a release, optionally cleaning up its tag.
+  * `view`: Inspect repository metadata, default branch, Star/Fork counts, licenses, and topics;
+  * `readme`: 🆕 Read README text and extract all referenced image URLs, with optional `image_urls` batch downloads;
+  * `sync`: Sync fork branch with upstream (`--force` hard reset supported);
+  * `read_file`: 🆕 Clone-free remote file reading (`gh ≥ 2.95` direct, older CLI versions auto-fallback to REST API);
+  * `read_dir`: 🆕 Clone-free remote directory enumeration with file types and sizes;
+  * `search_code`: Search code across GitHub repositories;
+  * `search_repos`: Search repositories by keywords and topics;
+  * `search_issues` / `search_prs`: Global issue and pull request queries;
+  * `search_commits`: Global commit message search.
 
 ---
 
-### 7. `github_secret`: CI/CD Secrets & Variables Management 🆕
+### 5. `github_release`: Release Governance & Build Artifact Delivery
 > **Example Agent Prompts**:
-> - *"Update the NPM_TOKEN secret for this repository."*
-> - *"Show which secrets are configured for this repo."*
-> - *"Set the DEPLOY_ENV variable to staging and read it back to confirm."*
+> - *"Check the latest release notes and assets for this repository."*
+> - *"Draft a new v0.4.0 release using commits since the last tag."*
+> - *"Upload the local build artifact 'dsh-github-flow-0.4.0.tgz' to the latest release."*
 
 * **Supported Actions**:
-  * `list`: Show secret/variable names and update times (the GitHub API never exposes secret values);
-  * `set`: Set/update secret values — **passed via subprocess stdin, never on the command line (ps-safe), never echoed in output**;
-  * `delete` (requires `confirm: true`): Remove a secret.
-  * Switch to **Actions plaintext variables** via `kind: 'variable'`: `set` passes the value directly as a flag and `get` can echo it back (that's the design difference from secrets — secrets are encrypted GitHub-side after write and physically unreadable); the two security semantics are physically isolated in the rendering layer.
-  * Supports repository / organization (`org`) / environment (`env`) scopes across `actions` / `codespaces` / `dependabot` / `agents` apps.
+  * `list`: Query release history;
+  * `view`: Inspect notes and asset manifests for a given tag;
+  * `create`: Publish releases (supports `generate_notes`, drafts, prereleases, and asset attachments);
+  * `upload`: Attach build assets to an existing release (`clobber: true` requires `confirm: true`);
+  * `download`: Download release artifacts with glob pattern filters;
+  * `delete`: Delete releases (`cleanup_tag: true` deletes associated Git tag; requires `confirm: true`).
 
 ---
 
-### 8. `github_skill`: Cross-Agent Open-Source Skills Discovery 🆕
+### 6. `github_secret`: CI/CD Secrets & Variables Governance
 > **Example Agent Prompts**:
-> - *"Search GitHub for an Agent Skill about code review."*
-> - *"Preview that skill's content, then install it to this project if it looks good."*
+> - *"List the names of all configured Actions secrets."*
+> - *"Set a repository secret named 'DEPLOY_KEY'."*
+> - *"Read the value of plaintext variable 'NODE_ENV'."*
 
 * **Supported Actions**:
-  * `search`: Search open-source `SKILL.md` skills across GitHub (Code Search based, ranked by stars);
-  * `preview`: Read-only preview of skill content before installing — nothing touches disk;
-  * `install` (requires `confirm: true`): Install to local agent hosts (Claude Code / Cursor / Copilot and 50+ others), `project` or `user` scope;
-  * `list`: List all skills installed on this machine.
-  * Requires the official `gh skill` preview feature in GitHub CLI 2.9x+.
+  * `list`: Enumerate secret or variable names (secret values are never echoed);
+  * `set`: Configure secrets (**Security Invariant: ciphertext safely passed via stdin, never in command arguments or process tables**) or variables;
+  * `get`: 🆕 Read variable values (available only for `kind: 'variable'`; secrets are cryptographically shielded by GitHub);
+  * `delete`: Remove secrets or variables (secret deletion requires `confirm: true`).
 
 ---
 
-### 9. `github_help`: Meta Guide & Troubleshooting Hub 🆕
+### 7. `github_skill`: Agent Skills Ecosystem Discovery & Local Installation
 > **Example Agent Prompts**:
-> - *"I'm not sure which GitHub tool to use for this task."*
-> - *"How do I write advanced GitHub search syntax?"*
+> - *"Search GitHub for open-source Agent skills related to 'markdown'."*
+> - *"Preview and install the code review skill from 'github/awesome-copilot' into this project."*
 
-* **Core Capabilities**:
-  * Task-routing navigation across all 9 tools;
-  * Official advanced search syntax cheat sheet (date ranges, status qualifiers, code search scopes);
-  * Self-healing recipes for common errors (403 rate limits, 422 missing params, stale forks, outdated CLI);
-  * Direct passthrough to the official `gh help <command>` offline manual.
-
----
-
-## 🛡️ Safety Guardrails
-
-* **Destructive-action double confirmation**: `merge`, `close`, `release delete`, clobber uploads, `secret delete`, and `skill install` require an explicit `confirm: true` parameter; without it, only an impact assessment is returned — nothing executes. This prevents accidental merges or deletions from model hallucinations.
-* **Secret stdin channel**: Secret values travel via subprocess stdin — never on the command line (ps / task-manager safe), never persisted, never echoed; gh encrypts locally with the repository public key before uploading.
-* **Command-injection immunity**: All gh invocations use `execFile` array-argument isolation with zero shell string concatenation.
+* **Supported Actions**:
+  * `search`: Discover compliant Agent skills across open-source GitHub repositories;
+  * `preview`: Preview `SKILL.md` rule instructions without installing;
+  * `install`: Install skills locally (`scope: 'project'` or `'user'`; requires `confirm: true`);
+  * `list`: Inspect installed skills in the current environment.
 
 ---
 
-## 🖥️ Native Web UI Workspace & Settings Center
+### 8. `github_help`: Comprehensive Mapping, Official Syntax & Self-Healing
+> **Example Agent Prompts**:
+> - *"I am not sure which tool manages Discussions; check the mapping table for me."*
+> - *"What is the syntax for filtering GitHub search results by date?"*
+> - *"How do I debug 'authentication failed' errors from gh?"*
 
-No more window switching! Seamlessly integrated into DSH with DSW design tokens and instant light/dark theme adaptation.
+* **Supported Actions**:
+  * `overview`: Complete toolbox navigation and summary table;
+  * `mapping`: **Official gh Command ↔ Tool Action Mapping Table**, detailing exact tool calls and REST/GraphQL fallback routes;
+  * `search_syntax`: Date ranges, qualifiers, and boolean query syntax;
+  * `troubleshooting`: Self-healing recipes for authentication loss, timeouts, SOCKS5 proxy configs, and permissions;
+  * Domain guides: In-depth usage guides for `pr`, `issue`, `run`, `repo`, `release`, `secret`, and `skill`;
+  * `gh_command`: Direct pass-through lookup of official gh manual entries (e.g. `gh_command: 'ruleset'`).
 
-### 1. Global Cockpit (Main Navigation Slot)
-Access via the GitHub icon in the main left navigation:
-* **⚡ 0ms Instant Render (SWR Persistent Cache)**: Powered by local snapshot persistence; say goodbye to full-screen 8~15s spinner freezes and enjoy instant dashboard loading;
-* **📦 Live Freshness Status Pill**: Transparently communicates data freshness right next to the title (`[📦 Local Snapshot (21m ago)]` ➔ `[⏳ Syncing in background...]` ➔ `[✅ Up to date (15:30)]` ➔ `[⚠️ Timeout, cached data preserved]`);
+---
+
+### 9. `github_api`: Raw GitHub REST & GraphQL Escape Hatch
+> **Example Agent Prompts**:
+> - *"Call GitHub API to fetch the current user's profile JSON."*
+> - *"Run a GraphQL query to inspect repository Discussions."*
+
+* **Supported Features**: Direct invocation of arbitrary GitHub REST or GraphQL endpoints using host credentials, supporting `--jq` filtering, auto-pagination (`paginate: true`), and `raw: true` mode.
+
+---
+
+## 🖥️ Web UI Cockpit & Right Sidebar Workspace Panel
+
+`dsh-github-flow` delivers native visual controls alongside its Agent toolset:
+
+### 1. Global Cockpit (Main Dashboard)
+Click the **Octocat icon** in DSH's left navigation bar to open the full-screen cockpit:
+* **⚡ 0ms Instant Render (SWR Persistent Cache)**: Powered by local snapshot persistence; enjoy instant dashboard loading;
+* **📦 Live Freshness Status Pill**: Transparently communicates data freshness right next to the title (`[📦 Local Snapshot (21m ago)]` ➔ `[⏳ Syncing in background...]` ➔ `[✅ Up to date (15:30)]` ➔ `[⚠️ Network failed, offline snapshot displayed]`);
 * **Account-Wide Overview**: Live view of all cloud repositories, default branches, and star counts;
 * **Local Workspace Matrix**: Automatically detects open projects and bridges local directories with remote repos;
 * **3D Issue Governance Matrix**: Categorizes issues into *"📥 User Reported"*, *"🎯 Assigned to Me"*, and *"✍️ Created by Me"* with responsive pill filters;
@@ -251,20 +250,24 @@ Access via the GitHub icon in the main left navigation:
 ### 2. Session Right Sidebar Panel (Workspace Drawer)
 Located in the right drawer of every chat workspace, seamlessly bridging your local Git workspace with remote GitHub repositories:
 * **Context Auto-Binding**: Automatically locks onto the active Git repository of the current session;
-* **Freshness Pill Alignment**: Compact indicator `[📦 Local Snapshot (2m ago)]` with live `[🔄 Refresh]` button, 100% aligned with global rules for an instant 0ms first render;
+* **Branch Viewing & Safe In-UI Switching (Branch Selector)**:
+  * Visual branch dropdown directly inside the repository card;
+  * Built with official **Git diamond vector icons (`#1296db` SVG)**;
+  * Pre-fetched with the overview payload for an **instant 0ms dropdown opening**, featuring live keyword search across local and remote branches;
+  * **Dirty File Guard**: Strict pre-flight checks block switching if there are uncommitted changes, protecting work from destructive overwrites;
+* **Freshness Pill Alignment**: Compact indicator `[📦 Local Snapshot (2m ago)]` with live `[🔄 Refresh]` button;
 * **Quick Action Grid**: Open repo in browser, jump to Issues/PRs, create PRs with one click;
-* **Five Mutually Exclusive Tabs**: Compact tabbed navigation directly below the quick action grid, reducing vertical scrolling:
+* **Five Mutually Exclusive Tabs**: Compact tabbed navigation directly below the quick action grid:
   * **Git Records (`Git`)** (Default tab):
     * Branch & Remote Sync: Real-time branch indicator (e.g. `master`) with tracking sync status (`✓ Up to date` or `↑N to push` / `↓N to pull`);
     * Three-Section Commit View: Unpushed commits (ahead of remote), unpulled commits (behind remote), and recent commit history;
     * 15 commits displayed by default, with **infinite scroll loading** when scrolling to the bottom (with live `15 / 74` progress counter and click trigger);
-    * Latest Release badge (`🏷️ v0.2.1`) anchored in the top right with hover details and direct release link;
-    * **Commit Detail Modal**: Click any commit row to open a clean modal dialog centered within the right sidebar (scoped inside drawer boundaries without overflowing full-screen), featuring smooth vertical scrolling, full 40-char SHA, author email, date, multi-line commit message body, and file diff stat table (`--stat`); pure local 0ms instant display, closable via `Esc`, close button, or backdrop click;
+    * Latest Release badge (`🏷️ v0.3.0`) anchored in the top right with hover details and direct release link;
+    * **Commit Detail Modal**: Click any commit row to open a clean modal dialog centered within the right sidebar, featuring smooth vertical scrolling, full 40-char SHA, author email, date, multi-line commit message body, and file diff stat table (`--stat`), pure local 0ms instant display;
   * **Uncommitted Changes (`📁 Uncommitted (N)`)**: Full-width list of uncommitted files with color-coded status codes (`??` untracked, `M` modified, `D` deleted, `R` renamed) and change counts;
   * **Pull Requests (`🔀 PR (N)`)**: Open PR inspection with 3-state CI check rollup (`✅ CI Passed` / `❌ CI Failed` / `⏳ CI Pending`), merge conflict detection, review decisions (`✔ Approved` / `✋ Changes Requested` / `👀 Review Required`), Draft pills, and humanized relative timestamps;
   * **Workspace Issues (`📋 Issues (N)`)**: Direct issue task review with assignees, labels, and category pills;
   * **Actions Pipeline (`⚡ Actions (N)`)**: Real-time CI workflow status tracking with trigger event badges (`push`/`schedule`/`manual`/`PR`), relative time, and self-healing diagnostic notes for failed runs (embedding `run_id` for Agent one-click log inspection);
-* **Official Git Vector Icon**: High-definition Git diamond vector icon (`#1296db` SVG) across all Git and branch labels;
 * **⚙️ Full Settings Access**: Dedicated settings button reusing the same settings modal as the cockpit (all four sections: Sync / Proxy / Update Source / About) — no need to switch back to the main page.
 
 <p align="center">
@@ -272,27 +275,27 @@ Located in the right drawer of every chat workspace, seamlessly bridging your lo
 </p>
 
 ### 3. Settings Center (Settings Modal)
-Click **`[⚙️ Settings]`** in the top right of the Cockpit (or the ⚙️ button in the right sidebar) to open the sectioned settings modal (left-side navigation, independently scrolling content; collapses to horizontal tabs on narrow screens):
+Click **`[⚙️ Settings]`** in the top right of the Cockpit (or the ⚙️ button in the right sidebar) to open the sectioned settings modal:
 
-**🔄 Data Sync Section** — tune data fetching rhythm:
-* **Two Sync Strategies**:
-  * **⚡ Instant Render (SWR, Recommended)**: Instantly displays local cache (0ms), then silently syncs the latest state within 300ms — no matter how stale the cache is, opening the panel self-heals to fresh data;
+**🔄 Data Sync Section** — tune data fetching rhythm and perception sensitivity:
+* **Three Mutually Exclusive Data Refresh Strategies**:
+  * **⚡ Instant Render (SWR, Default)**: Instantly displays local cache (0ms), then silently syncs the latest state in the background on initial load;
+  * **☁️ Cloud Scheduled Auto-Sync (SWR + Polling)**: Instantly renders local cache and syncs once on mount, then counts down cyclically (**5/10/30/60 minutes** selectable; features automatic window visibility pause to prevent API quota drain in background tabs);
   * **📋 Manual Only (Energy Saver)**: Browse local cache only; zero background `gh` processes triggered; click `[🔄 Refresh]` whenever you want updates.
+* **Advanced Automation & Status Perception**:
+  * **📁 Local Git Real-Time Watch (Right Sidebar Only, Enabled by Default)**: Monitors `.git/HEAD` and `.git/index` metadata directly; staging, commit, and branch changes synchronize to the sidebar within milliseconds with an 800ms debounce, consuming zero external network quota; omitted from the main cockpit to preserve lightweight performance.
 * **Visual Cache Management**: Real-time snapshot size and timestamp visibility with one-click `[🗑️ Clear Cache]`.
 
 **🌐 Network Proxy Section** — route all plugin traffic through your proxy:
-* **Global Scope**: Once configured, the cockpit, right-sidebar panel, all 9 Agent tool invocations, and one-click upgrades route through the proxy; when disabled, system environment proxies (`HTTPS_PROXY` etc.) or direct connections apply;
-* **Protocol Support**: `http://` / `https://` / `socks5://` / `socks5h://` (gh and npm chains natively support SOCKS5; `socks5h` delegates DNS resolution to the proxy for stronger pollution resistance; the npm version probe uses Node fetch which does not support SOCKS — it stays direct and the UI states this honestly);
+* **Global Scope**: Once configured, the cockpit, right-sidebar panel, all 9 Agent tool invocations, and one-click upgrades route through the proxy;
+* **Protocol Support**: `http://` / `https://` / `socks5://` / `socks5h://` (`socks5h` delegates DNS resolution to the proxy for stronger pollution resistance);
 * **`[🧪 Test Connectivity]`**: One-click latency probe against the GitHub API through the current proxy;
 * **Instant Effect**: Persisted to `~/.dsh/data/dsh-github-flow/proxy.json` (auto-restored on DSH restart) — no restart, no plugin reload;
-* **Visibility**: A `🌐 Proxy` badge appears in the cockpit title bar while active; hover to inspect the current proxy URL;
-* **NO_PROXY Exclusions**: `localhost` and `127.0.0.1` are forcibly included — loopback Web API requests are never hijacked by the proxy.
+* **NO_PROXY Exclusions**: `localhost` and `127.0.0.1` are forcibly included.
 
 **⬆️ Update Source Section** — choose which npm registry checks for new versions:
 * **Three options**: 🌍 npm official registry (default — new releases visible immediately) / 🇨🇳 npmmirror (fast in China; minutes-level sync delay) / ⛔ No update checks (only silences the upgrade banner; `/gh upgrade` and one-click upgrade remain available);
 * **Strict single-source**: the selected source is never silently swapped — probe failures are reported honestly;
-* **Detection & upgrade traffic follows the global proxy setting** (socks5 boundary stated honestly in the UI);
-* **One-click upgrade installs from the selected source** — consistent with version detection;
 * **Verify on save**: switching sources immediately probes the new registry and shows the latest version.
 
 **ℹ️ About Section** — plugin identity & project info:
@@ -312,15 +315,14 @@ Click **`[⚙️ Settings]`** in the top right of the Cockpit (or the ⚙️ but
 Never miss an update! Built-in industrial-grade update management:
 
 1. **Parallel Detection, Zero gh-Dependency**:
-   - Update checks fire **in parallel with the gh environment chain** (install/login/business data) on mount — never serialized behind gh overviews; gh failures never block upgrade banners;
+   - Update checks fire **in parallel with the gh environment chain** on mount — never serialized behind gh overviews; gh failures never block upgrade banners;
    - Server-side `inFlightPromise` merging + 24h cache keeps multi-panel mounting storm-free.
 2. **Selectable Update Source** (see the "⬆️ Update Source" settings section):
    - Defaults to the **npm official registry** (new releases visible immediately), or switch to **npmmirror** (minutes-level sync delay);
-   - Auto checks can be disabled entirely (only silences prompts — `/gh upgrade` and one-click upgrade stay available).
+   - Auto checks can be disabled entirely.
 3. **Cross-Platform One-Click Upgrade**:
    - **Click to Upgrade**: Click **`[⚡ Upgrade]`** in the UI to update in the background;
    - **Auto OS Adaptation**: Differentiates macOS and Windows; auto-injects Homebrew PATH variables on macOS GUI launches;
-   - **Registry Follows Setting**: One-click upgrades install from the source selected in Update Source settings;
    - **Source Protection**: Automatically aborts npm overwrites when running in local Git linked development mode (`link:`);
    - **Restart Guidance**: Clearly notifies users to restart DSH service to reload backend tools, with instant web refresh options.
 
@@ -330,10 +332,11 @@ Never miss an update! Built-in industrial-grade update management:
 
 Why did the Global Cockpit take several seconds to load in earlier releases? Because it concurrently executes a dozen `gh` processes scanning multiple repositories and workspaces. This plugin integrates the **Stale-While-Revalidate (SWR)** caching pattern, putting total control back in your hands:
 
-```
+```text
 Initial Mount (0ms) ──────────> Instantly render local persistent snapshot
                                        │
-                                       ├── SWR Mode: Idle 300ms delay, silently revalidate in background
+                                       ├── SWR Mode: Idle 300ms delay, silently revalidate in background once
+                                       ├── Cloud Scheduled Sync: Starts countdown after initial sync (5/10/30/60m pause on hide)
                                        └── Manual Mode: Browse offline snapshot, only fetch on click [🔄 Refresh]
 ```
 
@@ -341,50 +344,50 @@ Initial Mount (0ms) ──────────> Instantly render local persi
 
 | Sync Strategy | Mechanism | Recommended Use Case |
 | :--- | :--- | :--- |
-| **⚡ Instant Render (SWR, Default)** | **0ms instantaneous mount** from local cache, silently revalidating in background within 300ms — however stale the snapshot, opening the panel self-heals to fresh data. | **Recommended for all developers**. Eliminates spinner freezes, delivering seamless UX. |
+| **⚡ Instant Render (SWR, Default)** | **0ms instantaneous mount** from local cache, silently revalidating in background once on mount — however stale the snapshot, opening the panel self-heals to fresh data. | **Recommended for all developers**. Eliminates spinner freezes, delivering seamless UX. |
+| **☁️ Cloud Scheduled Auto-Sync (SWR + Polling)** | Instantly renders local cache and revalidates on mount, then starts a recurring timer (5/10/30/60m); features visibility-change pause to prevent background API quota drain. | **Active developers managing multiple repositories, PR workflows, and team issues**. |
 | **📋 Manual Only (Energy Saver)** | Browse local cache only; zero automated background `gh` processes. | **Battery-powered laptops, low-spec hardware, or metered networks**. Zero background waste. |
 
-* **Offline Resilience (Fail-Safe)**: Even when disconnected or hitting network timeouts, **your dashboard preserves the complete snapshot for searching, navigation, and review—zero blank screens or crash popups!**
+* **Offline Resilience (Fail-Safe)**: Even when disconnected or hitting network timeouts, **your dashboard preserves the complete snapshot for searching, navigation, and review, paired with prominent offline warning banners and toasts—zero blank screens or crash popups!**
 
 ---
 
 ## 💬 Human Slash Commands
 
-Type directly into the DSH chat box:
+Enter in any DSH chat window:
 
-* `/gh status`: Diagnostics for GitHub account authentication, scopes, repository binding, and plugin version;
-* `/gh upgrade`: Check latest npm version with platform-adapted upgrade commands;
-* `/gh help`: View command usage and Agent prompt examples.
+* `/gh status`: Diagnostics for GitHub CLI auth status, scopes, active workspace repository, and plugin version;
+* `/gh upgrade`: Check the latest npm release and output platform-tailored upgrade instructions (macOS / Windows / Linux);
+* `/gh help`: View help documentation and example Agent dialogue recipes.
 
 ---
 
-## ⚙️ Configuration (`cordis.patch.yml`)
+## ⚙️ Plugin Configuration (`cordis.yml`)
 
-Works out of the box, with optional tweaks in `cordis.patch.yml` or your profile:
+Fine-tune options via DSH config:
 
 ```yaml
-- insert:
-    - id: github-flow
-      name: dsh-github-flow
-      config:
-        ghPath: 'gh'              # GitHub CLI executable path
-        defaultTimeoutMs: 30000   # Command timeout in milliseconds (default 30s)
-        maxOutputChars: 24000     # Safe output character ceiling (Token protection)
-        maxOutputBytes: 96000     # Safe UTF-8 byte ceiling (default maxOutputChars * 4)
-        defaultListLimit: 20      # Default list size for pr/issue/run/release/skill queries
-        cacheTtlMs: 15000         # Repository overview cache TTL (default 15s)
-        checkUpdate: true         # Enable automatic update checks (default true)
-        agentEnvInjection: true   # Inject AI_AGENT=dsh identity into gh (auto agent-friendly output on gh ≥2.99; false restores native gh behavior)
-        updateCheckIntervalMs: 86400000 # Check interval in ms (default 24h)
-        registryUrl: ''           # Custom private npm registry URL
-        proxyUrl: ''              # Preset proxy default (e.g. 'http://127.0.0.1:7890'; only applies before the cockpit setting is saved — UI setting takes precedence)
+- id: github-flow
+  name: dsh-github-flow
+  config:
+    ghPath: 'gh'              # GitHub CLI executable path (default 'gh')
+    defaultTimeoutMs: 30000   # Command execution timeout in ms (default 30s)
+    maxOutputChars: 24000     # Max character output threshold (Token overflow protection)
+    maxOutputBytes: 96000     # Hard UTF-8 byte output cap, defaults to maxOutputChars * 4
+    defaultListLimit: 20      # Default query limit for list operations across PR/Issue/Run/Release/Skill
+    cacheTtlMs: 15000         # Repository overview cache TTL in ms (default 15s)
+    checkUpdate: true         # Enable automated version checks (default true)
+    agentEnvInjection: true   # Inject AI_AGENT=dsh for gh CLI recognition (default true)
+    updateCheckIntervalMs: 86400000 # Update check interval in ms (default 24h)
+    registryUrl: ''           # Custom npm registry (defaults to Update Source setting)
+    proxyUrl: ''              # Default proxy URL (overridden by UI settings)
 ```
 
 ---
 
-## 🔌 Ecosystem Extensibility (Cordis Service)
+## 🔌 Cordis Ecosystem Service (`ctx.github`)
 
-Provides standard Cordis service `ctx.github`. Other plugins can reuse it directly:
+Exports a standard Cordis service `ctx.github` for other DSH plugins:
 
 ```typescript
 import type { Context } from '@deepseek-ai/cordis';
@@ -400,16 +403,20 @@ export function apply(ctx: Context) {
 
 ---
 
-## 📚 Documentation
+## 📚 Documentation & Technical References
 
 - [npm Publishing & Automated CI Guide](./docs/npm-publish-guide.md)
 - [Architecture & Technical Specifications](./docs/architecture.md)
+- [Release Checklist & Pitfall Guide](./docs/UPGRADE-NOTES.md)
 
 ---
 
-## Friendship links
-- [LINUX DO - A new ideal community](https://linux.do/)
+## Community Links
+
+- [LINUX DO - A New Community for Developers](https://linux.do/)
+
+---
 
 ## 📄 License
 
-Open-sourced under the [MIT License](./LICENSE). Contributions, PRs, and Issues are welcome!
+Open-sourced under the [MIT License](./LICENSE). Contributions and PRs welcome!

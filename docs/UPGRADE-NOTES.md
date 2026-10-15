@@ -79,6 +79,8 @@ git push origin master --tags
 | tag 与 npm 版本错位风险 | CI 以 package.json 为准、Release 标题以 tag 为准 | 第五节流程强调 tag = package.json |
 | pr checks 完全不可用（Issue #3） | 字段集混入 REST API 字段名（conclusion/detailsUrl），gh 从未支持 | 测试写死合法九字段基准清单（phase1）；新增 --json 字段时对照 `gh <cmd> --json zzz` 错误提示核对 |
 | 无 gh 环境刷新永久卡死 | 前端数据链路 fetch 无 AbortController，代理劫持回环时挂起 | 全部数据 fetch 绑 signal（phase7 第 8 节锚点）；新增前端 fetch 必须带 signal 或显式超时 |
+| React Hook 变量提升 undefined 崩溃 | containerRef 写在 useEffect 下方，组件挂载读取 containerRef.current 抛致命 TypeError 白屏 | 必须在组件生命周期最顶部声明所有 useRef；访问点强制加 `containerRef && containerRef.current` 守卫 |
+| 前端模块目录命名解析冲突 | 在包内创建同名 `src/client/` 目录导致模块解析器在解析 `exports["./client"]` 时发生歧义报错 | 前端拆分子模块统一下沉至独立命名空间（如 `src/ui/`），杜绝同名文件与目录冲突 |
 
 ## 七、环境陷阱速查（升级验证时必读）
 
@@ -91,3 +93,4 @@ git push origin master --tags
 | 沙箱解除后的测试盲区 | EPERM SKIP 分支掩盖真实缺陷 | CI/真机全绿 ≠ 本机沙箱绿；phase3/5 曾双双漏检 |
 | gh --json 字段集漂移 | Unknown JSON field 直接报错 | 新增字段前用 `gh <cmd> --json zzz` 探测合法集；不跨域复制字段名（checks≠run） |
 | PowerShell 5.1 默认策略 | 唤起终端报 profile 禁止运行红错 | 唤起命令带 -NoProfile（Windows 自带基线优先） |
+| 浏览器单文件脚本环境 | 客户端产物带未剥除的 export/import 导致语法报错白屏 | build.mjs 聚合器自动剔除 export/import 并将子模块内联注入单一闭包 |
