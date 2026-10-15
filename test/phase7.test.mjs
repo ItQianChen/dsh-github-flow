@@ -135,7 +135,7 @@ console.log('\n--- 5. frontend honest display ---');
 // ---- 6. 检查更新与 gh 链路并行化（不得被业务数据门控）----
 console.log('\n--- 6. update check parallelization ---');
 {
-  const cs = readFileSync('src/client.ts', 'utf8');
+  const cs = readFileSync('lib/client.js', 'utf8');
   // 原缺陷：useEffect(..., [data]) + if (!data) return 导致 check-update 串行等待
   // gh 概览（5~19s），且 gh 冷启动失败时 data 恒空、横幅永不出。修复后挂载/开窗即触发。
   // 触发点三处：右侧栏 + 全景主页（并行化）+ 设置弹窗「关于」分区版本号（开窗即取，同语义）。
@@ -157,7 +157,7 @@ console.log('\n--- 6. update check parallelization ---');
 // ---- 7. 更新设置分区 UI 锚点 ----
 console.log('\n--- 7. update settings section ---');
 {
-  const cs = readFileSync('src/client.ts', 'utf8');
+  const cs = readFileSync('lib/client.js', 'utf8');
   // 三分区导航
   assert(cs.includes('"⬆️ 更新设置"'), '设置弹窗含「⬆️ 更新设置」导航项');
   // 三选项 radio
@@ -205,7 +205,7 @@ console.log('\n--- 7. update settings section ---');
   assert(cs.includes('initialSection: "about"'), '徽标路径直开关于分区');
   assert(!cs.includes('href: "https://github.com/ItQianChen/dsh-github-flow",\n        target: "_blank"'), '徽标不再直跳仓库');
   // 右侧栏设置按钮：复用主页设置弹窗（onOpenSettings 回调 + 完整 save/clear 接线）
-  assert(cs.includes('onOpenSettings: (() => void) | null = null'), '渲染函数支持设置入口回调');
+  assert(cs.includes('onOpenSettings = null') || cs.includes('onOpenSettings: (() => void) | null = null'), '渲染函数支持设置入口回调');
   assert(cs.includes('openRightbarSettings'), '右侧栏有设置打开函数');
   assert(cs.includes('setRightbarModalSection("sync")'), '右侧栏设置默认打开数据同步分区');
   assert(cs.includes('setSyncSettings(newSettings)'), '右侧栏设置保存完整接线');
@@ -218,7 +218,7 @@ console.log('\n--- 7. update settings section ---');
 // ---- 8. 数据链路 fetch 超时保护锚点（防刷新永久卡死回归）----
 console.log('\n--- 8. fetch timeout guards ---');
 {
-  const cs = readFileSync('src/client.ts', 'utf8');
+  const cs = readFileSync('lib/client.js', 'utf8');
   // 8.1 refresh 预置请求必须绑定 signal（原缺陷：挂起时 loading 永不清除）
   const refreshCalls = (cs.match(/fetch\("\/api\/github\/refresh"[^)]*\)/g) || []).length;
   const guardedRefresh = (cs.match(/fetch\("\/api\/github\/refresh", \{ method: "POST", signal: controller\.signal \}\)/g) || []).length;
