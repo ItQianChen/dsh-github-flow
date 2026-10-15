@@ -2,12 +2,11 @@
  * 动作类路由：缓存强制刷新 + 右侧栏快捷操作（create_pr/create_issue/open_browser/open_terminal）。
  * 共同特征：POST 触发、读少写多、无缓存语义，与概览类路由的演进方向不同。
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import type { GhExecutor } from '../executor.js';
 import { TtlCache } from '../cache.js';
 import { hasGitDir } from '../workspace.js';
+import { watchGitMetadata } from '../git-watcher.js';
 import type { GitHubOverviewData, GlobalOverviewData } from '../types.js';
 import { isSafeExternalUrl, sendJson, type RouteDeps } from './route-helpers.js';
 
@@ -330,7 +329,7 @@ export function registerActionRoutes(
 
   // 5. 本地 Git 元数据定向监听（专供右侧栏开启「本地 Git 改动实时感知」时长轮询）
   // 严格安全纪律：只针对 .git/index 与 .git/HEAD 实施定向非递归监听，严禁监听源码目录防句柄耗尽；
-  // 800ms 防抖合并；连接断开时自动关闭 watcher 释放系统资源。
+  // 800ms 防抖合并；连接断开时自动关闭 watcher 释放系统资源（委托给底层 git-watcher 服务）。
   bindRoute({
     kind: 'exact',
     path: '/api/github/git-watch',
@@ -346,52 +345,21 @@ export function registerActionRoutes(
         return;
       }
 
-      const gitDir = path.join(cwd, '.git');
       let responded = false;
-      let debounceTimer: NodeJS.Timeout | null = null;
-      const watchers: fs.FSWatcher[] = [];
-
-      const cleanup = () => {
-        if (debounceTimer) clearTimeout(debounceTimer);
-        for (const w of watchers) {
-          try { w.close(); } catch {}
-        }
-      };
-
-      req.on('close', cleanup);
-
-      const triggerChange = () => {
-        if (responded) return;
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          if (!responded) {
-            responded = true;
-            cleanup();
-            sendJson(res, 200, { ok: true, changed: true, at: Date.now() });
-          }
-        }, 800);
-      };
-
       try {
-        const targets = [path.join(gitDir, 'HEAD'), path.join(gitDir, 'index')];
-        for (const target of targets) {
-          if (fs.existsSync(target)) {
-            watchers.push(fs.watch(target, triggerChange));
-          }
-        }
-        if (watchers.length === 0 && fs.existsSync(gitDir)) {
-          watchers.push(fs.watch(gitDir, triggerChange));
-        }
+        const stop = watchGitMetadata(cwd, (event) => {
+          if (responded) return;
+          responded = true;
+          sendJson(res, 200, { ok: true, ...event });
+        });
 
-        setTimeout(() => {
+        req.on('close', () => {
           if (!responded) {
             responded = true;
-            cleanup();
-            sendJson(res, 200, { ok: true, timeout: true });
+            stop();
           }
-        }, 35_000);
+        });
       } catch (err: any) {
-        cleanup();
         sendJson(res, 500, { ok: false, error: err?.message || '建立监听失败' });
       }
     },
