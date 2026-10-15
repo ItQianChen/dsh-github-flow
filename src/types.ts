@@ -39,6 +39,16 @@ export interface PluginConfig {
   proxyUrl?: string;
 }
 
+/** 数据同步与自动化感知偏好配置 */
+export interface SyncSettings {
+  /** 刷新策略三选一：'swr' 秒开并在首屏拉新 | 'auto' SWR秒开+云端定时轮询 | 'manual' 仅手动点击拉取 */
+  strategy: 'swr' | 'auto' | 'manual';
+  /** 云端定时同步周期（毫秒，不少于 300,000 即 5 分钟，默认 600,000 即 10 分钟） */
+  cloudSyncIntervalMs: number;
+  /** 是否开启本地 .git 监控（感知代码修改、暂存与分支切换，仅右侧栏当前工作区生效，默认开启，用户可取消勾选） */
+  localGitWatch: boolean;
+}
+
 export interface GhExecutionOptions {
   /** 命令执行的工作目录，优先使用当前 Agent 会话所在的 Workspace 物理路径 */
   cwd?: string;
