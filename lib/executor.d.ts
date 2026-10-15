@@ -1,45 +1,10 @@
 import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry, GitBranchesResult } from './types.js';
 import type { ProxyManager } from './proxy.js';
-/**
- * 从 `gh --version` 输出中解析语义化版本号。
- * 抽成导出纯函数的原因与 truncateOutput 相同：解析逻辑是「看似简单实则易错」的边界区，
- * 必须能用单元测试钉死（不匹配输入返回 null 而非抛错，调用方据此走 fail-open）。
- */
-export declare function parseGhVersion(output: string): string | null;
-/**
- * 数值分段比较两个 gh 版本：a>b 返回 1、a<b 返回 -1、相等返回 0。
- * 为什么不能用字符串比较：`'2.96.0' < '2.100.0'` 在字典序下为 false（'1'<'9'），
- * 这会把 2.100 误判为低于 2.96，导致可用命令被错误降级。逐段 Number 比较是唯一正确姿势。
- */
-export declare function compareGhVersions(a: string, b: string): number;
-/**
- * 解析 `git status -sb --porcelain` 输出为结构化状态。
- * 抽导出纯函数（parseGhVersion 同理）：三形态解析是易错边界区，单测钉死。
- *
- * 输出形态（实测）：
- *   `## master...origin/master [ahead 2, behind 1]`  有 ahead/behind
- *   `## master...origin/master`                       与远程同步
- *   `## master` / `## HEAD (no branch)`               无 upstream（ahead/behind 未知=-1）
- * 后续每行 `<XY> <path>` 为 porcelain 变更项（XY 两字符状态码，?? = untracked）。
- */
-export declare function parseGitStatusOutput(output: string): GitLocalStatus | null;
-/**
- * 解析 `git log` 输出为提交条目数组。
- * 支持两种形态：
- * 1. 结构化带详情：%x1e 为 commit 间分隔符，%x1f 为字段间分隔符（含 fullSha/email/date/body/stat）；
- * 2. 简易管道符：%h|%an|%ar|%s 行格式（兼容旧单测输入）。
- * 空输出返回 []。
- */
-export declare function parseGitLogLines(output: string): GitCommitEntry[];
-/**
- * 按「字符数 + UTF-8 字节数」双口径截断输出。
- * 抽成纯函数是刻意的：截断逻辑是崩溃高发区（切碎多字节字符、误伤 JSON、把二进制流截成垃圾），
- * 但通过真实 gh 命令很难稳定复现超限输出，抽出来才能用单元测试覆盖边界。
- */
-export declare function truncateOutput(input: string, maxChars: number, maxBytes: number): {
-    text: string;
-    truncated: boolean;
-};
+import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
+import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
+import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines } from './executor/git-parser.js';
+import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
+export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, getPlatformInstallGuide, getGhUpgradeHint, };
 export declare class GhExecutor {
     ghPath: string;
     defaultTimeoutMs: number;
@@ -226,8 +191,3 @@ export declare class GhExecutor {
      */
     getRepoMetadata(cwd?: string, sessionId?: string): Promise<RepoMetadata | null>;
 }
-/**
- * 解析 git branch -a --sort=-committerdate 格式化输出。
- * 格式为: %(refname:short)|%(HEAD)|%(upstream:short)|%(committerdate:relative)|%(objectname:short)|%(subject)
- */
-export declare function parseGitBranchLines(output: string): GitBranchesResult;
