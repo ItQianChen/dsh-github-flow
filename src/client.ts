@@ -1278,6 +1278,118 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
   background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.08)) !important;
   opacity: 1 !important;
 }
+
+/* 15. 分支查看与切换交互组件 */
+.dsh-github-branch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 12px;
+  border: 1px solid rgba(46, 160, 67, 0.4);
+  background: rgba(46, 160, 67, 0.12);
+  color: var(--dsw-alias-state-success, #2ea043);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.dsh-github-branch-btn:hover {
+  background: rgba(46, 160, 67, 0.22);
+  border-color: rgba(46, 160, 67, 0.6);
+}
+body[data-ds-dark-theme] .dsh-github-branch-btn {
+  border-color: rgba(56, 139, 253, 0.4);
+  background: rgba(56, 139, 253, 0.15);
+  color: #58a6ff;
+}
+body[data-ds-dark-theme] .dsh-github-branch-btn:hover {
+  background: rgba(56, 139, 253, 0.25);
+  border-color: #58a6ff;
+}
+
+.dsh-github-branch-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 5px;
+  width: 290px;
+  max-height: 380px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body[data-ds-dark-theme] .dsh-github-branch-dropdown {
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+.dsh-github-branch-search {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+}
+body[data-ds-dark-theme] .dsh-github-branch-search {
+  border-bottom-color: var(--dsw-alias-border-l1, #30363d);
+}
+.dsh-github-branch-input {
+  width: 100%;
+  padding: 5px 8px;
+  box-sizing: border-box;
+  font-size: 11px;
+  border-radius: 5px;
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  background: var(--dsw-alias-bg-base, #ffffff);
+  color: var(--dsw-alias-label-primary, #1f2328);
+  outline: none;
+}
+body[data-ds-dark-theme] .dsh-github-branch-input {
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  background: var(--dsw-alias-bg-base, #151517);
+  color: #ececec;
+}
+.dsh-github-branch-input:focus {
+  border-color: var(--dsw-alias-link, #0969da);
+}
+
+.dsh-github-branch-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 280px;
+  padding: 4px 0;
+}
+.dsh-github-branch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+body[data-ds-dark-theme] .dsh-github-branch-item {
+  color: var(--dsw-alias-label-primary, #ececec);
+}
+.dsh-github-branch-item:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.05));
+}
+body[data-ds-dark-theme] .dsh-github-branch-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.dsh-github-branch-item.active {
+  font-weight: 600;
+  color: var(--dsw-alias-state-success, #1a7f37);
+}
+body[data-ds-dark-theme] .dsh-github-branch-item.active {
+  color: #3fb950;
+}
 `;
 
 
@@ -1363,6 +1475,244 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
           } catch (err) { /* 事件派发失败不阻断点击语义 */ }
         },
       }, "插件");
+    }
+
+    /**
+     * 分支查看与快速切换下拉选择器组件
+     * 遵循 Linus 原则与 DSW 设计规范：
+     * 1. 采用标准 Git 官方菱形分支矢量组件，绝不使用植物/草图标；
+     * 2. 惰性拉取分支列表，点击时才请求 /api/github/branches，首屏零负担；
+     * 3. 支持关键词即时搜索过滤；
+     * 4. 切换前在后端强阻断未提交变更（Dirty Check），失败时给出友好提示并保留现场；
+     * 5. 切换成功后自动触发全量刷新并弹出轻量 Toast。
+     */
+    function BranchSelectorDropdown(props: {
+      currentBranch: string;
+      cwd: string | null;
+      branchesData?: any;
+      onBranchSwitched?: (branch: string) => void;
+      showToast?: (msg: string) => void;
+    }) {
+      var currentBranch = props.currentBranch || "main";
+      var cwd = props.cwd;
+      var branchesData = props.branchesData;
+      var onBranchSwitched = props.onBranchSwitched || (() => {});
+      var showToast = props.showToast || (() => {});
+
+      var [isOpen, setIsOpen] = React.useState(false);
+      var [loading, setLoading] = React.useState(false);
+      var [switching, setSwitching] = React.useState(false);
+      var [branches, setBranches] = React.useState([] as any[]);
+      var [search, setSearch] = React.useState("");
+      var [fetchError, setFetchError] = React.useState(null as string | null);
+
+      var containerRef = React.useRef(null as any);
+
+      // 点击外部区域自动收起下拉面板
+      React.useEffect(() => {
+        if (!isOpen) return;
+        var handleClickOutside = (e: any) => {
+          if (containerRef.current && !containerRef.current.contains(e.target)) {
+            setIsOpen(false);
+          }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+      }, [isOpen]);
+
+      // 展开时：优先使用随 overview 端点预取的 branchesData，0ms 秒开！
+      var toggleOpen = () => {
+        if (isOpen) {
+          setIsOpen(false);
+          return;
+        }
+        setIsOpen(true);
+        setSearch("");
+        setFetchError(null);
+
+        // 1. 优先使用随 overview 端点下发的预取分支数据，零网络开销、绝对不会 404！
+        if (branchesData && Array.isArray(branchesData.branches) && branchesData.branches.length > 0) {
+          setBranches(branchesData.branches);
+          setLoading(false);
+          return;
+        }
+
+        // 2. 异步拉取兜底（带严格 !res.ok 防御，彻底消灭 JSON 解析崩溃）
+        setLoading(true);
+        var url = "/api/github/branches" + (cwd ? "?cwd=" + encodeURIComponent(cwd) : "");
+        fetch(url)
+          .then(async (res) => {
+            if (!res.ok) {
+              var errText = await res.text().catch(() => "");
+              if (res.status === 404 || errText.includes("not found")) {
+                throw new Error("后端分支接口未注册 (404)。请重启 DSH 桌面端以加载新后端服务。");
+              }
+              throw new Error(`服务响应异常 (${res.status}): ${errText || res.statusText}`);
+            }
+            return res.json();
+          })
+          .then((json) => {
+            setLoading(false);
+            if (json && json.ok && json.data && Array.isArray(json.data.branches)) {
+              setBranches(json.data.branches);
+            } else {
+              setFetchError(json.error || "获取分支列表失败");
+            }
+          })
+          .catch((err) => {
+            setLoading(false);
+            setFetchError(err.message || "读取分支失败");
+          });
+      };
+
+      // 执行切换分支（具备双通道与降级容灾）
+      var handleSwitch = async (targetBranch: string) => {
+        if (targetBranch === currentBranch || switching) return;
+        setSwitching(true);
+        try {
+          var res = await fetch("/api/github/branch-switch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cwd, branch: targetBranch }),
+          }).catch(() => null);
+
+          // 降级容灾：若独立路由 404 或不可达，自动回退到已稳定注册的 /api/github/action 统一通道
+          if (!res || !res.ok) {
+            res = await fetch("/api/github/action", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "switch_branch", cwd, branch: targetBranch }),
+            });
+          }
+
+          if (!res.ok) {
+            var errText = await res.text().catch(() => "");
+            showToast(`❌ 切换失败：${errText || res.statusText}`);
+            return;
+          }
+
+          var json = await res.json();
+          if (json && json.ok) {
+            setIsOpen(false);
+            showToast(`✅ 已切换到分支 ${json.currentBranch || targetBranch}`);
+            onBranchSwitched(json.currentBranch || targetBranch);
+          } else {
+            showToast(`❌ 切换失败：${json.error || json.message || "未知错误"}`);
+          }
+        } catch (e: any) {
+          showToast(`❌ 切换分支网络请求失败：${e.message || e}`);
+        } finally {
+          setSwitching(false);
+        }
+      };
+
+      var filtered = branches.filter((b: any) => !search || b.name.toLowerCase().includes(search.toLowerCase()));
+      var localBranches = filtered.filter((b: any) => !b.isRemote);
+      var remoteBranches = filtered.filter((b: any) => b.isRemote);
+
+      var h = React.createElement;
+
+      return h(
+        "div",
+        {
+          ref: containerRef,
+          style: { position: "relative", display: "inline-block" },
+        },
+        h(
+          "button",
+          {
+            type: "button",
+            className: "dsh-github-branch-btn",
+            onClick: toggleOpen,
+            title: `当前分支: ${currentBranch}（点击可切换分支）`,
+          },
+          renderGitIcon(12, "currentColor"),
+          h("span", { style: { maxWidth: "160px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, currentBranch),
+          h("span", { style: { fontSize: "9px", opacity: 0.7, marginLeft: "1px" } }, "▾")
+        ),
+        isOpen
+          ? h(
+              "div",
+              { className: "dsh-github-branch-dropdown" },
+              // 搜索框
+              h(
+                "div",
+                { className: "dsh-github-branch-search" },
+                h("input", {
+                  className: "dsh-github-branch-input",
+                  type: "text",
+                  placeholder: "搜索分支 (输入关键词)...",
+                  value: search,
+                  autoFocus: true,
+                  onChange: (e: any) => setSearch(e.target.value),
+                })
+              ),
+              // 列表主体
+              h(
+                "div",
+                { className: "dsh-github-branch-list" },
+                loading
+                  ? h("div", { style: { padding: "12px", textAlign: "center", fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)" } }, "⏳ 读取分支中...")
+                  : fetchError
+                  ? h("div", { style: { padding: "12px", textAlign: "center", fontSize: "11px", color: "var(--dsw-alias-state-error-primary, #cf222e)" } }, `⚠️ ${fetchError}`)
+                  : [
+                      // 本地分支
+                      localBranches.length > 0
+                        ? h("div", { key: "hdr-local", style: { padding: "4px 12px", fontSize: "10px", fontWeight: 600, color: "var(--dsw-alias-label-tertiary, #8c8c8c)", textTransform: "uppercase" } }, "本地分支")
+                        : null,
+                      ...localBranches.map((b: any) =>
+                        h(
+                          "div",
+                          {
+                            key: b.name,
+                            className: "dsh-github-branch-item" + (b.isCurrent ? " active" : ""),
+                            onClick: () => handleSwitch(b.name),
+                            title: b.subject ? `${b.name}\n${b.subject} (${b.relativeTime})` : b.name,
+                          },
+                          h("div", { style: { display: "flex", alignItems: "center", gap: "6px", minWidth: 0 } },
+                            b.isCurrent
+                              ? h("span", { style: { color: "var(--dsw-alias-state-success, #2ea043)", fontWeight: 700 } }, "✓")
+                              : h("span", { style: { width: "10px" } }),
+                            h("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, b.name)
+                          ),
+                          b.relativeTime
+                            ? h("span", { style: { fontSize: "10px", color: "var(--dsw-alias-label-tertiary, #8c8c8c)", flexShrink: 0, marginLeft: "6px" } }, b.relativeTime)
+                            : null
+                        )
+                      ),
+                      // 远程分支
+                      remoteBranches.length > 0
+                        ? h("div", { key: "hdr-remote", style: { padding: "6px 12px 4px", fontSize: "10px", fontWeight: 600, color: "var(--dsw-alias-label-tertiary, #8c8c8c)", textTransform: "uppercase", borderTop: "1px solid var(--dsw-alias-border-l2, rgba(0,0,0,0.06))", marginTop: "4px" } }, "远程分支 (点击检出)")
+                        : null,
+                      ...remoteBranches.map((b: any) =>
+                        h(
+                          "div",
+                          {
+                            key: b.name,
+                            className: "dsh-github-branch-item",
+                            onClick: () => handleSwitch(b.name),
+                            title: b.subject ? `${b.name}\n${b.subject} (${b.relativeTime})` : b.name,
+                          },
+                          h("div", { style: { display: "flex", alignItems: "center", gap: "6px", minWidth: 0 } },
+                            h("span", { style: { width: "10px" } }),
+                            h("span", { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: 0.85 } }, b.name)
+                          ),
+                          b.relativeTime
+                            ? h("span", { style: { fontSize: "10px", color: "var(--dsw-alias-label-tertiary, #8c8c8c)", flexShrink: 0, marginLeft: "6px" } }, b.relativeTime)
+                            : null
+                        )
+                      ),
+                      filtered.length === 0 && !loading
+                        ? h("div", { style: { padding: "12px", textAlign: "center", fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)" } }, "未匹配到任何分支")
+                        : null,
+                    ].filter(Boolean)
+              ),
+              switching
+                ? h("div", { style: { padding: "6px", textAlign: "center", fontSize: "11px", background: "rgba(9, 105, 218, 0.1)", color: "var(--dsw-alias-link, #0969da)", fontWeight: 500 } }, "正在切换分支...")
+                : null
+            )
+          : null
+      );
     }
 
     // 认证与安装引导卡片组件（响应式自适应中央大面板与右侧栏）
@@ -2071,7 +2421,8 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
       onOpenSettings: (() => void) | null = null,
       cwd: string | null = null,
       onSelectCommit: ((c: any) => void) | null = null,
-      gitLogPagination: any = null
+      gitLogPagination: any = null,
+      onShowToast: ((msg: string) => void) | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -2150,7 +2501,15 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
           repo
             ? h("a", { href: repo.url, target: "_blank", className: "dsh-github-repo-link" }, repo.nameWithOwner)
             : h("span", { style: { color: "var(--dsw-alias-state-error-primary, #cf222e)" } }, "未检测到关联的 GitHub 仓库"),
-          repo ? h("span", { className: "dsh-github-badge dsh-badge-green" }, repo.defaultBranch) : null
+          repo
+            ? h(BranchSelectorDropdown, {
+                currentBranch: gitSt?.branch || repo.defaultBranch || "main",
+                cwd,
+                branchesData: data?.branches,
+                onBranchSwitched: () => onRefresh(),
+                showToast: onShowToast || (() => {}),
+              })
+            : null
         ),
         repo && repo.description
           ? h("div", { className: "dsh-github-card-desc" }, repo.description)
@@ -2235,7 +2594,13 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
                 style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", fontSize: "13px", marginBottom: "8px" },
                 title: "ahead/behind 相对上次 git fetch 的快照（非实时）",
               },
-              h("span", { style: { fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "5px" } }, renderGitIcon(13, "#1296db"), gitSt.branch),
+              h(BranchSelectorDropdown, {
+                currentBranch: gitSt.branch,
+                cwd,
+                branchesData: data?.branches,
+                onBranchSwitched: () => onRefresh(),
+                showToast: onShowToast || (() => {}),
+              }),
               gitSt.hasUpstream
                 ? h("span", null, `${gitSt.ahead > 0 ? "↑" + gitSt.ahead + " " : ""}${gitSt.behind > 0 ? "↓" + gitSt.behind : ""}${gitSt.ahead === 0 && gitSt.behind === 0 ? "✓ 与远程同步" : ""}`)
                 : h("span", { style: { opacity: 0.7 } }, "↑? ↓?（无 upstream）"),
@@ -3194,7 +3559,8 @@ body[data-ds-dark-theme] .dsh-github-commit-pre {
             loadingMore: loadingMore,
             hasMore: hasMoreCommits,
             onLoadMore: loadMoreCommits,
-          }
+          },
+          showToast
         ),
         // 弹窗一：插件徽标触发的「关于」单页展示
         h(GlobalSyncSettingsModal, {

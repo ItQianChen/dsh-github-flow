@@ -108,6 +108,20 @@ export interface RepoMetadata {
     isPrivate?: boolean;
     url?: string;
 }
+/** Git 分支详情项（供分支切换器下拉列表消费） */
+export interface GitBranchItem {
+    name: string;
+    isCurrent: boolean;
+    isRemote: boolean;
+    upstream?: string;
+    shortSha: string;
+    subject: string;
+    relativeTime: string;
+}
+export interface GitBranchesResult {
+    current: string;
+    branches: GitBranchItem[];
+}
 /**
  * 本地 Git 工作区状态快照（ahead/behind 是 remote-tracking ref 的「上次 fetch」视图，
  * 非实时网络状态——UI 渲染时必须带上这一语义提示，否则会误导用户）。
@@ -251,6 +265,8 @@ export interface GitHubOverviewData {
         url?: string;
         isDraft?: boolean;
     } | null;
+    /** 当前工作区的 Git 分支列表（供右侧栏分支选择器 0ms 秒开） */
+    branches?: GitBranchesResult | null;
 }
 export interface UserRepoItem {
     name: string;

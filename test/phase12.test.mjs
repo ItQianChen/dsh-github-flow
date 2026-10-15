@@ -219,6 +219,81 @@ async function runTests() {
     assert.strictEqual(responseData.data.pullRequests[0].number, 123, '保全的 PR 数据必须正确');
   });
 
+  // ============================================================
+  // 三、测试 Git 分支查看与安全切换功能（零 🌿 违禁图标，纯原生 Git 交互）
+  // ============================================================
+  console.log('\n--- 3. Git Branch Inspection & Safe Switcher ---');
+
+  const { parseGitBranchLines } = await import('../lib/executor.js');
+
+  test('parseGitBranchLines 结构化解析分支输出并正确标记当前分支与过滤 HEAD', () => {
+    const mockOutput = [
+      'master|*|origin/master|10 minutes ago|2258731|fix(panel): sample commit',
+      'origin/HEAD| ||15 hours ago|29e2109|chore(release): v0.3.0',
+      'feature/login| |origin/feature/login|2 hours ago|a1b2c3d|feat: add login',
+      'origin/master| ||15 hours ago|29e2109|chore(release): v0.3.0',
+    ].join('\n');
+
+    const result = parseGitBranchLines(mockOutput);
+    assert.strictEqual(result.current, 'master', '当前分支识别为 master');
+    assert.strictEqual(result.branches.length, 3, '应过滤掉 origin/HEAD 符号引用');
+    assert.strictEqual(result.branches[0].name, 'master', '第一条应为 master');
+    assert.strictEqual(result.branches[0].isCurrent, true, 'master 应为当前分支');
+    assert.strictEqual(result.branches[0].upstream, 'origin/master', '上游分支解析正确');
+    assert.strictEqual(result.branches[0].shortSha, '2258731', 'SHA 解析正确');
+    assert.strictEqual(result.branches[1].name, 'feature/login', '第二条为 feature/login');
+    assert.strictEqual(result.branches[1].isRemote, false, 'feature/login 为本地分支');
+    assert.strictEqual(result.branches[2].isRemote, true, 'origin/master 为远程分支');
+  });
+
+  await asyncTest('switchGitBranch 参数合法性与注入防护', async () => {
+    // 注入尝试：以 - 开头会被当成 CLI flag
+    const bad1 = await exec.switchGitBranch(process.cwd(), '-b');
+    assert.strictEqual(bad1.ok, false, '以 - 开头的分支名必须被拦截');
+
+    // 注入尝试：含分号或控制字符
+    const bad2 = await exec.switchGitBranch(process.cwd(), 'master; rm -rf /');
+    assert.strictEqual(bad2.ok, false, '含分号注入字符的分支名必须被拦截');
+
+    // 注入尝试：含连续点号
+    const bad3 = await exec.switchGitBranch(process.cwd(), 'master..dev');
+    assert.strictEqual(bad3.ok, false, '含连续点号的分支名必须被拦截');
+
+    // 非 Git 目录拦截
+    const nonGitTemp = path.join(os.tmpdir(), `dsh-non-git-${Date.now()}`);
+    fs.mkdirSync(nonGitTemp, { recursive: true });
+    try {
+      const bad4 = await exec.switchGitBranch(nonGitTemp, 'master');
+      assert.strictEqual(bad4.ok, false, '非 Git 目录切换必须被拦截');
+      assert(bad4.error.includes('不是有效的 Git 仓库'), '非 Git 目录应有明确提示');
+    } finally {
+      try { fs.rmSync(nonGitTemp, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  test('客户端构建产物断言：严禁包含 🌿 违禁植物图标，必须使用 Git 官方矢量图标与下拉交互', () => {
+    const builtClient = fs.readFileSync(path.join(__dirname, '../lib/client.js'), 'utf8');
+    // 铁律检查：绝不使用 🌿 图标
+    assert(!builtClient.includes('🌿'), '严禁在客户端代码中出现 🌿 违禁图标');
+    // 核心组件与交互
+    assert(builtClient.includes('BranchSelectorDropdown'), '客户端必须包含 BranchSelectorDropdown 分支选择组件');
+    assert(builtClient.includes('dsh-github-branch-btn'), '必须包含分支选择器按钮类名');
+    assert(builtClient.includes('dsh-github-branch-dropdown'), '必须包含分支选择器浮层类名');
+    assert(builtClient.includes('/api/github/branches'), '必须包含读取分支列表接口');
+    assert(builtClient.includes('/api/github/branch-switch'), '必须包含切换分支接口');
+    assert(builtClient.includes('搜索分支 (输入关键词)...'), '必须包含分支实时搜索过滤框');
+  });
+
+  await asyncTest('路由端点契约：/api/github/branches 与 /api/github/branch-switch 均已正确注册', async () => {
+    const { registerActionRoutes } = await import('../lib/api/routes-actions.js');
+    const registered = {};
+    const deps = { bindRoute: (r) => { registered[r.path] = r.handler; } };
+    registerActionRoutes(deps, exec, new (await import('../lib/cache.js')).TtlCache(1000), new (await import('../lib/cache.js')).TtlCache(1000));
+
+    assert(typeof registered['/api/github/branches'] === 'function', '分支列表接口 GET /api/github/branches 必须已注册');
+    assert(typeof registered['/api/github/branch-switch'] === 'function', '分支切换接口 POST /api/github/branch-switch 必须已注册');
+  });
+
   console.log('\n========================================');
   console.log(`Phase 12 Test Result: ${passed}/${total} assertions PASSED!`);
   console.log('========================================');

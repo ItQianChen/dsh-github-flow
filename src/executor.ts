@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { findMostRecentWorkspacePath, findWorkspacePathBySession, hasGitDir } from './workspace.js';
-import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry, GitBranchItem, GitBranchesResult } from './types.js';
 import type { ProxyManager } from './proxy.js';
 
 const execFileAsync = promisify(execFile);
@@ -754,6 +754,82 @@ export class GhExecutor {
     }
   }
 
+  /**
+   * 纯本地读取工作区的所有 Git 分支（按提交时间倒序）。
+   * 包含当前 HEAD 分支标记、关联 upstream、最新提交简述与相对时间。
+   * 零网络往返，毫秒级本地管道输出。
+   */
+  async getGitBranches(cwd?: string): Promise<GitBranchesResult | null> {
+    const targetCwd = this.resolveWorkspaceCwd(cwd);
+    if (!hasGitDir(targetCwd)) {
+      return null;
+    }
+    const fmt = '%(refname:short)|%(HEAD)|%(upstream:short)|%(committerdate:relative)|%(objectname:short)|%(subject)';
+    try {
+      const { stdout } = await execFileAsync('git', ['branch', '-a', '--sort=-committerdate', `--format=${fmt}`], {
+        cwd: targetCwd,
+        timeout: 4_000,
+        windowsHide: true,
+      });
+      return parseGitBranchLines(String(stdout));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 安全切换当前工作区的 Git 分支。
+   * 三重安全防御纪律：
+   * 1. 目标工作区必须存在有效的 .git 目录；
+   * 2. 分支名称严格执行字符白名单校验，防命令行参数注入；
+   * 3. 检查工作区干净度（dirtyCount），若有未提交或未保存的变更直接阻断，杜绝代码被破坏性覆盖。
+   */
+  async switchGitBranch(cwd: string | undefined, branchName: string): Promise<{ ok: boolean; currentBranch?: string; error?: string }> {
+    const targetCwd = this.resolveWorkspaceCwd(cwd);
+    if (!hasGitDir(targetCwd)) {
+      return { ok: false, error: '当前工作区不是有效的 Git 仓库' };
+    }
+
+    const cleanBranch = (branchName || '').trim();
+    // 安全白名单校验：只允许字母、数字、点号、斜杠、减号和下划线，禁止以 - 开头（防 flag 注入），禁止包含连续点号 ..
+    if (!cleanBranch || cleanBranch.startsWith('-') || cleanBranch.includes('..') || cleanBranch.includes('\\') || !/^[a-zA-Z0-9_\/.-]+$/.test(cleanBranch)) {
+      return { ok: false, error: '非法分支名称，仅允许字母、数字、短横线、下划线与斜杠组合' };
+    }
+
+    // 防线二：工作区未提交变更阻断（Dirty File Guard）
+    const gitSt = await this.getLocalGitStatus(targetCwd);
+    if (gitSt && gitSt.dirtyCount > 0) {
+      return {
+        ok: false,
+        error: `工作区有 ${gitSt.dirtyCount} 个未提交的文件变更。为防止代码被覆盖，请先提交或保存后再切换分支。`,
+      };
+    }
+
+    try {
+      let args = ['checkout', cleanBranch];
+      let targetName = cleanBranch;
+      if (cleanBranch.startsWith('origin/')) {
+        targetName = cleanBranch.replace(/^origin\//, '');
+        // 若本地已有同名分支，直接切本地；若无则通过 --track 建立追踪分支
+        const branches = await this.getGitBranches(targetCwd);
+        const hasLocal = branches?.branches.some((b) => !b.isRemote && b.name === targetName);
+        args = hasLocal ? ['checkout', targetName] : ['checkout', '--track', cleanBranch];
+      }
+
+      await execFileAsync('git', args, {
+        cwd: targetCwd,
+        timeout: 5_000,
+        windowsHide: true,
+      });
+
+      return { ok: true, currentBranch: targetName };
+    } catch (err: any) {
+      const stderr = err?.stderr?.toString().trim();
+      const msg = stderr || err?.message || '切换分支失败';
+      return { ok: false, error: msg };
+    }
+  }
+
   /** 生成当前操作系统平台的推荐安装引导与命令 */
   private getPlatformInstallGuide() {
     const p = process.platform;
@@ -1036,4 +1112,58 @@ export class GhExecutor {
 
     return null;
   }
+}
+
+/**
+ * 解析 git branch -a --sort=-committerdate 格式化输出。
+ * 格式为: %(refname:short)|%(HEAD)|%(upstream:short)|%(committerdate:relative)|%(objectname:short)|%(subject)
+ */
+export function parseGitBranchLines(output: string): GitBranchesResult {
+  const lines = output.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  let current = '';
+  const branches: GitBranchItem[] = [];
+  const seenNames = new Set<string>();
+
+  for (const line of lines) {
+    const parts = line.split('|');
+    if (parts.length < 5) continue;
+    const rawRef = parts[0].trim();
+    // 过滤掉指向 HEAD 的符号引用（如 origin/HEAD）
+    if (rawRef.includes('/HEAD') || rawRef === 'HEAD') continue;
+
+    const isCurrent = parts[1].trim() === '*';
+    const upstream = parts[2].trim() || undefined;
+    const relativeTime = parts[3].trim() || '';
+    const shortSha = parts[4].trim() || '';
+    const subject = parts.slice(5).join('|').trim();
+
+    // 区分远程分支与本地分支
+    const isRemote = rawRef.startsWith('origin/') || rawRef.startsWith('remotes/');
+    const cleanName = rawRef.replace(/^remotes\//, '');
+
+    if (seenNames.has(cleanName)) continue;
+    seenNames.add(cleanName);
+
+    if (isCurrent) {
+      current = cleanName;
+    }
+
+    branches.push({
+      name: cleanName,
+      isCurrent,
+      isRemote,
+      upstream,
+      shortSha,
+      subject,
+      relativeTime,
+    });
+  }
+
+  // 若未从 * 解析到当前分支，默认以第一条本地分支兜底
+  if (!current && branches.length > 0) {
+    const local = branches.find((b) => !b.isRemote);
+    current = local ? local.name : branches[0].name;
+  }
+
+  return { current, branches };
 }

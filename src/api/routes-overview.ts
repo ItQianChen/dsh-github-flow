@@ -198,6 +198,8 @@ export function registerOverviewRoutes(
           (freshExtras as any).commitLog = await executor
             .getGitCommitLog(cwd, gitStatus ? gitStatus.hasUpstream : false)
             .catch(() => null);
+          // 5. 分支列表（纯本地毫秒级）：供右侧栏分支选择器 0ms 秒开，消除独立请求延迟与 404 风险
+          (freshExtras as any).branches = await executor.getGitBranches(cwd).catch(() => null);
         }
 
         const issueStats = calculateIssueStats(issues);

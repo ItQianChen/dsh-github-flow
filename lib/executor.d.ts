@@ -1,4 +1,4 @@
-import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry, GitBranchesResult } from './types.js';
 import type { ProxyManager } from './proxy.js';
 /**
  * 从 `gh --version` 输出中解析语义化版本号。
@@ -174,6 +174,24 @@ export declare class GhExecutor {
      * 语法都不可能通过校验）。输出为 git show --stat 原文（含文件变更统计）。
      */
     getGitCommitDetail(cwd: string | undefined, sha: string): Promise<string | null>;
+    /**
+     * 纯本地读取工作区的所有 Git 分支（按提交时间倒序）。
+     * 包含当前 HEAD 分支标记、关联 upstream、最新提交简述与相对时间。
+     * 零网络往返，毫秒级本地管道输出。
+     */
+    getGitBranches(cwd?: string): Promise<GitBranchesResult | null>;
+    /**
+     * 安全切换当前工作区的 Git 分支。
+     * 三重安全防御纪律：
+     * 1. 目标工作区必须存在有效的 .git 目录；
+     * 2. 分支名称严格执行字符白名单校验，防命令行参数注入；
+     * 3. 检查工作区干净度（dirtyCount），若有未提交或未保存的变更直接阻断，杜绝代码被破坏性覆盖。
+     */
+    switchGitBranch(cwd: string | undefined, branchName: string): Promise<{
+        ok: boolean;
+        currentBranch?: string;
+        error?: string;
+    }>;
     /** 生成当前操作系统平台的推荐安装引导与命令 */
     private getPlatformInstallGuide;
     /**
@@ -208,3 +226,8 @@ export declare class GhExecutor {
      */
     getRepoMetadata(cwd?: string, sessionId?: string): Promise<RepoMetadata | null>;
 }
+/**
+ * 解析 git branch -a --sort=-committerdate 格式化输出。
+ * 格式为: %(refname:short)|%(HEAD)|%(upstream:short)|%(committerdate:relative)|%(objectname:short)|%(subject)
+ */
+export declare function parseGitBranchLines(output: string): GitBranchesResult;

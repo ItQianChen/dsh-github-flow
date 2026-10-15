@@ -234,11 +234,92 @@ export function registerActionRoutes(
               sendJson(res, 200, { ok: true, message: '已唤起系统终端' });
               break;
             }
+            case 'switch_branch': {
+              const branch = typeof payload.branch === 'string' ? payload.branch.trim() : '';
+              if (!branch) {
+                sendJson(res, 400, { ok: false, error: '缺少目标分支名称' });
+                return;
+              }
+              const r = await executor.switchGitBranch(cwd, branch);
+              if (!r.ok) {
+                sendJson(res, 400, { ok: false, error: r.error });
+                return;
+              }
+              cacheMap.clear();
+              sendJson(res, 200, { ok: true, currentBranch: r.currentBranch, message: `已成功切换到分支 ${r.currentBranch}` });
+              break;
+            }
             default:
               sendJson(res, 400, { ok: false, message: `未知的操作类型: ${payload.action}` });
           }
         } catch (err: any) {
           sendJson(res, 500, { ok: false, error: err.message || '操作执行失败' });
+        }
+      });
+    },
+  });
+
+  // 3. 读取当前工作区的所有 Git 分支列表（纯本地只读，毫秒级响应）
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/branches',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, message: '仅支持 GET 请求' });
+        return;
+      }
+      try {
+        const url = new URL(req.url || '', 'http://127.0.0.1');
+        const cwd = url.searchParams.get('cwd') || undefined;
+        const result = await executor.getGitBranches(cwd);
+        if (!result) {
+          sendJson(res, 404, { ok: false, error: '当前工作区不是 Git 仓库或无法读取分支' });
+          return;
+        }
+        sendJson(res, 200, { ok: true, data: result });
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, error: err?.message || '读取分支列表失败' });
+      }
+    },
+  });
+
+  // 4. 切换当前工作区的 Git 分支（带未提交变更防护与合法性校验）
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/branch-switch',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: '仅支持 POST 请求' });
+        return;
+      }
+      let body = '';
+      req.on('data', (chunk: any) => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const payload = body ? JSON.parse(body) : {};
+          const cwd = payload.cwd || undefined;
+          const branch = typeof payload.branch === 'string' ? payload.branch.trim() : '';
+
+          if (!branch) {
+            sendJson(res, 400, { ok: false, error: '缺少目标分支名称' });
+            return;
+          }
+
+          const r = await executor.switchGitBranch(cwd, branch);
+          if (!r.ok) {
+            sendJson(res, 400, { ok: false, error: r.error });
+            return;
+          }
+
+          // 核心联动：切换分支成功后，当前工作区缓存立即失效，确保后续拉取新分支数据
+          cacheMap.clear();
+          sendJson(res, 200, {
+            ok: true,
+            currentBranch: r.currentBranch,
+            message: `已成功切换到分支 ${r.currentBranch}`,
+          });
+        } catch (err: any) {
+          sendJson(res, 500, { ok: false, error: err?.message || '切换分支失败' });
         }
       });
     },
