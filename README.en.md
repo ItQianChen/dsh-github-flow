@@ -332,7 +332,7 @@ Located in the right drawer of every chat workspace, seamlessly bridging your lo
     * Branch & Remote Sync: Real-time branch indicator (e.g. `master`) with tracking sync status (`✓ Up to date` or `↑N to push` / `↓N to pull`);
     * Three-Section Commit View: Unpushed commits (ahead of remote), unpulled commits (behind remote), and recent commit history;
     * 15 commits displayed by default, with **infinite scroll loading** when scrolling to the bottom (with live `15 / 74` progress counter and click trigger);
-    * Latest Release badge (`🏷️ v0.3.0`) anchored in the top right with hover details and direct release link;
+    * Latest Release badge (`🏷️ v0.4.0`) anchored in the top right with hover details and direct release link;
     * **Commit Detail Modal**: Click any commit row to open a clean modal dialog centered within the right sidebar, featuring smooth vertical scrolling, full 40-char SHA, author email, date, multi-line commit message body, and file diff stat table (`--stat`), pure local 0ms instant display;
   * **Uncommitted Changes (`📁 Uncommitted (N)`)**: Full-width list of uncommitted files with color-coded status codes (`??` untracked, `M` modified, `D` deleted, `R` renamed) and change counts;
   * **Pull Requests (`🔀 PR (N)`)**: Open PR inspection with 3-state CI check rollup (`✅ CI Passed` / `❌ CI Failed` / `⏳ CI Pending`), merge conflict detection, review decisions (`✔ Approved` / `✋ Changes Requested` / `👀 Review Required`), Draft pills, and humanized relative timestamps;

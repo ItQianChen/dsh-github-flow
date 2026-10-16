@@ -1,6 +1,6 @@
 {
   "name": "dsh-github-flow",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "icon": "icon.svg",
   "description": "GitHub 工作流引擎：为 DeepSeek Harness 提供原生 GitHub CLI (gh) 集成——9 大 Agent 领域工具（PR 审查合并、Issue 任务流转、CI 失败诊断、发版交付、密钥管理、Agent Skills 生态）、/gh 人类快捷指令、Web UI 全景驾驶舱与一键跨平台自动升级；零凭证侵入复用宿主机 gh 登录态，内置 Token 防溢出截断、高危操作二次确认与密文安全输入通道。",
   "type": "module",
