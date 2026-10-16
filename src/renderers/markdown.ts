@@ -16,3 +16,4 @@ export * from './label.js';
 export * from './ruleset.js';
 export * from './cache.js';
 export * from './gist.js';
+export * from './status.js';

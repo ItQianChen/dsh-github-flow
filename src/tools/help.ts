@@ -19,6 +19,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_ruleset\` | 分支保护规则与策略诊断 | 检查分支适用的合并策略规则 (check)、查看规则集列表与详情，权威回答“PR 为何无法合并” |
 | \`github_cache\` | Actions 构建缓存盘点与安全清理 | 查看缓存列表与体积占用、按 ID/Key 删除指定缓存、全量清空缓存（需 confirm） |
 | \`github_gist\` | 代码片段与调试日志分享治理 | 查看 Gist 列表与代码正文、创建 Secret/Public 代码片段、编辑与物理删除（需 confirm） |
+| \`github_status\` | 跨仓库待办与动态聚合看板 | 账号维度汇总指派给我的 Issue/PR、等待评审、被 @提及 以及订阅仓库近期动态 |
 | \`github_help\` | 路由导航、官方语法速查与故障自愈 | 遇到不确定的操作、搜索语法或接口报错时查询用法与诊断配方 |
 
 💡 **使用准则**：优先调用高层语义工具（pr / issue / run / repo / release / secret）；当高层工具无法满足特殊接口需求时，再降级使用 \`github_api\`。
@@ -42,7 +43,9 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **反向提交**: \`github_pr(action: 'revert', pr_number: 123, confirm: true)\`
   - 在远端创建反向提交与新 PR（非本地操作），需 confirm。
 - **分支落后自愈**: \`github_pr(action: 'update_branch', pr_number: 123)\`
-  - 将基准分支最新提交同步进 PR 分支，解决「分支落后需更新」的 CI 门禁失败。`,
+  - 将基准分支最新提交同步进 PR 分支，解决「分支落后需更新」的 CI 门禁失败。
+- **上传本地附件/图片**: \`github_pr(action: 'create', title: 'UI 重构', body: '对比图如下', attach_images: ['./before.png', './after.png'])\`
+  - 需 gh ≥ 2.99；支持 create/edit/comment 动作，单批上限 50 个文件，禁止网络 URL，与 view_images 对称闭环。`,
 
   issue: `### 🎯 github_issue 详细操作指南
 
@@ -53,6 +56,8 @@ const KNOWLEDGE_BASE: Record<string, string> = {
   - 经 gh api 下载正文+评论图片到本地（~/.dsh/data/dsh-github-flow/images/，内容寻址去重），以图片内容块返回，Agent 可直接查看用户报障截图；魔数校验 + 字节护栏（单图 5MB、目录 15MB）。
   - **按 URL 精准获取**: 附加 \`image_urls: ['<view 返回清单中的 URL>']\` 只下载指定图片（可单张可批量）；传入 URL 必须在清单内（防任意下载）。
   - 触达目录上限时返回 \`remaining\` 结构化清单，直接作为下一批 image_urls 续传即可。
+- **上传本地附件/图片**: \`github_issue(action: 'comment', issue_number: 42, body: '复现证据', attach_images: ['./bug.png'])\`
+  - 需 gh ≥ 2.99；支持 create/edit/comment 动作，单批上限 50 个本地文件（绝对路径或工作区相对路径，禁止网络 URL）。
 - **关联开发分支**: \`github_issue(action: 'develop', issue_number: 42, branch_name: 'fix-login-bug')\`
   - 自动在远端和本地创建带有官方关联关系的开发分支并切换过去，实现“读需求 -> 开分支写代码”的无缝衔接。
 - **编辑 Issue**: \`github_issue(action: 'edit', issue_number: 42, title: '新标题', add_labels: ['p1'], remove_labels: ['triage'])\`
@@ -213,6 +218,15 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **删除 Gist**: \`github_gist(action: 'delete', gist_id: '...', confirm: true)\`
   - 物理删除不可逆，必须显式附加 \`confirm: true\`；底层自动注入 \`--yes\` 杜绝交互式卡死。`,
 
+  status: `### 🧭 github_status 详细操作指南
+
+- **查看个人待办与动态大盘**: \`github_status()\` 或 \`github_status(action: 'view')\`
+  - 账号维度一站式汇总：指派给我的 Issues、指派给我的 PR、等待我评审的 PR、近期 @提及 以及订阅仓库最新动态。
+- **限定组织**: \`github_status(org: 'my-org')\`
+  - 仅汇报指定组织内部的待办事项与动态。
+- **排除噪音仓库**: \`github_status(exclude: ['owner/noisy-repo'])\`
+  - 过滤高频刷屏但无需关注的仓库活动。`,
+
   mapping: `### 🗺️ gh 命令 ↔ 插件工具映射总表
 
 #### 一、已覆盖域映射（语义化 action 精确对照）
@@ -306,11 +320,17 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`gh gist edit\` | \`github_gist(action:'edit', gist_id:…)\` | 描述与文件修改 |
 | \`gh gist delete\` | \`github_gist(action:'delete', gist_id:…, confirm:true)\` | 物理删除，需 confirm |
 
+**Status（github_status，账号维度聚合面板）**
+| gh 命令 | 插件调用 | 备注 |
+| :--- | :--- | :--- |
+| \`gh status\` | \`github_status(action:'view')\` | 跨仓待办大盘与动态 |
+
 #### 二、归属提示（命令域与工具名不同构）
 
 - \`gh workflow …\` / \`gh search …\` / \`gh variable …\` 分别归 **github_run / github_repo / github_secret**（不是独立工具）
 - \`gh api\` 的等价物是 \`github_api\`（全端点逃生门，支持 raw/paginate/jq）
 - 图片查看：\`github_issue\`/\`github_pr\` 的 \`view_images\`、\`github_repo\` 的 \`readme\` + image_urls（插件独有能力，gh 无对应命令）
+- 附件上传：\`github_issue\`/\`github_pr\` 的 \`attach_images\` 映射 gh ≥2.99 原生可重复 \`--attach\` flag（支持 create/edit/comment）
 
 #### 三、未覆盖域引导（经 github_api 调用）
 
@@ -385,6 +405,7 @@ export function createHelpTool(executor: GhExecutor) {
             'ruleset',
             'cache',
             'gist',
+            'status',
             'mapping',
             'search_syntax',
             'troubleshooting',

@@ -11,6 +11,7 @@ import { createLabelTool } from './tools/label.js';
 import { createRulesetTool } from './tools/ruleset.js';
 import { createCacheTool } from './tools/cache.js';
 import { createGistTool } from './tools/gist.js';
+import { createStatusTool } from './tools/status.js';
 import { createHelpTool } from './tools/help.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
@@ -114,6 +115,7 @@ export function apply(ctx: any, config: PluginConfig = {}) {
     ctx.tools.register(createRulesetTool(executor));
     ctx.tools.register(createCacheTool(executor));
     ctx.tools.register(createGistTool(executor));
+    ctx.tools.register(createStatusTool(executor));
     ctx.tools.register(createHelpTool(executor));
   }
 
