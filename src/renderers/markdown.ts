@@ -14,3 +14,5 @@ export * from './release.js';
 export * from './skill.js';
 export * from './label.js';
 export * from './ruleset.js';
+export * from './cache.js';
+export * from './gist.js';
