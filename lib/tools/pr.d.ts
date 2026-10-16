@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+export { extractImageUrls as extractPrImageUrls, validateAttachPaths } from './image-utils.js';
 export declare function createPrTool(executor: GhExecutor): {
     name: string;
     description: string;
@@ -82,6 +83,13 @@ export declare function createPrTool(executor: GhExecutor): {
                 description: string;
             };
             image_urls: {
+                type: string;
+                items: {
+                    type: string;
+                };
+                description: string;
+            };
+            attach_images: {
                 type: string;
                 items: {
                     type: string;
