@@ -35,32 +35,32 @@
 │            │                       │                        │               │
 │            ▼                       ▼                        ▼               │
 │  ┌──────────────────┐    ┌──────────────────┐    ┌───────────────────────┐  │
-│  │  9 大 Agent 工具  │    │  人类 Slash 指令 │    │   Host HTTP WebServer │  │
+│  │  14 大 Agent 工具 │    │  人类 Slash 指令 │    │   Host HTTP WebServer │  │
 │  │  (defineTool DSL)│    │  /gh status      │    │ (Effect Disposer 清理)│  │
-│  │  - pr (+ready·   │    │  /gh upgrade     │    │ - /api/github/overview│  │
-│  │    revert·update)│    │  /gh help        │    │ - /api/github/action  │  │
-│  │  - issue (+delete│    └──────────────────┘    │ - /api/github/refresh │  │
-│  │    ·transfer·pin·│                            │ - /api/github/branches│  │
-│  │    lock·status)  │                            │ - /branch-switch      │  │
-│  │  - run (+workflow│                            │ - /api/github/git-    │  │
-│  │    系列·download)│  (workflow_enable/disable │  │   watch (定向监听)    │  │
-│  │  - repo (+search │   启停·list/view·download) │ - /check-update (并行)│  │
-│  │    三域+read_    │                            │ - /upgrade (一键自动) │  │
-│  │    file &read_dir)│  (search 三域=issues/prs/ │  │ - /update-settings    │  │
-│  │  - api (逃生门)  │   commits; read_file/dir)  │ - /proxy (全局代理)   │  │
-│  │  - release       │                            │ - /auth (轻量探针)    │  │
-│  │  - secret (stdin │                            └──────────┬────────────┘  │
-│  │    +variable 域) │                                       │               │
-│  │  - skill         │                                       ▼               │
-│  │  - help (元指南) │                            ┌───────────────────────┐  │
-│  └────────┬─────────┘                            │ git-watcher (独立服务)│  │
-│           │                                      │ - .git/HEAD & index   │  │
-│           ▼                                      │ - 800ms 防抖/35s 超时 │  │
-│  ┌──────────────────────────────────┐            └───────────────────────┘  │
-│  │ Markdown 渲染引擎 (renderers/)   │                                       │
+│  │  - pr (+attach)  │    │  /gh upgrade     │    │ - /api/github/overview│  │
+│  │  - issue (+attach│    │  /gh help        │    │ - /api/github/action  │  │
+│  │  - run (workflow)│    └──────────────────┘    │ - /api/github/refresh │  │
+│  │  - repo (read/sr)│                            │ - /api/github/branches│  │
+│  │  - api (逃生门)  │  (workflow_enable/disable │  │ - /branch-switch      │  │
+│  │  - release       │   启停·list/view·download) │ - /api/github/git-    │  │
+│  │  - secret & var  │                            │   watch (定向监听)    │  │
+│  │  - skill         │  (search 三域=issues/prs/ │ - /check-update (并行)│  │
+│  │  - label (CRUD/cl│   commits; read_file/dir)  │ - /upgrade (一键自动) │  │
+│  │  - ruleset(check)│                            │ - /update-settings    │  │
+│  │  - cache (治理)  │                            │ - /proxy (全局代理)   │  │
+│  │  - gist (分享)   │                            │ - /auth (轻量探针)    │  │
+│  │  - status (大盘) │                            └──────────┬────────────┘  │
+│  │  - help (元指南) │                                       │               │
+│  └────────┬─────────┘                                       ▼               │
+│           │                                      ┌───────────────────────┐  │
+│           │                                      │ git-watcher (独立服务)│  │
+│           ▼                                      │ - .git/HEAD & index   │  │
+│  ┌──────────────────────────────────┐            │ - 800ms 防抖/35s 超时 │  │
+│  │ Markdown 渲染引擎 (renderers/)   │            └───────────────────────┘  │
 │  │ - common.ts: 单元格清洗/通用徽章 │                                       │
-│  │ - 6大领域模块: pr/issue/run/repo/│                                       │
-│  │   release/skill 各自独立渲染     │                                       │
+│  │ - 11领域模块: pr/issue/run/repo/ │                                       │
+│  │   release/skill/label/ruleset/   │                                       │
+│  │   cache/gist/status 独立渲染     │                                       │
 │  │ - 统一门面出口 markdown.ts 兼容  │                                       │
 │  └──────────────────────────────────┘                                       │
 └─────────────────────────────────────────────────────────────┬───────────────┘
@@ -110,7 +110,7 @@
 - **AI_AGENT 识别信号注入**：每次 gh 子进程启动注入 `AI_AGENT=dsh`（gh detect.go 最高优先级通用信号）——gh ≥2.99 自动切换 text-only spinner、≥2.100 命令误用时打印完整 help（模型可据此自我纠正）、telemetry 归因到 dsh；旧版 gh 忽略该变量零副作用。经 `agentEnvInjection` 配置开关（默认开启）可恢复 gh 原生行为。
 
 ### 2.3.1 高危操作确认与敏感值安全通道 (Safety Confirmation & Secret stdin Channel)
-- 不可逆写操作（`merge` / `close` / `issue delete`（物理删除）/ `issue transfer`（跨仓库迁移）/ `pr revert`（远端创建反向 PR）/ `release delete` / clobber 覆盖上传 / `secret delete` / `skill install`）强制要求 `confirm: true` 显式参数，未确认时仅返回影响评估卡片，不产生任何远端或本地副作用；
+- 不可逆写操作（`merge` / `close` / `issue delete`（物理删除）/ `issue transfer`（跨仓库迁移）/ `pr revert`（远端创建反向 PR）/ `release delete` / clobber 覆盖上传 / `secret delete` / `skill install` / `label delete`（物理删除且解绑）/ `cache delete all`（全量清空缓存）/ `gist delete`（代码片段永久删除））强制要求 `confirm: true` 显式参数，未确认时仅返回影响评估卡片，不产生任何远端或本地副作用；
 - 密钥明文仅经子进程标准输入传递（`spawnWithStdin` 通道：`spawn` + `stdin.end(data)` 半关闭写入），全程不出现在命令行参数、进程列表与工具输出中；渲染层对 secret 输出采用独立实现，从结构上隔离「绝不渲染 value 字段」这条安全红线。
 
 ### 2.3.2 产物落盘纪律 (Artifact Download Discipline)

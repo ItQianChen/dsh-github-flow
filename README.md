@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手和脚，为人机协作打造沉浸式 GitHub 工作台。</b><br>
-  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>9 大领域 Agent 核心工具（76+ action，覆盖 PR/Issue/Actions 工作流治理/免 clone 读取任意文件/密钥与变量管理）</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
+  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>14 大领域 Agent 核心工具（85+ action，覆盖 PR 审查/Issue 任务/Actions 工作流与构建缓存治理/免 clone 读文件/分支规则集策略排障/代码片段 Gist/标签与全局待办大盘/密钥与变量管理）</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
 </p>
 
 <p align="center">
@@ -73,7 +73,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ## 🤖 核心工具集 (Agent Tools)：给 Agent 装上 GitHub 的手和脚
 
-本插件精选聚合为 **9 大领域核心工具**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）**、**高密度 Markdown 原生渲染（列表输出压缩 70%+ Token）** 与 **零参数 CWD 智能绑定**。
+本插件精选聚合为 **14 大领域核心工具（85+ action）**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）**、**高密度 Markdown 原生渲染（列表输出压缩 70%+ Token）** 与 **零参数 CWD 智能绑定**。
 
 ### 1. `github_pr`：PR 全生命周期管理与自动化代码审查
 > **典型对话指令**：
@@ -87,7 +87,9 @@ dsh plugin --profile web add dsh-github-flow
   * `view`：查看指定 PR 详情、描述与元数据；
   * `diff`：获取 PR 的完整代码差异（`stat_only` 仅看文件变更概览，防大 PR 溢出）；
   * `checks`：审查指定 PR 的 CI 门禁状态（通过/失败/跳过分类徽章、所属工作流与详情链接）；
-  * `create`：一键自动创建 PR（支持 draft 草稿模式与 `--dry-run` 预演）；
+  * `create`：一键自动创建 PR（支持 draft 草稿模式与 `--dry-run` 预演，支持 `attach_images` 上传本地附件）；
+  * `edit`：🆕 编辑 PR 标题、描述与关联元数据，支持附加本地图片；
+  * `comment`：🆕 向指定 PR 追加讨论评论与审查意见，支持附加本地图片；
   * `checkout`：🆕 把 PR 代码检出到本地分支，Agent 可直接在沙箱跑测试验证改动；
   * `status`：🆕 查看当前分支关联 PR 的合并冲突状态（`CLEAN` / `CONFLICT`）；
   * `review`：提交代码审查意见（`APPROVE`, `REQUEST_CHANGES`, `COMMENT`）；
@@ -95,7 +97,8 @@ dsh plugin --profile web add dsh-github-flow
   * `ready`：🆕 Draft ↔ Ready 切换（附 `undo: true` 可转回 Draft，完整可逆）；
   * `revert`：🆕 创建反向提交（远端生成新 revert PR，需 `confirm: true`）；
   * `update_branch`：🆕 将基准分支最新提交同步进 PR 分支——「分支落后需更新」CI 门禁失败的自愈动作；
-  * `view_images`：🆕 下载 PR 讨论截图（正文+评论，支持 `image_urls` 精准提取与触顶续传清单）。
+  * `view_images`：🆕 下载 PR 讨论截图（正文+评论，支持 `image_urls` 精准提取与触顶续传清单）；
+  * `attach_images`（参数）：🆕 上传本地图片/附件至 PR（单批上限 50 个本地文件，与 `view_images` 形成对称闭环，需 gh ≥ 2.99）。
 
 ---
 
@@ -103,13 +106,13 @@ dsh plugin --profile web add dsh-github-flow
 > **典型对话指令**：
 > - *"列出分配给我的所有待办 Issue"*
 > - *"从 Issue #42 一键切出一个本地开发分支 'fix-login-error' 并开始修复"*
-> - *"在 Issue #15 下追加评论，汇报我们刚才测试发现的边界情况"*
+> - *"在 Issue #15 下追加评论，汇报我们刚才测试发现的边界情况并附上截图"*
 
 * **支持操作 (`action`)**：
   * `list`：列出仓库 Issues（支持 `state` / `labels` / `assignees` 组合筛选，返回三维多标签）；
   * `view`：查看 Issue 完整讨论、正文与指派人；
-  * `create`：新建 Issue 任务；
-  * `comment`：向指定 Issue 追加讨论评论；
+  * `create`：新建 Issue 任务（支持 `attach_images` 附件上传）；
+  * `comment`：向指定 Issue 追加讨论评论（支持 `attach_images` 上传错误截图）；
   * `edit`：编辑 Issue 标题、追加标签 (`add_labels`)、移除标签 (`remove_labels`)；
   * `close` / `reopen`：关闭或重新激活议题（`close` 需 `confirm: true`）；
   * `develop`：🆕 关联当前 Issue 一键创建本地 Git 开发分支；
@@ -118,7 +121,8 @@ dsh plugin --profile web add dsh-github-flow
   * `pin` / `unpin`：🆕 仓库 Issue 置顶状态管理；
   * `lock` / `unlock`：🆕 锁定讨论区，支持 4 种官方合法理由（`off_topic` / `resolved` / `spam` / `too_heated`）；
   * `status`：🆕 检索指派给当前登录用户的待办议题全景面板；
-  * `view_images`：🆕 下载 Issue 报障截图（正文+评论全量识别并转为本地图片块，Agent 直接"看"截图）。
+  * `view_images`：🆕 下载 Issue 报障截图（正文+评论全量识别并转为本地图片块，Agent 直接"看"截图）；
+  * `attach_images`（参数）：🆕 支持本地文件/截图直接作为附件随 Issue 发布（单批上限 50 个文件，需 gh ≥ 2.99）。
 
 ---
 
@@ -212,11 +216,11 @@ dsh plugin --profile web add dsh-github-flow
 > - *"调用 gh 命令报错 'authentication failed'，该怎么排查？"*
 
 * **支持操作 (`topic` / `gh_command`)**：
-  * `overview`：输出全景工具箱导航与核心职责速查；
+  * `overview`：输出全景工具箱导航与核心职责速查（14 大工具矩阵全景）；
   * `mapping`：**官方命令映射总表**，精准指示任意 `gh <command>` 对应哪个插件工具，以及未覆盖域对应的 GitHub REST/GraphQL 端点；
   * `search_syntax`：日期区间、状态筛选与高级布尔搜索语法指南；
   * `troubleshooting`：常见错误自愈配方（认证失效、网络超时、SOCKS5 代理配置、权限不足等）；
-  * 领域速查：`pr` / `issue` / `run` / `repo` / `release` / `secret` / `skill` 专项高阶用法；
+  * 领域速查：`pr` / `issue` / `run` / `repo` / `release` / `secret` / `skill` / `label` / `ruleset` / `cache` / `gist` / `status` 专项高阶用法；
   * `gh_command`：直接透传查询官方原生手册（如 `gh_command: 'ruleset'`）。
 
 ---
@@ -227,6 +231,72 @@ dsh plugin --profile web add dsh-github-flow
 > - *"调用 GraphQL 查询指定仓库的 Discussions 列表"*
 
 * **支持功能**：直接通过宿主机已认证的 GitHub CLI 环境调用任意 REST 或 GraphQL 端点，支持 `--jq` 结果精简、自动分页 (`paginate: true`)、请求参数字面量直传与 `raw: true` 原始响应流（如免 Base64 读取文本文件）。
+
+---
+
+### 10. `github_label`：标签体系管理与跨仓库一键克隆
+> **典型对话指令**：
+> - *"查看当前仓库有哪些标签，按名称排序"*
+> - *"创建一个名为 'priority/p0' 的严重缺陷标签，颜色设为 #d73a4a"*
+> - *"把 'cli/cli' 仓库的标准标签体系一键克隆到当前新仓库"*
+> - *"删除弃用的 'invalid' 标签"*
+
+* **支持操作 (`action`)**：
+  * `list`：列出仓库标签（支持 `search` 模糊检索、`sort: 'created' | 'name'` 与 `order: 'asc' | 'desc'` 排序）；
+  * `create`：新建标签（十六进制色值校验与去前导 `#`，支持 `force: true` 覆盖已存在标签）；
+  * `edit`：编辑标签颜色、描述，或通过 `new_name` 重命名；
+  * `delete`：安全删除标签（影响所有已关联 Issue/PR，必须 `confirm: true` 二次确认，注入 `--yes` 防挂起）；
+  * `clone`：🆕 **跨仓库一键克隆**：从源仓库 (`source_repo`) 将全量标签体系同步至当前目标仓库，新仓库初始化刚需（支持 `force: true` 覆盖冲突标签）。
+
+---
+
+### 11. `github_ruleset`：分支合并保护规则与策略排障
+> **典型对话指令**：
+> - *"为什么当前分支的 PR 无法合并？帮我检查适用的保护规则"*
+> - *"检查 master 分支是否配置了必须通过 CI 或至少 2 人审批的规则约束"*
+> - *"查看当前仓库的所有规则集列表"*
+
+* **支持操作 (`action`)**：
+  * `check`：**🔥 PR 合并策略排障核心**！查看指定分支匹配到的全部硬性策略规则（如强制 CI 门禁、审批人数、禁止 Force Push 等），与 `github_pr(action: 'checks')` 形成“CI 运行视角 + 规则策略视角”的权威排障合力；
+  * `list`：查看规则集列表（支持 `--org` 组织级查询与 `--no-parents` 排除继承）；
+  * `view`：查看具体规则集详细约束与目标分支（强制校验 `ruleset_id` 防交互式挂起）。
+
+---
+
+### 12. `github_cache`：Actions 构建缓存盘点与安全清理
+> **典型对话指令**：
+> - *"盘点一下当前仓库的 Actions 缓存占用了多少空间？"*
+> - *"按占用体积降序排列所有构建缓存"*
+> - *"清空当前仓库所有过期的 Actions 缓存"*
+
+* **支持操作 (`action`)**：
+  * `list`：盘点仓库 Actions 缓存占用，自动换算人性化体积（KB/MB/GB），支持 Key 前缀过滤、Git Ref 过滤与按大小/访问时间排序；
+  * `delete`：三态精准清理（按数字 `cache_id` 删除、按 `key` 删除、或通过 `all: true` 全量清空全部缓存；全量清空属批量破坏性操作，强制要求 `confirm: true`，底层注入 `--succeed-on-no-caches` 保证幂等执行）。
+
+---
+
+### 13. `github_gist`：代码片段与排障留痕轻量治理
+> **典型对话指令**：
+> - *"把刚才的排错日志创建为一个 Secret Gist 并把链接发给我"*
+> - *"查看我账号下的 Gist 代码片段列表"*
+> - *"检视 Gist '5b0e0062eb8e9654adad7bb1d81cc75f' 的代码正文"*
+
+* **支持操作 (`action`)**：
+  * `list`：列出当前用户账号下的 Gist 清单（TSV 结构化解析，支持 `public` / `secret` / `filter` 过滤）；
+  * `view`：查看指定 Gist 的原始代码正文（支持 `filename` 单文件筛选，强制校验 `gist_id` 防挂起）；
+  * `create`：新建 Gist（支持 `content` 经 stdin 管道直接传入，或传 `files` 本地文件列表，默认安全创建 Secret Gist 并显式附带 **Unlisted 弱保密安全警示**）；
+  * `edit`：编辑 Gist 描述或修改文件；
+  * `delete`：物理删除 Gist 代码片段（不可逆，强制要求 `confirm: true` 与 `--yes`）。
+
+---
+
+### 14. `github_status`：跨仓库待办与动态全局大盘
+> **典型对话指令**：
+> - *"帮我看看今天在 GitHub 上有哪些需要我处理的事情？"*
+> - *"查看当前账号在所有订阅仓库中的最新动态与 @提及"*
+
+* **支持操作 (`action`)**：
+  * `view`：**账号维度跨仓一站式聚合大盘**，汇总展示「指派给我的 Issue」、「指派给我的 PR」、「等待我评审的 PR (Review Requests)」、「提及我的消息 (Mentions)」以及「订阅仓库近期动态 (Repository Activity)」，无需绑定单仓即可一览全局工作台；支持 `-o` 组织过滤与 `-e` 排除噪音仓库。
 
 ---
 

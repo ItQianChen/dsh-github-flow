@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>Give DeepSeek Harness Agents native hands and feet to operate GitHub, crafting an immersive collaboration cockpit for developers.</b><br>
-  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>9 core domain Agent tools (76+ actions covering PR/Issue/Actions workflow governance/clone-free file reads/secrets & variables)</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
+  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>14 core domain Agent tools (85+ actions covering PR review/Issue tracking/Actions workflow & cache governance/clone-free file reads/branch ruleset policy diagnosis/Gist snippets/labels & global status dashboards/secrets & variables)</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
 </p>
 
 <p align="center">
@@ -73,7 +73,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ## 🤖 Core Agent Tools: Equipping Agents with Native GitHub Powers
 
-Consolidates scattered GitHub endpoints into **9 core domain tools (76+ actions covering PR/Issue/Actions workflow governance/clone-free file reads/secrets & variables)**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)** and **Zero-argument CWD auto-binding**.
+Consolidates scattered GitHub endpoints into **14 core domain tools (85+ actions)**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)** and **Zero-argument CWD auto-binding**.
 
 ### 1. `github_pr`: Pull Request Lifecycle & Automated Code Review
 > **Example Agent Prompts**:
@@ -87,7 +87,9 @@ Consolidates scattered GitHub endpoints into **9 core domain tools (76+ actions 
   * `view`: Inspect PR description, metadata, and mergeability;
   * `diff`: Retrieve complete code diffs (`stat_only` for file-change overview, safely truncated against token limits);
   * `checks`: Audit CI gate status (pass/fail/skip category badges, owning workflow, and detail links);
-  * `create`: Auto-create PRs (supports draft mode & `--dry-run`);
+  * `create`: Auto-create PRs (supports draft mode & `--dry-run`, supports `attach_images` local uploads);
+  * `edit`: 🆕 Edit PR title, body description, and metadata with image attachment support;
+  * `comment`: 🆕 Post comments and reviews to pull requests with image attachment support;
   * `checkout`: 🆕 Check out PR code to a local branch for sandboxed testing;
   * `status`: 🆕 Inspect merge conflict status (`CLEAN` / `CONFLICT`) for the current branch's PR;
   * `review`: Submit code reviews (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`);
@@ -95,7 +97,8 @@ Consolidates scattered GitHub endpoints into **9 core domain tools (76+ actions 
   * `ready`: 🆕 Toggle Draft ↔ Ready (`undo: true` converts back to Draft — fully reversible);
   * `revert`: 🆕 Create a revert commit (generates a new revert PR on the remote; requires `confirm: true`);
   * `update_branch`: 🆕 Sync the latest base-branch commits into the PR branch — the self-healing action for "branch is out-of-date" CI gate failures;
-  * `view_images`: 🆕 Download PR discussion screenshots (body + comments; `image_urls` targeting with budget-overflow resume list).
+  * `view_images`: 🆕 Download PR discussion screenshots (body + comments; `image_urls` targeting with budget-overflow resume list);
+  * `attach_images` (param): 🆕 Upload local images/attachments to PRs (up to 50 files/batch, symmetric with view_images, requires gh ≥ 2.99).
 
 ---
 
@@ -103,13 +106,13 @@ Consolidates scattered GitHub endpoints into **9 core domain tools (76+ actions 
 > **Example Agent Prompts**:
 > - *"List all open issues assigned to me."*
 > - *"Branch off a local fix branch 'fix-login-error' from Issue #42 and start working."*
-> - *"Add a comment to Issue #15 summarizing the edge cases we just discovered."*
+> - *"Add a comment to Issue #15 summarizing the edge cases we just discovered with screenshots."*
 
 * **Supported Actions**:
   * `list`: List issues with flexible filtering (`state` / `labels` / `assignees`);
   * `view`: Inspect full issue threads, body descriptions, and assignees;
-  * `create`: Create new issue tickets;
-  * `comment`: Add comments to issue threads;
+  * `create`: Create new issue tickets (supports `attach_images` local uploads);
+  * `comment`: Add comments to issue threads (supports `attach_images` error screenshot uploads);
   * `edit`: Update titles, `add_labels`, or `remove_labels`;
   * `close` / `reopen`: Manage lifecycle status (`close` requires `confirm: true`);
   * `develop`: 🆕 Automatically branch off a local Git branch linked to the issue;
@@ -118,7 +121,8 @@ Consolidates scattered GitHub endpoints into **9 core domain tools (76+ actions 
   * `pin` / `unpin`: 🆕 Manage pinned issues on the repository;
   * `lock` / `unlock`: 🆕 Lock discussions with standard reasons (`off_topic`, `resolved`, `spam`, `too_heated`);
   * `status`: 🆕 Retrieve a comprehensive dashboard of issues assigned to the active user;
-  * `view_images`: 🆕 Download screenshot attachments from issue descriptions and comments into local image blocks.
+  * `view_images`: 🆕 Download screenshot attachments from issue descriptions and comments into local image blocks;
+  * `attach_images` (param): 🆕 Upload local file screenshots alongside issues (up to 50 local files/batch, requires gh ≥ 2.99).
 
 ---
 
@@ -212,11 +216,11 @@ Consolidates scattered GitHub endpoints into **9 core domain tools (76+ actions 
 > - *"How do I debug 'authentication failed' errors from gh?"*
 
 * **Supported Actions**:
-  * `overview`: Complete toolbox navigation and summary table;
+  * `overview`: Complete toolbox navigation and summary table (14 core tools);
   * `mapping`: **Official gh Command ↔ Tool Action Mapping Table**, detailing exact tool calls and REST/GraphQL fallback routes;
   * `search_syntax`: Date ranges, qualifiers, and boolean query syntax;
   * `troubleshooting`: Self-healing recipes for authentication loss, timeouts, SOCKS5 proxy configs, and permissions;
-  * Domain guides: In-depth usage guides for `pr`, `issue`, `run`, `repo`, `release`, `secret`, and `skill`;
+  * Domain guides: In-depth usage guides for `pr`, `issue`, `run`, `repo`, `release`, `secret`, `skill`, `label`, `ruleset`, `cache`, `gist`, and `status`;
   * `gh_command`: Direct pass-through lookup of official gh manual entries (e.g. `gh_command: 'ruleset'`).
 
 ---
@@ -227,6 +231,72 @@ Consolidates scattered GitHub endpoints into **9 core domain tools (76+ actions 
 > - *"Run a GraphQL query to inspect repository Discussions."*
 
 * **Supported Features**: Direct invocation of arbitrary GitHub REST or GraphQL endpoints using host credentials, supporting `--jq` filtering, auto-pagination (`paginate: true`), and `raw: true` mode.
+
+---
+
+### 10. `github_label`: Label System Management & Cross-Repo Cloning
+> **Example Agent Prompts**:
+> - *"List all labels in this repository sorted by name."*
+> - *"Create a label 'priority/p0' with color #d73a4a for critical bugs."*
+> - *"Clone the label system from 'cli/cli' repository into our new repository."*
+> - *"Delete the deprecated 'invalid' label."*
+
+* **Supported Actions**:
+  * `list`: List repository labels (supports `search` regex/keyword, `sort: 'created' | 'name'`, and `order: 'asc' | 'desc'`);
+  * `create`: Create a new label (hex color normalization, optional `force: true` to update existing);
+  * `edit`: Update label color, description, or rename via `new_name`;
+  * `delete`: Safe deletion (affects associated issues/PRs; requires `confirm: true` confirmation, injects `--yes`);
+  * `clone`: 🆕 **One-click cross-repo label cloning**: Copy all labels from a source repository (`source_repo`) into the target repository (supports `force: true` to overwrite conflicts).
+
+---
+
+### 11. `github_ruleset`: Branch Protection Rules & Policy Diagnosis
+> **Example Agent Prompts**:
+> - *"Why can't I merge this PR? Check all applicable rules for this branch."*
+> - *"Verify whether branch master requires CI status checks or 2 approvals."*
+> - *"List all repository rulesets."*
+
+* **Supported Actions**:
+  * `check`: **🔥 Core PR Merge Blocker Diagnosis**! View all protective rules governing a branch (e.g. required approvals, required status checks, linear history, force-push denial), complementing `github_pr(action: 'checks')` with authoritative policy perspective;
+  * `list`: List rulesets for repository or organization (`--org` and `--no-parents` support);
+  * `view`: Inspect ruleset configuration and target branches (requires `ruleset_id`).
+
+---
+
+### 12. `github_cache`: Actions Build Cache Auditing & Safe Cleanup
+> **Example Agent Prompts**:
+> - *"How much cache space is consumed by GitHub Actions in this repository?"*
+> - *"List build caches sorted by size in descending order."*
+> - *"Purge all build caches in this repository."*
+
+* **Supported Actions**:
+  * `list`: Audit Actions caches with human-readable size formatting (KB/MB/GB), key prefix and ref filtering, and size/access sorting;
+  * `delete`: Precise 3-way cleanup (by `cache_id`, by `key`, or purge everything via `all: true`; purge is destructive and requires `confirm: true`, injects `--succeed-on-no-caches` for idempotency).
+
+---
+
+### 13. `github_gist`: Code Snippets & Diagnostics Archiving
+> **Example Agent Prompts**:
+> - *"Publish this diagnostic error log as a Secret Gist and share the link."*
+> - *"List all gists on my user account."*
+> - *"Inspect the contents of Gist '5b0e0062eb8e9654adad7bb1d81cc75f'."*
+
+* **Supported Actions**:
+  * `list`: List user gists (structured TSV parser, supports `public` / `secret` / `filter` options);
+  * `view`: View raw code contents of a gist (optional `filename` targeting, requires `gist_id`);
+  * `create`: Create gists from `content` string (streamed via safe stdin pipeline) or local `files`, defaults to Secret mode with **explicit unlisted security warnings**;
+  * `edit`: Update descriptions or files in a gist;
+  * `delete`: Permanently delete a gist (requires `confirm: true` and `--yes`).
+
+---
+
+### 14. `github_status`: Cross-Repository Todo & Activity Dashboard
+> **Example Agent Prompts**:
+> - *"What tasks and pull requests need my attention on GitHub today?"*
+> - *"Check recent @mentions and activity across all repositories I follow."*
+
+* **Supported Actions**:
+  * `view`: **Account-level global status cockpit**, aggregating Assigned Issues, Assigned PRs, Review Requests, Mentions, and Repository Activity across all subscribed repositories without needing repository context; supports `-o` org filtering and `-e` noise repository exclusion.
 
 ---
 
