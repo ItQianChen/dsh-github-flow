@@ -7,6 +7,8 @@ import { createApiTool } from './tools/api.js';
 import { createReleaseTool } from './tools/release.js';
 import { createSecretTool } from './tools/secret.js';
 import { createSkillTool } from './tools/skill.js';
+import { createLabelTool } from './tools/label.js';
+import { createRulesetTool } from './tools/ruleset.js';
 import { createHelpTool } from './tools/help.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
@@ -106,6 +108,8 @@ export function apply(ctx: any, config: PluginConfig = {}) {
     ctx.tools.register(createReleaseTool(executor));
     ctx.tools.register(createSecretTool(executor));
     ctx.tools.register(createSkillTool(executor));
+    ctx.tools.register(createLabelTool(executor));
+    ctx.tools.register(createRulesetTool(executor));
     ctx.tools.register(createHelpTool(executor));
   }
 
