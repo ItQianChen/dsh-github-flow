@@ -1,6 +1,7 @@
 import type { GhExecutor } from '../executor.js';
+import { compareGhVersions } from '../executor.js';
 import { renderIssueMarkdown } from '../renderers/markdown.js';
-import { extractImageUrls, downloadImages, buildImageBlocks, filterRequestedUrls } from './image-utils.js';
+import { extractImageUrls, downloadImages, buildImageBlocks, filterRequestedUrls, validateAttachPaths } from './image-utils.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -12,8 +13,8 @@ function normalizeOutput(data: any): Record<string, any> {
   return { result: data !== undefined && data !== null ? data : '' };
 }
 
-// 共享图片工具链的同名再导出：phase8 测试直接 import 本模块，保持路径稳定
-export { extractImageUrls as extractIssueImageUrls } from './image-utils.js';
+// 共享图片工具链的同名再导出：保持路径与单测稳定
+export { extractImageUrls as extractIssueImageUrls, validateAttachPaths } from './image-utils.js';
 
 export function createIssueTool(executor: GhExecutor) {
   return {
@@ -94,6 +95,11 @@ export function createIssueTool(executor: GhExecutor) {
           items: { type: 'string' },
           description: 'view_images 可选：仅下载指定 URL 的图片（从 view 返回的 images 清单中选取，不在清单内的会被拒绝）。留空下载全部（正文+评论）。',
         },
+        attach_images: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '本地图片/附件路径列表（create, edit, comment 动作使用，需 gh ≥ 2.99；禁止 URL，单批上限 50 个）。',
+        },
       },
       required: ['action'],
     },
@@ -124,6 +130,21 @@ export function createIssueTool(executor: GhExecutor) {
 
       const repoArgs = ['-R', repoTarget];
       const runOpts = { cwd, sessionId };
+
+      const appendAttachFlags = async (cmd: string[], attachImages: unknown) => {
+        const attachPaths = validateAttachPaths(attachImages, cwd);
+        if (attachPaths.length > 0) {
+          const version = await executor.getGhVersion();
+          if (version && compareGhVersions(version, '2.99.0') < 0) {
+            throw new Error(
+              `附件上传能力 (\`--attach\`) 需要 GitHub CLI 版本 ≥ 2.99.0，当前版本为: ${version}。\n请升级 gh（Windows: \`winget upgrade GitHub.cli\`，macOS: \`brew upgrade gh\`）后再试。`
+            );
+          }
+          for (const p of attachPaths) {
+            cmd.push('--attach', p);
+          }
+        }
+      };
 
       switch (args.action) {
         case 'list': {
@@ -234,6 +255,7 @@ export function createIssueTool(executor: GhExecutor) {
           if (args.assignees && Array.isArray(args.assignees) && args.assignees.length > 0) {
             cmd.push('--assignee', args.assignees.join(','));
           }
+          await appendAttachFlags(cmd, args.attach_images);
           const res = await executor.run(cmd, runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: 'Issue 创建成功', url: res.rawOutput };
@@ -250,6 +272,7 @@ export function createIssueTool(executor: GhExecutor) {
           if (args.remove_labels && Array.isArray(args.remove_labels) && args.remove_labels.length > 0) {
             for (const l of args.remove_labels) editCmd.push('--remove-label', l);
           }
+          await appendAttachFlags(editCmd, args.attach_images);
           const res = await executor.run(editCmd, runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: `Issue #${args.issue_number} 更新成功`, output: res.rawOutput };
@@ -268,7 +291,9 @@ export function createIssueTool(executor: GhExecutor) {
 
         case 'comment': {
           if (!args.issue_number || !args.body) throw new Error('comment 必须提供 issue_number 和 body');
-          const res = await executor.run(['issue', 'comment', String(args.issue_number), ...repoArgs, '--body', args.body], runOpts);
+          const commentCmd = ['issue', 'comment', String(args.issue_number), ...repoArgs, '--body', args.body];
+          await appendAttachFlags(commentCmd, args.attach_images);
+          const res = await executor.run(commentCmd, runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: '评论发布成功', output: res.rawOutput };
         }

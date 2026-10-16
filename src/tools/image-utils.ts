@@ -255,3 +255,40 @@ export function buildImageBlocks(value: any): any[] {
   }
   return blocks;
 }
+
+/**
+ * 校验并解析本地附件路径列表（Issue/PR --attach 专用）。
+ * - 仅接受本地绝对路径或工作区相对路径
+ * - 严格拒绝 URL（HTTP/HTTPS）
+ * - 单批限制最多 50 个文件（GitHub 限制）
+ * - 校验本地文件物理存在性
+ */
+export function validateAttachPaths(attachImages: unknown, cwd: string): string[] {
+  if (!attachImages) return [];
+  if (!Array.isArray(attachImages)) {
+    throw new Error('`attach_images` 必须为本地文件路径数组（string[]）。');
+  }
+  if (attachImages.length > 50) {
+    throw new Error(`单次上传附件数量超出 GitHub 限制（单批上限 50 个文件），当前提供: ${attachImages.length} 个。`);
+  }
+
+  const resolvedPaths: string[] = [];
+  for (const item of attachImages) {
+    if (typeof item !== 'string' || !item.trim()) {
+      throw new Error('`attach_images` 数组中的文件路径不能为空。');
+    }
+    const trimmed = item.trim();
+    // 严格禁止 URL
+    if (/^https?:\/\//i.test(trimmed)) {
+      throw new Error(
+        `\`attach_images\` 仅支持本地文件路径上传，不支持网络 URL: "${trimmed}"。\n若需引用网络图片，请直接在正文/评论中使用 Markdown 语法 \`![说明](URL)\`，或先将其下载至本地再上传。`
+      );
+    }
+    const absPath = path.isAbsolute(trimmed) ? trimmed : path.resolve(cwd, trimmed);
+    if (!fs.existsSync(absPath)) {
+      throw new Error(`指定的附件文件不存在: "${absPath}"（输入路径: "${trimmed}"）。`);
+    }
+    resolvedPaths.push(absPath);
+  }
+  return resolvedPaths;
+}

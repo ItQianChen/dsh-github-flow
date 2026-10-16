@@ -77,3 +77,11 @@ export declare function downloadImages(urls: string[], run: (url: string) => Pro
 }>): Promise<ImageBatchResult>;
 /** render 的 image 内容块构造（text 块由调用方自行拼）：仅双合法字段才产出块 */
 export declare function buildImageBlocks(value: any): any[];
+/**
+ * 校验并解析本地附件路径列表（Issue/PR --attach 专用）。
+ * - 仅接受本地绝对路径或工作区相对路径
+ * - 严格拒绝 URL（HTTP/HTTPS）
+ * - 单批限制最多 50 个文件（GitHub 限制）
+ * - 校验本地文件物理存在性
+ */
+export declare function validateAttachPaths(attachImages: unknown, cwd: string): string[];

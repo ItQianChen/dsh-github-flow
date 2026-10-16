@@ -1,5 +1,5 @@
 import type { GhExecutor } from '../executor.js';
-export { extractImageUrls as extractIssueImageUrls } from './image-utils.js';
+export { extractImageUrls as extractIssueImageUrls, validateAttachPaths } from './image-utils.js';
 export declare function createIssueTool(executor: GhExecutor): {
     name: string;
     description: string;
@@ -82,6 +82,13 @@ export declare function createIssueTool(executor: GhExecutor): {
                 description: string;
             };
             image_urls: {
+                type: string;
+                items: {
+                    type: string;
+                };
+                description: string;
+            };
+            attach_images: {
                 type: string;
                 items: {
                     type: string;
