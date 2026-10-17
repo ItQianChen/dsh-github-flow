@@ -29,6 +29,11 @@ async function runTests() {
     assert(existsSync(f), `build artifact exists: ${f}`);
   }
 
+  // --- 2b. 客户端 Bundle 语法安全防线（杜绝 Uncaught SyntaxError: Unexpected token 'export' 崩溃）---
+  console.log('\n--- 2b. Client bundle syntax safety ---');
+  const clientJs = await readFile('lib/client.js', 'utf8');
+  assert(!/\bexport\s+(async\s+)?(function|const|var|let|class)\b/.test(clientJs), 'lib/client.js 闭包内绝无非法残留的 export 声明');
+
   // --- 3. defaultListLimit 消费 ---
   console.log('\n--- 3. defaultListLimit consumption ---');
   const { GhExecutor } = await import('../lib/executor.js');

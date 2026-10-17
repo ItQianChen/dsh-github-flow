@@ -67,6 +67,27 @@ async function runTests() {
     assert(builtClient.includes('1 小时 (极低频)'), '提供 1 小时选项');
   });
 
+  test('独立宽屏指南大窗口与双端浅入口契约完整（GithubHelpModal + 四大子版块 + Prompt 复制）', () => {
+    // 1. 独立宽屏大窗口组件与四大分类导航
+    assert(builtClient.includes('GithubHelpModal'), '必须导出独立大窗口组件 GithubHelpModal');
+    assert(builtClient.includes('使用指南与实战手册'), '必须包含独立大窗口标头');
+    assert(builtClient.includes('3分钟极速上手'), '必须包含「🚀 3分钟极速上手」版块');
+    assert(builtClient.includes('Agent 提示词实战'), '必须包含「🤖 Agent 提示词实战」版块');
+    assert(builtClient.includes('两大界面操作图解'), '必须包含「🖥️ 两大界面操作图解」版块');
+    assert(builtClient.includes('常见自愈排错'), '必须包含「🔑 常见自愈排错」版块');
+
+    // 2. 具备 Prompt 一键复制机制
+    assert(builtClient.includes('一键复制 Prompt'), '界面必须提供一键复制 Prompt 按钮');
+
+    // 3. 全景驾驶舱浅入口直达独立大窗口
+    assert(builtClient.includes('isHelpModalOpen'), '全景主页必须包含大窗口打开状态');
+    assert(builtClient.includes('📖 使用指南'), '全景主页必须包含「📖 使用指南」直达按钮');
+
+    // 4. 会话右侧栏浅入口直达独立大窗口
+    assert(builtClient.includes('helpModalOpen'), '会话右侧栏必须包含独立大窗口状态');
+    assert(builtClient.includes('onOpenHelp'), '会话右侧栏必须包含直达大窗口的 onOpenHelp 回调');
+  });
+
   // ============================================================
   // 二、测试云端定时同步调度机制（右侧栏 + 首页通用）
   // ============================================================
