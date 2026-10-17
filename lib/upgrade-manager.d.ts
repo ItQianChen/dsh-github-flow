@@ -1,5 +1,9 @@
-import type { UpgradeExecutionResult, UpgradeStatusResult } from './types.js';
+import type { UpgradeExecutionResult, UpgradeStatusResult, UpgradeErrorType } from './types.js';
 import type { ProxyManager } from './proxy.js';
+/**
+ * 分析升级失败日志中的深层错误特征（重点识别 DSH 内置包管理器 minimumReleaseAge 24 小时防投毒策略）
+ */
+export declare function detectUpgradeErrorType(log?: string): UpgradeErrorType;
 /**
  * 构建跨平台环境自愈增强的 ProcessEnv (重点解决 macOS GUI 应用丢失 PATH 的痛点)
  *

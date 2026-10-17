@@ -4,8 +4,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { PLUGIN_PACKAGE_NAME } from './version.js';
-import type { UpgradeExecutionResult, UpgradeStatusResult } from './types.js';
+import type { UpgradeExecutionResult, UpgradeStatusResult, UpgradeErrorType } from './types.js';
 import type { ProxyManager } from './proxy.js';
+
+/**
+ * 分析升级失败日志中的深层错误特征（重点识别 DSH 内置包管理器 minimumReleaseAge 24 小时防投毒策略）
+ */
+export function detectUpgradeErrorType(log?: string): UpgradeErrorType {
+  if (!log) return 'UNKNOWN';
+  if (/ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION|minimumReleaseAge/i.test(log)) {
+    return 'MINIMUM_RELEASE_AGE_VIOLATION';
+  }
+  if (/ETIMEDOUT|timeout|执行超时/i.test(log)) {
+    return 'TIMEOUT';
+  }
+  return 'UNKNOWN';
+}
 
 /**
  * 构建跨平台环境自愈增强的 ProcessEnv (重点解决 macOS GUI 应用丢失 PATH 的痛点)
@@ -386,10 +400,21 @@ export class UpgradeManager {
         : `升级成功！已安装 ${pkgWithVer}${verSuffix}。需重启 DSH 服务彻底生效后端工具，或刷新网页先体验新版界面。`;
       this.lastResult = { state: 'success', targetVersion: wantVersion as string, message: successMsg, completedAt, environment: env.isDesktop ? 'desktop' : 'web' };
     } else {
+      const fullLog = this.logBuffer.join('\n');
+      const errorType = detectUpgradeErrorType(fullLog);
+
+      let failMsg = `升级失败（安装命令返回非零退出码）。${targetVersion ? `目标版本 ${targetVersion} 未安装成功。` : ''}${actionHint}，或稍后重试一键升级。`;
+
+      // 智能识别：DSH 内置包管理器 minimumReleaseAge 24 小时防投毒安全锁机制
+      if (errorType === 'MINIMUM_RELEASE_AGE_VIOLATION') {
+        failMsg = `🛡️ 触发 DSH 新版本 24 小时安全保护期（npm 供应链防投毒策略）。检测到目标版本刚刚发布未满 24 小时，DSH 内置包管理器暂缓了自动静默升级以保障系统安全。\n【推荐解决步骤】：\n1. 立即尝鲜：请先【完全退出关闭 DSH 应用程序】，然后在系统终端执行手动安装命令（点击「📋 复制命令」获取）；\n2. 稍后升级：无需操作，发版满 24 小时后直接在此点击「⚡ 一键自动升级」即可平滑完成。`;
+      }
+
       this.lastResult = {
         state: 'failed',
         targetVersion,
-        message: `升级失败（安装命令返回非零退出码）。${targetVersion ? `目标版本 ${targetVersion} 未安装成功。` : ''}${actionHint}，或稍后重试一键升级。`,
+        errorType,
+        message: failMsg,
         completedAt,
         environment: env.isDesktop ? 'desktop' : 'web',
       };
@@ -610,6 +635,7 @@ export class UpgradeManager {
               ok: false,
               message: this.lastResult.message || `升级退出码异常 (${code})`,
               needRestart: false,
+              errorType: this.lastResult.errorType,
               environment: env.isDesktop ? 'desktop' : 'web',
               log: this.logBuffer.join('\n'),
             };

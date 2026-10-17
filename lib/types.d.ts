@@ -363,11 +363,13 @@ export interface UpdateInfo {
     checkedAt: number;
 }
 export type UpgradeState = 'idle' | 'upgrading' | 'success' | 'failed';
+export type UpgradeErrorType = 'MINIMUM_RELEASE_AGE_VIOLATION' | 'TIMEOUT' | 'UNKNOWN';
 export interface UpgradeStatusResult {
     state: UpgradeState;
     targetVersion?: string;
     message?: string;
     log?: string;
+    errorType?: UpgradeErrorType;
     startedAt?: number;
     completedAt?: number;
     /** 识别到的宿主环境类型：desktop 为桌面版，web 为网页/CLI版 */
@@ -377,6 +379,7 @@ export interface UpgradeExecutionResult {
     ok: boolean;
     message: string;
     needRestart: boolean;
+    errorType?: UpgradeErrorType;
     log?: string;
     environment?: 'desktop' | 'web';
 }

@@ -260,5 +260,24 @@ console.log('\n--- 8. install verification ---');
   }
 }
 
+// ---- 9. minimumReleaseAge 24小时防投毒策略错误特征检测 ----
+console.log('\n--- 9. minimumReleaseAge error handling ---');
+{
+  const { detectUpgradeErrorType } = await import('../lib/upgrade-manager.js');
+  const sampleLog = '[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 1 lockfile entries failed verification: dsh-github-flow@0.3.0 was published at 2026-10-14, within the minimumReleaseAge cutoff';
+  assert(detectUpgradeErrorType(sampleLog) === 'MINIMUM_RELEASE_AGE_VIOLATION', '识别 minimumReleaseAge 错误码');
+  assert(detectUpgradeErrorType('random pnpm error') === 'UNKNOWN', '非安全锁错误返回 UNKNOWN');
+  assert(detectUpgradeErrorType('connect ETIMEDOUT') === 'TIMEOUT', '超时识别为 TIMEOUT');
+  assert(detectUpgradeErrorType(undefined) === 'UNKNOWN', 'undefined 返回 UNKNOWN');
+
+  const src = readFileSync('src/upgrade-manager.ts', 'utf8');
+  assert(src.includes('24 小时安全保护期'), '包含 24 小时安全保护期中文自愈指引');
+  assert(src.includes('完全退出关闭 DSH'), '引导用户先退出关闭 DSH 应用程序');
+
+  const uiSrc = readFileSync('src/ui/upgrade-card.ts', 'utf8');
+  assert(uiSrc.includes('ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION'), '前端卡片捕获防投毒错误');
+  assert(uiSrc.includes('🛡️'), '前端使用安全盾牌徽标呈现');
+}
+
 console.log(`\n===== Phase 6: ${pass}/${total} PASS =====`);
 if (fails.length) process.exit(1);

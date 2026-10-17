@@ -51,14 +51,30 @@ export function UpgradeNotificationCard(props: { updateInfo: any; isRightbar?: b
         setMsg(json.message || "升级成功！已安装最新依赖。");
       } else {
         setStatus("failed");
-        var logTail = "";
-        if (json.log && typeof json.log === "string") {
-          var lines = json.log.trim().split("\n").filter(function (l: string) { return l.trim(); });
-          if (lines.length > 0) {
-            logTail = "\n\n📝 日志末尾: " + lines.slice(-4).join(" ⏎ ").slice(0, 400);
+        var logText = String(json.log || "");
+        var isAgeViolation = json.errorType === "MINIMUM_RELEASE_AGE_VIOLATION" ||
+          logText.includes("ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION") ||
+          logText.includes("minimumReleaseAge") ||
+          (typeof json.message === "string" && (json.message.includes("24 小时安全保护期") || json.message.includes("防投毒")));
+
+        if (isAgeViolation) {
+          // 命中 DSH 内置包管理器 24 小时防投毒策略：收起英文报错堆栈，呈现全中文专业自愈指引
+          setMsg(
+            "🛡️ 触发 DSH 新版本 24 小时安全保护期（npm 供应链防投毒策略）。检测到目标版本刚刚发布未满 24 小时，DSH 内置包管理器暂缓了自动升级以保障系统安全。\n\n" +
+            "【推荐操作】：\n" +
+            "1. 立即尝鲜：请先【完全退出关闭 DSH 应用程序】，然后在系统终端执行手动安装命令（点击右侧「📋 复制命令」获取）；\n" +
+            "2. 稍后升级：无需任何操作，发版满 24 小时后直接在此点击「⚡ 一键自动升级」即可平滑完成。"
+          );
+        } else {
+          var logTail = "";
+          if (json.log && typeof json.log === "string") {
+            var lines = json.log.trim().split("\n").filter(function (l: string) { return l.trim(); });
+            if (lines.length > 0) {
+              logTail = "\n\n📝 日志末尾: " + lines.slice(-4).join(" ⏎ ").slice(0, 400);
+            }
           }
+          setMsg((json.message || "升级命令执行失败，请在宿主终端手动执行。") + logTail);
         }
-        setMsg((json.message || "升级命令执行失败，请在宿主终端手动执行。") + logTail);
       }
     } catch (err: any) {
       setStatus("failed");
@@ -88,6 +104,7 @@ export function UpgradeNotificationCard(props: { updateInfo: any; isRightbar?: b
   };
 
   var h = React.createElement;
+  var isAgeViolation = msg.includes("24 小时安全保护期") || msg.includes("防投毒");
 
   if (isRightbar) {
     return h(
@@ -100,10 +117,14 @@ export function UpgradeNotificationCard(props: { updateInfo: any; isRightbar?: b
           borderRadius: "8px",
           background: status === "success"
             ? "var(--dsw-alias-state-success-subtle, rgba(46, 160, 67, 0.12))"
-            : "var(--dsw-alias-bg-module-platform, rgba(9, 105, 218, 0.08))",
+            : (isAgeViolation
+                ? "rgba(217, 119, 6, 0.12)"
+                : "var(--dsw-alias-bg-module-platform, rgba(9, 105, 218, 0.08))"),
           border: "1px solid " + (status === "success"
             ? "var(--dsw-alias-state-success-border, rgba(46, 160, 67, 0.35))"
-            : "var(--dsw-alias-border-l2, rgba(9, 105, 218, 0.25))"),
+            : (isAgeViolation
+                ? "rgba(217, 119, 6, 0.35)"
+                : "var(--dsw-alias-border-l2, rgba(9, 105, 218, 0.25))")),
           fontSize: "12px",
         },
       },
@@ -113,7 +134,7 @@ export function UpgradeNotificationCard(props: { updateInfo: any; isRightbar?: b
         h(
           "span",
           { style: { fontWeight: 600, color: "var(--dsw-alias-label-primary, #1f2328)" } },
-          status === "success" ? "🎉 升级完成" : "🚀 发现新版 v" + updateInfo.latestVersion
+          status === "success" ? "🎉 升级完成" : (isAgeViolation ? "🛡️ 处于 24h 安全保护期" : "🚀 发现新版 v" + updateInfo.latestVersion)
         ),
         h(
           "button",
@@ -197,15 +218,17 @@ export function UpgradeNotificationCard(props: { updateInfo: any; isRightbar?: b
         borderRadius: "8px",
         background: status === "success"
           ? "linear-gradient(90deg, rgba(46, 160, 67, 0.15) 0%, rgba(9, 105, 218, 0.12) 100%)"
-          : "linear-gradient(90deg, rgba(9, 105, 218, 0.12) 0%, rgba(137, 87, 229, 0.12) 100%)",
-        border: "1px solid " + (status === "success" ? "rgba(46, 160, 67, 0.35)" : "rgba(9, 105, 218, 0.3)"),
+          : (isAgeViolation
+              ? "linear-gradient(90deg, rgba(217, 119, 6, 0.15) 0%, rgba(245, 158, 11, 0.12) 100%)"
+              : "linear-gradient(90deg, rgba(9, 105, 218, 0.12) 0%, rgba(137, 87, 229, 0.12) 100%)"),
+        border: "1px solid " + (status === "success" ? "rgba(46, 160, 67, 0.35)" : (isAgeViolation ? "rgba(217, 119, 6, 0.35)" : "rgba(9, 105, 218, 0.3)")),
         fontSize: "13px",
       },
     },
     h(
       "div",
       { style: { display: "flex", alignItems: "center", gap: "10px" } },
-      h("span", { style: { fontSize: "20px" } }, status === "success" ? "🎉" : "🚀"),
+      h("span", { style: { fontSize: "20px" } }, status === "success" ? "🎉" : (isAgeViolation ? "🛡️" : "🚀")),
       h(
         "div",
         null,
@@ -214,7 +237,9 @@ export function UpgradeNotificationCard(props: { updateInfo: any; isRightbar?: b
           { style: { fontWeight: 600, color: "var(--dsw-alias-label-primary, #1f2328)" } },
           status === "success"
             ? "升级完成！新版本 v" + updateInfo.latestVersion + " 已写入"
-            : "发现 dsh-github-flow 新版本 v" + updateInfo.latestVersion + "（当前版本: v" + updateInfo.currentVersion + "）"
+            : (isAgeViolation
+                ? "🛡️ 触发 DSH 新版本 24 小时安全保护期 (供应链防投毒策略)"
+                : "发现 dsh-github-flow 新版本 v" + updateInfo.latestVersion + "（当前版本: v" + updateInfo.currentVersion + "）")
         ),
         h(
           "div",
@@ -270,7 +295,9 @@ export function UpgradeNotificationCard(props: { updateInfo: any; isRightbar?: b
             } : {}),
           },
         },
-        status === "failed" ? "📋 复制命令手动升级" : "📋 复制命令"
+        status === "failed"
+          ? (isAgeViolation ? "📋 复制命令 (需先退出DSH)" : "📋 复制命令手动升级")
+          : "📋 复制命令"
       ),
       h(
         "button",
