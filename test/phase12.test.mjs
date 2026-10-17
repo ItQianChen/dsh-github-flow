@@ -170,6 +170,53 @@ async function runTests() {
     assert(builtClient.includes('showToast'), '必须具备失败时的 Toast 提示');
     assert(builtClient.includes('networkAlertBannerEl'), '页面根容器必须置顶注入网络告警横幅');
     assert(builtClient.includes('isFail'), '客户端刷新必须严格分流判断失败状态');
+    assert(builtClient.includes('fetchWithRetry'), '客户端必须包含 fetchWithRetry 调用');
+    assert(builtClient.includes('网络抖动，正在自愈重试'), '必须包含自愈重试的用户提示');
+  });
+
+  await asyncTest('fetchWithRetry 阶梯退避算法与软硬错误识别断言', async () => {
+    const { fetchWithRetry } = await import('../lib/ui/utils.js');
+    let callCount = 0;
+    const retryDelays = [];
+
+    // 模拟第一次和第二次失败（软错误 503），第三次成功
+    const fakeFetch = async () => {
+      callCount++;
+      if (callCount < 3) {
+        return {
+          status: 503,
+          ok: false,
+          statusText: 'Service Unavailable',
+          json: async () => ({}),
+        };
+      }
+      return {
+        status: 200,
+        ok: true,
+        statusText: 'OK',
+        json: async () => ({ ok: true, data: { success: true } }),
+      };
+    };
+
+    const oldFetch = globalThis.fetch;
+    globalThis.fetch = fakeFetch;
+
+    try {
+      const result = await fetchWithRetry('https://api.github.com/mock', {}, {
+        maxRetries: 3,
+        baseDelayMs: 40,
+        onRetry: (attempt, delay) => {
+          retryDelays.push(delay);
+        },
+      });
+
+      assert.strictEqual(callCount, 3, '重试了两次并在第三次成功');
+      assert.strictEqual(result.json.data.success, true, '成功拿到业务数据');
+      assert.strictEqual(retryDelays.length, 2, '记录了两次退避等待');
+      assert(retryDelays[1] > retryDelays[0], '第二次退避时间大于第一次退避时间（阶梯指数增长）');
+    } finally {
+      globalThis.fetch = oldFetch;
+    }
   });
 
   await asyncTest('overview 路由在 PR 接口失败时保全已有有效 PR 缓存，绝不将数据冲刷为空且标记 partialFailure', async () => {

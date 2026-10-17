@@ -224,7 +224,7 @@ console.log('\n--- 8. fetch timeout guards ---');
   const guardedRefresh = (cs.match(/fetch\("\/api\/github\/refresh", \{ method: "POST", signal: controller\.signal \}\)/g) || []).length;
   assert(refreshCalls === 2 && guardedRefresh === 2, `两处 refresh 预置请求均绑定 signal（实际: ${guardedRefresh}/${refreshCalls}）`);
   // 8.2 右侧栏 loadData 必须有 AbortController + 45s（原先完全没有）
-  assert(cs.includes('var res = await fetch(url, { signal: controller.signal });'), '右侧栏 overview fetch 绑定 signal');
+  assert(cs.includes('signal: controller.signal'), '右侧栏 overview fetch 绑定 signal');
   assert((cs.match(/\}, 45000\);/g) || []).length === 2, `两处 loadData 均有 45 秒超时定时器（实际: ${(cs.match(/\}, 45000\);/g) || []).length}）`);
   // 8.3 引导卡刷新按钮 10s 超时
   assert(cs.includes('probeController.abort(); }, 10000);'), 'AuthGuideCard 探测按钮 10s 超时');

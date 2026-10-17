@@ -13,6 +13,7 @@ declare function NetworkAlertBanner(props: any): any;
 declare function UpgradeNotificationCard(props: any): any;
 declare function AuthGuideCard(props: any): any;
 declare function GlobalSyncSettingsModal(props: any): any;
+declare function fetchWithRetry(url: string, options?: any, config?: any): Promise<any>;
 
 /**
  * 全局工作区仪表盘主面板组件 (Dashboard View)
@@ -128,16 +129,25 @@ export function GithubWorkspacePanel() {
       if (forceRefresh) {
         url += "?force=true";
       }
-      var res = await fetch(url, { signal: controller.signal });
+      // 接入 1s/2s/4s 阶梯退避重试，平滑吸收代理节点与网络的偶发抖动断流
+      var { res, json } = await fetchWithRetry(url, {}, {
+        signal: controller.signal,
+        maxRetries: 3,
+        baseDelayMs: 1000,
+        onRetry: (attempt: number) => {
+          setSyncStatus("syncing");
+          setError(`网络抖动，正在自愈重试 (${attempt}/3)...`);
+        },
+      });
+
       if (!res.ok) {
-        var errText = await res.text().catch(() => "");
+        var errText = (typeof json === "string" ? json : JSON.stringify(json)) || res.statusText;
         var failMsg = `获取全局数据失败（HTTP ${res.status}）${errText ? ": " + errText : ""}`;
         setSyncStatus("failed");
         setError(failMsg);
         if (forceRefresh) showToast("❌ 刷新失败：" + failMsg);
         return;
       }
-      var json = await res.json();
       if (json.ok && json.data) {
         var isFail = Boolean(
           json.partialFailure ||

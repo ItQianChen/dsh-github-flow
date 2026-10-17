@@ -49,3 +49,111 @@ export function eventLabel(event: any): string {
   if (e === "pull_request") return "🔀 PR";
   return e || "";
 }
+
+export interface FetchRetryConfig {
+  maxRetries?: number; // 默认 3 次
+  baseDelayMs?: number; // 基础等待时间，默认 1000ms
+  onRetry?: (attempt: number, delayMs: number, reason: string) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * 带有阶梯退避重试（Backoff Retry）的通用异步拉取函数
+ *
+ * 核心设计理由与约束：
+ * 1. 应对代理节点不稳定、TLS 握手卡顿、短时网络抖动（半秒至两秒微断流）；
+ * 2. 阶梯退避时序：第 1 次失败等 1s (1000ms)，第 2 次等 2s (2000ms)，第 3 次等 4s (4000ms)，附加 0~200ms Jitter；
+ * 3. 智能区分软硬错误：401/403/404/400 确定性错误坚决不重试，仅在网络超时、不可达、或带有 networkError 时重试；
+ * 4. 严格响应外部 AbortSignal，组件卸载或用户手动打断时立即退出等待，绝无内存泄漏。
+ */
+export async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  config: FetchRetryConfig = {}
+): Promise<{ res: Response; json: any }> {
+  var maxRetries = config.maxRetries !== undefined ? config.maxRetries : 3;
+  var baseDelayMs = config.baseDelayMs !== undefined ? config.baseDelayMs : 1000;
+  var signal = config.signal || options.signal;
+
+  var attempt = 0;
+  while (true) {
+    attempt++;
+    var currentRes: Response | null = null;
+    var currentJson: any = null;
+    var failureReason = "";
+    var shouldRetry = false;
+
+    try {
+      if (signal && (signal as any).aborted) {
+        throw new Error("Aborted");
+      }
+
+      currentRes = await fetch(url, { ...options, signal });
+
+      // 硬错误守卫：客户端确定性错误（如未授权、权限拒绝、不存在、参数错误）坚决不重试
+      if (currentRes.status === 401 || currentRes.status === 403 || currentRes.status === 404 || currentRes.status === 400) {
+        currentJson = await currentRes.json().catch(() => ({}));
+        return { res: currentRes, json: currentJson };
+      }
+
+      if (!currentRes.ok) {
+        failureReason = "HTTP " + currentRes.status + " " + currentRes.statusText;
+        shouldRetry = true;
+      } else {
+        currentJson = await currentRes.json().catch(() => null);
+        // 业务层软错误检测（后端返回了 200，但标记了 networkError 或 partialFailure）
+        var isNetworkError = Boolean(
+          currentJson && (
+            currentJson.partialFailure ||
+            currentJson.data?.partialFailure ||
+            currentJson.data?.networkError ||
+            currentJson.data?.auth?.networkError
+          )
+        );
+
+        if (isNetworkError) {
+          failureReason = currentJson.error || currentJson.data?.networkErrorReason || "云端接口网络抖动";
+          shouldRetry = true;
+        } else {
+          // 成功获取完整且无网络错误的数据
+          return { res: currentRes, json: currentJson };
+        }
+      }
+    } catch (err: any) {
+      if ((signal && (signal as any).aborted) || err.name === "AbortError") {
+        throw err;
+      }
+      failureReason = err.message || "网络连接中断或超时";
+      shouldRetry = true;
+    }
+
+    // 判断是否已耗尽重试次数
+    if (!shouldRetry || attempt > maxRetries) {
+      if (currentRes) {
+        return { res: currentRes, json: currentJson || {} };
+      }
+      throw new Error(failureReason || "网络请求失败");
+    }
+
+    // 计算阶梯退避等待时间：baseDelayMs * 2^(attempt - 1) + Jitter 自适应微扰
+    var exponentialDelay = baseDelayMs * Math.pow(2, attempt - 1);
+    var maxJitter = Math.min(200, Math.floor(exponentialDelay * 0.2));
+    var jitter = Math.floor(Math.random() * (maxJitter + 1));
+    var totalDelay = exponentialDelay + jitter;
+
+    if (config.onRetry) {
+      config.onRetry(attempt, totalDelay, failureReason);
+    }
+
+    // 可中断的睡眠等待
+    await new Promise((resolve, reject) => {
+      var timer = setTimeout(resolve, totalDelay);
+      if (signal) {
+        signal.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new Error("Aborted"));
+        }, { once: true });
+      }
+    });
+  }
+}

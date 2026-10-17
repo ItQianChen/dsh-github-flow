@@ -6,7 +6,7 @@ declare global {
   }
 }
 
-import { formatRelativeTime, rollupCiStatus, reviewDecisionBadge, eventLabel } from './ui/utils.js';
+import { formatRelativeTime, rollupCiStatus, reviewDecisionBadge, eventLabel, fetchWithRetry } from './ui/utils.js';
 import { GITHUB_PANEL_CSS, injectStyles } from './ui/styles.js';
 import { renderOctocat, renderGitIcon, renderOctocatBadge, renderPluginBadge } from './ui/icons.js';
 import {
@@ -788,10 +788,21 @@ window.__ModuleLoader__.load({
           if (params.length > 0) {
             url += "?" + params.join("&");
           }
-          var res = await fetch(url, { signal: controller.signal });
+
+          // 接入 1s/2s/4s 阶梯退避重试，平滑吸收代理节点与网络的偶发抖动断流
+          var { res, json } = await fetchWithRetry(url, {}, {
+            signal: controller.signal,
+            maxRetries: 3,
+            baseDelayMs: 1000,
+            onRetry: (attempt) => {
+              setSyncStatus("syncing");
+              setError(`网络抖动，正在自愈重试 (${attempt}/3)...`);
+            },
+          });
+
           if (!res.ok) {
-            var errText = await res.text().catch(() => "");
-            var msg = `后端服务未就绪 (${res.status}): ${errText || res.statusText}`;
+            var errText = (typeof json === "string" ? json : JSON.stringify(json)) || res.statusText;
+            var msg = `后端服务未就绪 (${res.status}): ${errText}`;
             setSyncStatus("failed");
             setError(msg);
             if (forceRefresh) {
@@ -799,7 +810,7 @@ window.__ModuleLoader__.load({
             }
             return;
           }
-          var json = await res.json();
+
           if (json.ok && json.data) {
             var isFail = Boolean(
               json.partialFailure ||
