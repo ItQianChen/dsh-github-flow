@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手和脚，为人机协作打造沉浸式 GitHub 工作台。</b><br>
-  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>14 大领域 Agent 核心工具（85+ action，覆盖 PR 审查/Issue 任务/Actions 工作流与构建缓存治理/免 clone 读文件/分支规则集策略排障/代码片段 Gist/标签与全局待办大盘/密钥与变量管理）</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
+  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>18 大领域 Agent 核心工具（104 个 action，覆盖 PR 审查/Issue 任务/Actions 工作流与构建缓存治理/免 clone 读文件/分支规则集策略排障/代码片段 Gist/标签与全局待办大盘/密钥与变量管理/智能体任务会话/社区 Discussions 讨论/Projects v2 看板/云端 Codespaces/运行时遥测与自愈健康度）</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
 </p>
 
 <p align="center">
@@ -73,7 +73,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ## 🤖 核心工具集 (Agent Tools)：给 Agent 装上 GitHub 的手和脚
 
-本插件精选聚合为 **14 大领域核心工具（85+ action）**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）**、**高密度 Markdown 原生渲染（列表输出压缩 70%+ Token）** 与 **零参数 CWD 智能绑定**。
+本插件精选聚合为 **18 大领域核心工具（104 个 action）**，官方命令语义化覆盖率高达 **87%（104/120）**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）**、**高密度 Markdown 原生渲染（列表输出压缩 70%+ Token）**、**OAuth Scope 缺失单行自愈引导** 与 **零参数 CWD 智能绑定**。
 
 ### 1. `github_pr`：PR 全生命周期管理与自动化代码审查
 > **典型对话指令**：
@@ -205,7 +205,9 @@ dsh plugin --profile web add dsh-github-flow
   * `search`：跨 GitHub 开源仓库检索符合规范的 Agent Skills；
   * `preview`：免安装直接在线预览指定 Skill 的 `SKILL.md` 规则与行为指令；
   * `install`：一键安装指定 Skill 至本地环境（支持 `scope: 'project'` 或 `'user'`，需 `confirm: true`）；
-  * `list`：查看当前环境已安装的 Skills 清单。
+  * `list`：查看当前环境已安装的 Skills 清单；
+  * `publish`：🆕 **Agent 技能自检与发布闭环**：默认 `--dry-run` 模式进行 agentskills.io 规范体检，支持 `--fix` 自动剔除安装残留元数据，正式发版强制要求指定版本 `tag` 并附带 `confirm: true` 自动创建 GitHub Release；
+  * `update`：🆕 **批量检查与同步更新**：默认 `--dry-run` 只读比对本地与远端 SHA 差异，支持 `--all` 批量同步更新已安装技能。
 
 ---
 
@@ -216,11 +218,11 @@ dsh plugin --profile web add dsh-github-flow
 > - *"调用 gh 命令报错 'authentication failed'，该怎么排查？"*
 
 * **支持操作 (`topic` / `gh_command`)**：
-  * `overview`：输出全景工具箱导航与核心职责速查（14 大工具矩阵全景）；
+  * `overview`：输出全景工具箱导航与核心职责速查（18 大工具矩阵全景）；
   * `mapping`：**官方命令映射总表**，精准指示任意 `gh <command>` 对应哪个插件工具，以及未覆盖域对应的 GitHub REST/GraphQL 端点；
   * `search_syntax`：日期区间、状态筛选与高级布尔搜索语法指南；
   * `troubleshooting`：常见错误自愈配方（认证失效、网络超时、SOCKS5 代理配置、权限不足等）；
-  * 领域速查：`pr` / `issue` / `run` / `repo` / `release` / `secret` / `skill` / `label` / `ruleset` / `cache` / `gist` / `status` 专项高阶用法；
+  * 领域速查：`pr` / `issue` / `run` / `repo` / `release` / `secret` / `skill` / `label` / `ruleset` / `cache` / `gist` / `status` / `agent_task` / `discussion` / `project` / `codespace` 专项高阶用法；
   * `gh_command`：直接透传查询官方原生手册（如 `gh_command: 'ruleset'`）。
 
 ---
@@ -290,13 +292,78 @@ dsh plugin --profile web add dsh-github-flow
 
 ---
 
-### 14. `github_status`：跨仓库待办与动态全局大盘
+### 14. `github_status`：跨仓库待办与运行时健康度大盘
 > **典型对话指令**：
 > - *"帮我看看今天在 GitHub 上有哪些需要我处理的事情？"*
 > - *"查看当前账号在所有订阅仓库中的最新动态与 @提及"*
+> - *"查看当前工具链的运行健康度与 API 降级率报表"*
 
 * **支持操作 (`action`)**：
-  * `view`：**账号维度跨仓一站式聚合大盘**，汇总展示「指派给我的 Issue」、「指派给我的 PR」、「等待我评审的 PR (Review Requests)」、「提及我的消息 (Mentions)」以及「订阅仓库近期动态 (Repository Activity)」，无需绑定单仓即可一览全局工作台；支持 `-o` 组织过滤与 `-e` 排除噪音仓库。
+  * `view`：**账号维度跨仓一站式聚合大盘**（默认），汇总展示「指派给我的 Issue」、「指派给我的 PR」、「等待我评审的 PR (Review Requests)」、「提及我的消息 (Mentions)」以及「订阅仓库近期动态 (Repository Activity)」，无需绑定单仓即可一览全局工作台；支持 `-o` 组织过滤与 `-e` 排除噪音仓库；
+  * `health`：🆕 **工具链运行时健康度与降级率审计报表**：基于 Cordis `tools/result` 事件切面，实时审计全插件 18 大核心工具的调用总量、成功率、综合健康分（0~100 分）、API 降级率与智能自愈建议。
+
+---
+
+### 15. `github_agent_task`：云端编码智能体任务会话治理
+> **典型对话指令**：
+> - *"查阅我名下所有的 GitHub Copilot 智能体任务会话列表"*
+> - *"检视任务 'e2fa49d2' 的执行状态，并抓取详细会话日志"*
+> - *"向云端 Agent 发起新任务：'重构网络通信模块以支持自动重试'，基于 develop 分支"*
+
+* **支持操作 (`action`)**：
+  * `list`：列出当前用户关联的智能体任务（支持 `-L/--limit` 与 `-R/--repo`）；
+  * `view`：查看任务详情与会话执行日志（支持 `--log`，强制校验 `task_id` 防交互挂起）；
+  * `create`：向云端 Agent 派发新编码/重构任务（支持 `-b/--base` 指定基准分支，`-a/--custom-agent` 指定仓库智能体定义）。
+
+---
+
+### 16. `github_discussion`：团队技术研讨与开源社区 RFC 闭环
+> **典型对话指令**：
+> - *"查看当前仓库分类为 'Ideas' 的开放讨论列表"*
+> - *"查看讨论 #101 的正文内容与回复楼层"*
+> - *"在 'RFC' 分类下发起新讨论：'关于接入自动化遥测系统的提案'"*
+> - *"向讨论 #101 发表回复评论"*
+
+* **支持操作 (`action`)**：
+  * `list`：查阅 Discussions 列表（支持 `-c/--category`、`-s/--state`、`--labels` 与 `-S/--search` 过滤）；
+  * `view`：查看讨论正文与多楼层评论（支持 `--comments`，强制校验 `discussion_number`）；
+  * `create`：发起新讨论（`category`、`title`、`body` 三项必填，缺少给出友好指引）；
+  * `edit`：编辑现有讨论的标题或正文；
+  * `comment`：向指定讨论追加发表评论回复。
+
+---
+
+### 17. `github_project`：Projects v2 项目看板与任务规划
+> **典型对话指令**：
+> - *"列出我名下的所有 Projects v2 项目看板"*
+> - *"查看项目 #1 看板中的所有任务条目，筛选 open 状态"*
+> - *"将 Issue 'https://github.com/owner/repo/issues/10' 添加到项目 #1 看板中"*
+> - *"在项目 #1 看板中创建一个草稿条目：'完成单元测试覆盖'"*
+
+* **支持操作 (`action`)**：
+  * `list`：查看用户或组织的项目列表（默认 `owner: '@me'`，底层自动适配 `--format json` 勘误）；
+  * `view`：查看项目元数据、可见性、描述与 README；
+  * `item-list`：查看看板条目（支持 Projects 过滤查询语法 `--query`，如 `is:open assignee:@me`）；
+  * `item-add`：关联已有 Issue/PR URL 进看板；
+  * `item-create`：在项目中创建草稿条目（Draft Issue）；
+  * `item-delete`：从看板移除条目（强制 `confirm: true` 拦截）；
+  * 🔑 **权限自愈**：检测到缺少 `read:project` 权限时自动输出单行自愈授权卡片（`gh auth refresh -s read:project`）。
+
+---
+
+### 18. `github_codespace`：云端远程开发环境管控 (MVP)
+> **典型对话指令**：
+> - *"查看我当前有哪些运行中的 Codespace 云端开发机？"*
+> - *"检视实例 'fuzzy-spoon-69vj' 的机器规格与空闲停机策略"*
+> - *"把开发机 'fuzzy-spoon-69vj' 关机停止运行，防止扣除核时费用"*
+> - *"销毁已经用完的临时 Codespace 实例"*
+
+* **支持操作 (`action`)**：
+  * `list`：列出当前用户或组织名下的 Codespace 环境（展示状态、机器规格与上次使用时间）；
+  * `view`：检视环境详细配置与 DevContainer 路径（强制校验 `codespace` 名称防交互挂起）；
+  * `stop`：发送停机指令，立即停止计算资源计费；
+  * `delete`：安全销毁实例（物理销毁不可逆，强制 `confirm: true` 拦截，底层传 `-f` 保证无交互幂等删除）；
+  * 🔑 **权限自愈**：检测到缺少 `codespace` 权限时自动输出单行自愈授权卡片（`gh auth refresh -h github.com -s codespace`）。
 
 ---
 
@@ -429,7 +496,7 @@ dsh plugin --profile web add dsh-github-flow
 
 在 DSH 任意聊天窗口输入：
 
-* `/gh status`：一键诊断当前 GitHub CLI 账号认证状态、作用域、当前工作区关联仓库及插件版本；
+* `/gh status`：一键诊断当前 GitHub CLI 账号认证状态、作用域、当前工作区关联仓库、插件版本与**工具链运行时可观测性（健康分与 API 降级率）**；
 * `/gh upgrade`：主动检测 npm 最新版本，自适应输出当前操作系统（macOS / Windows / Linux）的最佳升级指引；
 * `/gh help`：查看帮助说明与 Agent 典型对话范例。
 

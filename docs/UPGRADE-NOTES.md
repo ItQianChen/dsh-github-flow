@@ -54,7 +54,7 @@
 
 # 3. 构建（版本一致性校验在此拦截漏改）+ 全量测试
 pnpm run build
-pnpm test    # 16 阶段全绿
+pnpm test    # 20 阶段全绿
 
 # 4. 本机 e2e（必须先重启 DSH 桌面进程——Node 模块缓存，软链重建不注入运行中进程）
 #    重启后验证：GET /api/github/check-update 的 currentVersion = 0.4.0

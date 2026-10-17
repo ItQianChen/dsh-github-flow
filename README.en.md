@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>Give DeepSeek Harness Agents native hands and feet to operate GitHub, crafting an immersive collaboration cockpit for developers.</b><br>
-  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>14 core domain Agent tools (85+ actions covering PR review/Issue tracking/Actions workflow & cache governance/clone-free file reads/branch ruleset policy diagnosis/Gist snippets/labels & global status dashboards/secrets & variables)</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
+  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>18 core domain Agent tools (104 actions covering PR review/Issue tracking/Actions workflow & cache governance/clone-free file reads/branch ruleset policy diagnosis/Gist snippets/labels & global status dashboards/secrets & variables/agent tasks/discussions/projects v2/codespaces/runtime telemetry)</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
 </p>
 
 <p align="center">
@@ -73,7 +73,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ## 🤖 Core Agent Tools: Equipping Agents with Native GitHub Powers
 
-Consolidates scattered GitHub endpoints into **14 core domain tools (85+ actions)**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)** and **Zero-argument CWD auto-binding**.
+Consolidates scattered GitHub endpoints into **18 core domain tools (104 actions)** with an official command coverage of **87% (104/120)**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)**, **OAuth Scope self-healing guidance**, and **Zero-argument CWD auto-binding**.
 
 ### 1. `github_pr`: Pull Request Lifecycle & Automated Code Review
 > **Example Agent Prompts**:
@@ -205,7 +205,9 @@ Consolidates scattered GitHub endpoints into **14 core domain tools (85+ actions
   * `search`: Discover compliant Agent skills across open-source GitHub repositories;
   * `preview`: Preview `SKILL.md` rule instructions without installing;
   * `install`: Install skills locally (`scope: 'project'` or `'user'`; requires `confirm: true`);
-  * `list`: Inspect installed skills in the current environment.
+  * `list`: Inspect installed skills in the current environment;
+  * `publish`: 🆕 **Skill Compliance Validation & Publishing Loop**: Safe `--dry-run` inspection against agentskills.io specifications, `--fix` metadata stripping, and release publishing with required `tag` and `confirm: true`;
+  * `update`: 🆕 **Batch Inspection & Sync Updates**: Safe `--dry-run` check comparing local and remote tree SHAs, with `--all` batch synchronization.
 
 ---
 
@@ -216,11 +218,11 @@ Consolidates scattered GitHub endpoints into **14 core domain tools (85+ actions
 > - *"How do I debug 'authentication failed' errors from gh?"*
 
 * **Supported Actions**:
-  * `overview`: Complete toolbox navigation and summary table (14 core tools);
+  * `overview`: Complete toolbox navigation and summary table (18 core tools);
   * `mapping`: **Official gh Command ↔ Tool Action Mapping Table**, detailing exact tool calls and REST/GraphQL fallback routes;
   * `search_syntax`: Date ranges, qualifiers, and boolean query syntax;
   * `troubleshooting`: Self-healing recipes for authentication loss, timeouts, SOCKS5 proxy configs, and permissions;
-  * Domain guides: In-depth usage guides for `pr`, `issue`, `run`, `repo`, `release`, `secret`, `skill`, `label`, `ruleset`, `cache`, `gist`, and `status`;
+  * Domain guides: In-depth usage guides for `pr`, `issue`, `run`, `repo`, `release`, `secret`, `skill`, `label`, `ruleset`, `cache`, `gist`, `status`, `agent_task`, `discussion`, `project`, and `codespace`;
   * `gh_command`: Direct pass-through lookup of official gh manual entries (e.g. `gh_command: 'ruleset'`).
 
 ---
@@ -290,13 +292,78 @@ Consolidates scattered GitHub endpoints into **14 core domain tools (85+ actions
 
 ---
 
-### 14. `github_status`: Cross-Repository Todo & Activity Dashboard
+### 14. `github_status`: Cross-Repository Todo & Runtime Health Dashboard
 > **Example Agent Prompts**:
 > - *"What tasks and pull requests need my attention on GitHub today?"*
 > - *"Check recent @mentions and activity across all repositories I follow."*
+> - *"Audit the runtime health score and degradation rate report of our GitHub tools."*
 
 * **Supported Actions**:
-  * `view`: **Account-level global status cockpit**, aggregating Assigned Issues, Assigned PRs, Review Requests, Mentions, and Repository Activity across all subscribed repositories without needing repository context; supports `-o` org filtering and `-e` noise repository exclusion.
+  * `view`: **Account-level global status cockpit** (default), aggregating Assigned Issues, Assigned PRs, Review Requests, Mentions, and Repository Activity across all subscribed repositories without needing repository context; supports `-o` org filtering and `-e` noise repository exclusion;
+  * `health`: 🆕 **Toolchain Runtime Health & Degradation Audit Report**: Powered by Cordis `tools/result` event telemetry, audits total calls, success rates, comprehensive health score (0-100), API degradation rates, and actionable self-healing upgrade suggestions across all 18 tools.
+
+---
+
+### 15. `github_agent_task`: Cloud Coding Agent Session Governance
+> **Example Agent Prompts**:
+> - *"List all GitHub Copilot Coding Agent task sessions assigned under my account."*
+> - *"View task 'e2fa49d2' details and fetch its execution logs."*
+> - *"Dispatch a task to the cloud Agent: 'Refactor network layer with retry support', based on branch develop."*
+
+* **Supported Actions**:
+  * `list`: List agent tasks (supports `-L/--limit` and `-R/--repo`);
+  * `view`: View task session details and logs (supports `--log`, strictly requires `task_id` to prevent TTY hangs);
+  * `create`: Create and dispatch a cloud agent coding task (supports `-b/--base` and `-a/--custom-agent`).
+
+---
+
+### 16. `github_discussion`: Team Discussions & Open-Source RFC Loop
+> **Example Agent Prompts**:
+> - *"List open discussions in category 'Ideas' for this repository."*
+> - *"View discussion #101 body and comment thread."*
+> - *"Start a discussion under 'RFC': 'Proposal on telemetry observability'."*
+> - *"Post a reply comment to discussion #101."*
+
+* **Supported Actions**:
+  * `list`: Query discussions (supports `-c/--category`, `-s/--state`, `--labels`, and `-S/--search`);
+  * `view`: Read discussion body and replies (supports `--comments`, requires `discussion_number`);
+  * `create`: Start a discussion (requires `category`, `title`, and `body`);
+  * `edit`: Update discussion title or body;
+  * `comment`: Post a comment reply to an existing discussion.
+
+---
+
+### 17. `github_project`: Projects v2 Board & Item Planning
+> **Example Agent Prompts**:
+> - *"List all Projects v2 boards under my account."*
+> - *"View items in project board #1 with filter query 'is:open'."*
+> - *"Add Issue 'https://github.com/owner/repo/issues/10' to project board #1."*
+> - *"Create a draft issue item in project #1 titled 'Review unit test coverage'."*
+
+* **Supported Actions**:
+  * `list`: List user or organization projects (default `owner: '@me'`, natively handles `--format json`);
+  * `view`: Inspect project metadata, visibility, description, and README;
+  * `item-list`: Inspect board items (supports Projects query filter syntax `--query`, e.g., `is:open assignee:@me`);
+  * `item-add`: Associate existing Issue/PR URLs to a project board;
+  * `item-create`: Create draft issue items;
+  * `item-delete`: Remove items from board (guarded by required `confirm: true`);
+  * 🔑 **Scope Self-Healing**: Automatically renders a single-line self-healing command card (`gh auth refresh -s read:project`) when permissions are missing.
+
+---
+
+### 18. `github_codespace`: Cloud Remote Development Environment (MVP)
+> **Example Agent Prompts**:
+> - *"Check which cloud Codespace environments are currently running."*
+> - *"Inspect instance specs and idle timeout for 'fuzzy-spoon-69vj'."*
+> - *"Stop 'fuzzy-spoon-69vj' to avoid billable core-hour consumption."*
+> - *"Permanently delete an unused temporary Codespace."*
+
+* **Supported Actions**:
+  * `list`: List Codespaces under current user or organization;
+  * `view`: Inspect environment specs, DevContainer path, and status (requires `codespace` name);
+  * `stop`: Stop running instances to halt billing immediately;
+  * `delete`: Safely delete instances (requires `confirm: true`, passes `-f` for non-interactive execution);
+  * 🔑 **Scope Self-Healing**: Automatically renders a single-line self-healing command card (`gh auth refresh -h github.com -s codespace`) when missing required scopes.
 
 ---
 
@@ -426,7 +493,7 @@ Initial Mount (0ms) ──────────> Instantly render local persi
 
 Enter in any DSH chat window:
 
-* `/gh status`: Diagnostics for GitHub CLI auth status, scopes, active workspace repository, and plugin version;
+* `/gh status`: Diagnostics for GitHub CLI auth status, scopes, active workspace repository, plugin version, and **runtime toolchain telemetry (health score & degradation rates)**;
 * `/gh upgrade`: Check the latest npm release and output platform-tailored upgrade instructions (macOS / Windows / Linux);
 * `/gh help`: View help documentation and example Agent dialogue recipes.
 
