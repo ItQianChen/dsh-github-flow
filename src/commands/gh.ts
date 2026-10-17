@@ -2,8 +2,9 @@ import type { GhExecutor } from '../executor.js';
 import type { UpdateChecker } from '../updater.js';
 import { CURRENT_PLUGIN_VERSION, PLUGIN_PACKAGE_NAME, NPM_PACKAGE_URL } from '../version.js';
 import { loadUpdateSettings, describeUpdateMode, type UpdateSourceMode } from '../update-settings.js';
+import { TelemetryCollector, defaultTelemetryCollector } from '../telemetry.js';
 
-export function registerGhCommand(commandsService: any, executor: GhExecutor, updateChecker?: UpdateChecker) {
+export function registerGhCommand(commandsService: any, executor: GhExecutor, updateChecker?: UpdateChecker, telemetryCollector?: TelemetryCollector) {
   if (!commandsService || typeof commandsService.register !== 'function') return;
 
   commandsService.register({
@@ -44,6 +45,21 @@ export function registerGhCommand(commandsService: any, executor: GhExecutor, up
           if (repo.description) md += `- 简介: ${repo.description}\n`;
         } else {
           md += `\n*当前目录尚未关联 Git 远程仓库或未托管在 GitHub。*\n`;
+        }
+
+        // 遥测运行时健康度与降级率小节
+        const collector = telemetryCollector || defaultTelemetryCollector;
+        const summary = collector.getSummary();
+        let healthBadge = '🟢 极佳';
+        if (summary.statusLevel === 'NEEDS_ATTENTION') healthBadge = '🔴 需关注';
+        else if (summary.statusLevel === 'GOOD') healthBadge = '🟡 良好';
+
+        md += `\n**工具链运行时可观测性 (Telemetry)**:\n`;
+        md += `- 综合健康度: ${healthBadge} (${summary.healthScore} 分)\n`;
+        md += `- 统计样本量: ${summary.totalCalls} 次 Agent 工具调用\n`;
+        md += `- API 降级率: \`${summary.degradationRate}%\` (${summary.degradedCount} 次降级)\n`;
+        if (summary.recommendations.length > 0 && summary.degradationRate > 0) {
+          md += `> 💡 优化建议: ${summary.recommendations[0]}\n`;
         }
 
         return {

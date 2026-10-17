@@ -1,5 +1,6 @@
 import type { GhExecutor } from '../executor.js';
-export declare function createStatusTool(executor: GhExecutor): {
+import { TelemetryCollector } from '../telemetry.js';
+export declare function createStatusTool(executor: GhExecutor, telemetryCollector?: TelemetryCollector): {
     name: string;
     description: string;
     parameters: {
@@ -32,7 +33,7 @@ export declare function createStatusTool(executor: GhExecutor): {
             text: string;
         }[];
     };
-    execute(args: any, execContext: any): Promise<{
+    execute(args: any, execContext: any): Promise<import("../telemetry.js").TelemetrySummary | {
         parsed: import("../renderers/status.js").ParsedStatusReport;
         rawText: string;
     }>;

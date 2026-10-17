@@ -17,6 +17,7 @@ import { createDiscussionTool } from './tools/discussion.js';
 import { createProjectTool } from './tools/project.js';
 import { createCodespaceTool } from './tools/codespace.js';
 import { createHelpTool } from './tools/help.js';
+import { defaultTelemetryCollector } from './telemetry.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
 import { UpdateChecker } from './updater.js';
@@ -100,12 +101,27 @@ export function apply(ctx: any, config: PluginConfig = {}) {
     ctx.github = executor;
   }
 
-  // 2. 注册人类 Slash 命令 (/gh status, /gh upgrade, /gh help)
-  if (ctx.commands) {
-    registerGhCommand(ctx.commands, executor, updateChecker);
+  // 2. 注册 Cordis tools/result 事件切面（无侵入全量工具审计与降级率打点）
+  if (ctx.on && typeof ctx.on === 'function') {
+    ctx.on('tools/result', (exec: any, result: any) => {
+      try {
+        const toolName = exec?.name || exec?.tool?.name || '';
+        if (typeof toolName === 'string' && toolName.startsWith('github_')) {
+          const args = exec?.arguments || exec?.args || {};
+          defaultTelemetryCollector.recordCall(toolName, args, result);
+        }
+      } catch {
+        // Fail-Open 非阻塞防线：严禁打点逻辑异常影响主工具调用
+      }
+    });
   }
 
-  // 3. 注册 Agent 模型工具集（核心领域工具 + 元指南）
+  // 3. 注册人类 Slash 命令 (/gh status, /gh upgrade, /gh help)
+  if (ctx.commands) {
+    registerGhCommand(ctx.commands, executor, updateChecker, defaultTelemetryCollector);
+  }
+
+  // 4. 注册 Agent 模型工具集（核心领域工具 + 元指南）
   if (ctx.tools) {
     ctx.tools.register(createPrTool(executor));
     ctx.tools.register(createIssueTool(executor));
@@ -119,7 +135,7 @@ export function apply(ctx: any, config: PluginConfig = {}) {
     ctx.tools.register(createRulesetTool(executor));
     ctx.tools.register(createCacheTool(executor));
     ctx.tools.register(createGistTool(executor));
-    ctx.tools.register(createStatusTool(executor));
+    ctx.tools.register(createStatusTool(executor, defaultTelemetryCollector));
     ctx.tools.register(createAgentTaskTool(executor));
     ctx.tools.register(createDiscussionTool(executor));
     ctx.tools.register(createProjectTool(executor));
