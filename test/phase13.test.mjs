@@ -101,6 +101,9 @@ async function runTests() {
     const watchHandler = registered['/api/github/git-watch'];
     assert(typeof watchHandler === 'function', 'git-watch 路由必须已注册');
 
+    const localGitStatusHandler = registered['/api/github/local-git-status'];
+    assert(typeof localGitStatusHandler === 'function', 'local-git-status 路由必须已注册');
+
     // 非 Git 目录测试
     const tempDir = path.join(os.tmpdir(), `dsh-watch-test-${Date.now()}`);
     fs.mkdirSync(tempDir, { recursive: true });
@@ -118,6 +121,19 @@ async function runTests() {
       );
       assert.strictEqual(status, 400, '非 Git 目录必须返回 400 拒绝监听');
       assert(body.includes('非 Git 仓库'), '应提示非 Git 仓库');
+
+      let lStatus = 0;
+      let lBody = '';
+      await localGitStatusHandler(
+        { method: 'GET', url: `/api/github/local-git-status?cwd=${encodeURIComponent(tempDir)}` },
+        {
+          setHeader() {},
+          end(d) { lBody = d; },
+          get statusCode() { return lStatus; },
+          set statusCode(v) { lStatus = v; }
+        }
+      );
+      assert.strictEqual(lStatus, 400, 'local-git-status 面对非 Git 目录返回 400');
     } finally {
       try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
     }
@@ -131,6 +147,14 @@ async function runTests() {
     // 右侧栏必须包含 git-watch 长轮询与 localGitWatch 条件
     assert(rightbarCode.includes('/api/github/git-watch'), '右侧栏必须挂载本地 git-watch 监听');
     assert(rightbarCode.includes('localGitWatch'), '右侧栏受 localGitWatch 门控');
+
+    // 动静解耦：git-watch 变动时必须调用 refreshLocalGit 纯本地刷新，严禁调用 loadData 连带拉取远端
+    assert(rightbarCode.includes('refreshLocalGit();'), 'git-watch changed 时必须局部调用 refreshLocalGit');
+    assert(rightbarCode.includes('/api/github/local-git-status'), '前端包含 local-git-status 局部端点调用');
+
+    // 网络弹性：全景面板与右侧栏必须监听 window online 自愈
+    assert(rightbarCode.includes('addEventListener("online"'), '右侧栏必须监听 online 网络恢复自愈');
+    assert(panelCode.includes('addEventListener("online"'), '全景主页必须监听 online 网络恢复自愈');
 
     // 首页（全景主页）坚决不包含任何 git-watch 调用
     assert(!panelCode.includes('/api/github/git-watch'), '全景首页坚决不能包含任何 git-watch 调用，保持轻量');

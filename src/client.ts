@@ -909,6 +909,31 @@ window.__ModuleLoader__.load({
         };
       }, [cwd, sessionId, syncSettings.strategy, syncSettings.cloudSyncIntervalMs, loadData]);
 
+      // 纯本地 Git 状态局部刷新：只更新未提交改动(Dirty)、分支与提交记录，彻底切断连带远端网络风暴
+      var refreshLocalGit = React.useCallback(async () => {
+        if (!cwd) return;
+        try {
+          var res = await fetch("/api/github/local-git-status?cwd=" + encodeURIComponent(String(cwd)));
+          if (!res.ok) return;
+          var json = await res.json().catch(() => null);
+          if (json && json.ok && json.data) {
+            setData((prev: any) => {
+              if (!prev) return prev;
+              var next = {
+                ...prev,
+                gitStatus: json.data.gitStatus !== undefined ? json.data.gitStatus : prev.gitStatus,
+                commitLog: json.data.commitLog !== undefined ? json.data.commitLog : prev.commitLog,
+                branches: json.data.branches !== undefined ? json.data.branches : prev.branches,
+              };
+              saveStoredRightbarData(cwd, next);
+              return next;
+            });
+          }
+        } catch {
+          // 纯本地静默更新，网络异常或组件卸载不打扰用户
+        }
+      }, [cwd]);
+
       React.useEffect(() => {
         if (!syncSettings.localGitWatch || !cwd || !data?.repo) return;
         var aborted = false;
@@ -927,7 +952,8 @@ window.__ModuleLoader__.load({
               var json = await res.json().catch(() => null);
               if (aborted) break;
               if (json && json.changed) {
-                loadData(false);
+                // 仅局部刷新本地未提交文件、分支与提交记录，零网络流量，彻底切断连带远端网络风暴！
+                refreshLocalGit();
               }
             } catch (err: any) {
               if (aborted || err.name === "AbortError") break;
@@ -942,7 +968,7 @@ window.__ModuleLoader__.load({
           aborted = true;
           watchController.abort();
         };
-      }, [cwd, data?.repo, syncSettings.localGitWatch, loadData]);
+      }, [cwd, data?.repo, syncSettings.localGitWatch, refreshLocalGit]);
 
       React.useEffect(() => {
         var container = containerRef && containerRef.current;
@@ -963,12 +989,23 @@ window.__ModuleLoader__.load({
               })
               .catch(function () {});
           } else if (syncSettings.localGitWatch && data?.repo) {
-            loadData(false);
+            // 聚焦时若开启了本地 Git 监听，仅局部刷新本地状态，杜绝多余远端请求
+            refreshLocalGit();
           }
         };
+
+        var onOnline = () => {
+          // 监听网络由断网恢复连接瞬间，自动静默发起一次全量同步，消除离线警告横幅并拉新
+          loadData(false);
+        };
+
         window.addEventListener("focus", onFocus);
-        return () => window.removeEventListener("focus", onFocus);
-      }, [data, loadData, syncSettings.localGitWatch]);
+        window.addEventListener("online", onOnline);
+        return () => {
+          window.removeEventListener("focus", onFocus);
+          window.removeEventListener("online", onOnline);
+        };
+      }, [data, loadData, refreshLocalGit, syncSettings.localGitWatch]);
 
       var [aboutModalOpen, setAboutModalOpen] = React.useState(false);
       var [rightbarModalOpen, setRightbarModalOpen] = React.useState(false);
