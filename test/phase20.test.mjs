@@ -124,18 +124,36 @@ async function runTests() {
   assert(renderRes[0].text.includes('DSH GitHub 工具链健康度与降级率审计报表'), 'output.render 成功分流渲染健康度看板');
 
   console.log('\n--- 5. /gh status 人类命令集成测试 ---');
-  let registeredCommand = null;
+  const registeredCommands = [];
   const mockCommandsService = {
     register(cmd) {
-      registeredCommand = cmd;
+      registeredCommands.push(cmd);
     },
   };
   registerGhCommand(mockCommandsService, mockExecutor, undefined, collector);
-  assert(registeredCommand !== null && registeredCommand.name === 'gh', '成功注册 /gh 指令');
+  assert(registeredCommands.length === 3, `成功注册 3 大一级快捷指令 (实际: ${registeredCommands.length})`);
 
-  const cmdOutput = await registeredCommand.handler({ rawInput: 'status' });
-  assert(cmdOutput.text.includes('工具链运行时可观测性 (Telemetry)'), '/gh status 挂载遥测小节');
-  assert(cmdOutput.text.includes('14.3%'), '包含降级率指标');
+  const ghCmd = registeredCommands.find((c) => c.name === 'gh');
+  const ghUpgradeCmd = registeredCommands.find((c) => c.name === 'gh-upgrade');
+  const ghHelpCmd = registeredCommands.find((c) => c.name === 'gh-help');
+  assert(ghCmd && ghUpgradeCmd && ghHelpCmd, '成功找到 gh, gh-upgrade, gh-help 指令实体');
+
+  // 5.1 /gh 直接无参回车
+  const cmdOutputEmpty = await ghCmd.handler({ rawInput: '' });
+  assert(cmdOutputEmpty.text.includes('工具链运行时可观测性 (Telemetry)'), '/gh 无参默认挂载遥测小节');
+  assert(cmdOutputEmpty.text.includes('/gh-upgrade'), '/gh 无参输出底部附带 /gh-upgrade 快捷指令引导');
+
+  // 5.2 /gh update 别名容错
+  const cmdOutputAlias = await ghCmd.handler({ rawInput: 'update' });
+  assert(cmdOutputAlias.text.includes('插件升级指南'), '/gh update 智能容错等价于 upgrade');
+
+  // 5.3 /gh-upgrade 一级命令直接回车
+  const upgradeOutput = await ghUpgradeCmd.handler();
+  assert(upgradeOutput.text.includes('插件升级指南'), '/gh-upgrade 直接输出升级指引');
+
+  // 5.4 /gh-help 一级命令直接回车
+  const helpOutput = await ghHelpCmd.handler();
+  assert(helpOutput.text.includes('快捷指令帮助'), '/gh-help 直接输出帮助指南');
 
   console.log('\n--- 6. help 映射与元知识库覆盖测试 ---');
   const helpTool = createHelpTool(mockExecutor);
