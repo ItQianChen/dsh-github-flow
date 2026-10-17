@@ -2,9 +2,9 @@ import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConf
 import type { ProxyManager } from './proxy.js';
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
-import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines } from './executor/git-parser.js';
+import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
-export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, getPlatformInstallGuide, getGhUpgradeHint, };
+export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, getPlatformInstallGuide, getGhUpgradeHint, };
 export declare class GhExecutor {
     ghPath: string;
     defaultTimeoutMs: number;
@@ -114,6 +114,31 @@ export declare class GhExecutor {
      * 符合 global-overview 端点「工作区探测不发网络」的性能红线。
      */
     getLocalGitStatus(cwd?: string): Promise<GitLocalStatus | null>;
+    /**
+     * 分页获取本地未提交文件列表（无网络开销，纯本地毫秒级响应）
+     */
+    getUncommittedFiles(cwd?: string, limit?: number, skip?: number): Promise<{
+        items: Array<{
+            status: string;
+            path: string;
+        }>;
+        totalCount: number;
+        hasMore: boolean;
+    }>;
+    /**
+     * 获取指定文件的未提交 Git Diff 对比（Unified Diff 格式）。
+     * 严格实施路径穿越安全校验；支持已跟踪修改文件、暂存文件与未跟踪新增文件（??）。
+     */
+    getFileDiff(cwd: string | undefined, relativePath: string): Promise<{
+        ok: boolean;
+        filePath: string;
+        status?: string;
+        diff?: string;
+        additions?: number;
+        deletions?: number;
+        isBinary?: boolean;
+        error?: string;
+    }>;
     /**
      * 本地 Git 提交记录（三段一次返回：本地领先 / 远程领先 / 最近提交）。
      *

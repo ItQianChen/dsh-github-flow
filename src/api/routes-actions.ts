@@ -251,6 +251,18 @@ export function registerActionRoutes(
               sendJson(res, 200, { ok: true, currentBranch: r.currentBranch, message: `已成功切换到分支 ${r.currentBranch}` });
               break;
             }
+            case 'file_diff':
+            case 'get_file_diff': {
+              const fileTarget = typeof payload.file === 'string' ? payload.file.trim() : (typeof payload.filePath === 'string' ? payload.filePath.trim() : '');
+              if (!fileTarget) {
+                sendJson(res, 400, { ok: false, error: '缺少目标文件路径' });
+                return;
+              }
+              const resolvedCwd = executor.resolveWorkspaceCwd(cwd);
+              const r = await executor.getFileDiff(resolvedCwd, fileTarget);
+              sendJson(res, 200, { ok: r.ok, data: r, error: r.error });
+              break;
+            }
             default:
               sendJson(res, 400, { ok: false, message: `未知的操作类型: ${payload.action}` });
           }
@@ -411,6 +423,71 @@ export function registerActionRoutes(
         });
       } catch (err: any) {
         sendJson(res, 500, { ok: false, error: err?.message || '获取本地 Git 状态失败' });
+      }
+    },
+  });
+
+  // 7. 单个未提交文件的 Git Diff 差异查询（供右侧栏 FileDiffModal 调用）
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/file-diff',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, message: '仅支持 GET 请求' });
+        return;
+      }
+      try {
+        const url = new URL(req.url || '', 'http://127.0.0.1');
+        const cwd = url.searchParams.get('cwd') || undefined;
+        const file = url.searchParams.get('file');
+        if (!file || !file.trim()) {
+          sendJson(res, 400, { ok: false, error: '缺少必需的 file 参数' });
+          return;
+        }
+
+        const resolvedCwd = executor.resolveWorkspaceCwd(cwd);
+        if (!hasGitDir(resolvedCwd)) {
+          sendJson(res, 400, { ok: false, error: '当前工作区不是 Git 仓库' });
+          return;
+        }
+
+        const diffResult = await executor.getFileDiff(resolvedCwd, file.trim());
+        if (!diffResult.ok) {
+          sendJson(res, 400, { ok: false, error: diffResult.error || '获取文件差异失败' });
+          return;
+        }
+        sendJson(res, 200, { ok: true, data: diffResult });
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, error: err?.message || '获取文件差异失败' });
+      }
+    },
+  });
+
+  // 8. 本地未提交文件列表轻量流式分页查询（供右侧栏滑动加载调用）
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/uncommitted-files',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, message: '仅支持 GET 请求' });
+        return;
+      }
+      try {
+        const url = new URL(req.url || '', 'http://127.0.0.1');
+        const cwd = url.searchParams.get('cwd') || undefined;
+        const limit = Math.min(Math.max(1, Number(url.searchParams.get('limit')) || 15), 100);
+        const skip = Math.max(0, Number(url.searchParams.get('skip')) || 0);
+
+        const resolvedCwd = executor.resolveWorkspaceCwd(cwd);
+        if (!hasGitDir(resolvedCwd)) {
+          sendJson(res, 400, { ok: false, error: '当前工作区不是 Git 仓库' });
+          return;
+        }
+
+        const result = await executor.getUncommittedFiles(resolvedCwd, limit, skip);
+        sendJson(res, 200, { ok: true, data: result });
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, error: err?.message || '获取未提交文件列表失败' });
       }
     },
   });

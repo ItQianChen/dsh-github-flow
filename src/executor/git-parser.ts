@@ -10,7 +10,7 @@ import type { GitLocalStatus, GitCommitEntry, GitBranchesResult, GitBranchItem }
  *   `## master` / `## HEAD (no branch)`               无 upstream（ahead/behind 未知=-1）
  * 后续每行 `<XY> <path>` 为 porcelain 变更项（XY 两字符状态码，?? = untracked）。
  */
-export function parseGitStatusOutput(output: string): GitLocalStatus | null {
+export function parseGitStatusOutput(output: string, maxFiles = 20): GitLocalStatus | null {
   const lines = (output || '').split('\n').filter((l) => l.length > 0);
   if (lines.length === 0 || !lines[0].startsWith('## ')) return null;
 
@@ -36,7 +36,8 @@ export function parseGitStatusOutput(output: string): GitLocalStatus | null {
   }
 
   const dirtyFiles: Array<{ status: string; path: string }> = [];
-  for (let i = 1; i < lines.length && dirtyFiles.length < 20; i++) {
+  const limit = maxFiles > 0 ? maxFiles : Number.MAX_SAFE_INTEGER;
+  for (let i = 1; i < lines.length && dirtyFiles.length < limit; i++) {
     const line = lines[i];
     if (line.length < 4) continue;
     const status = line.slice(0, 2).trim() || 'M';
@@ -148,3 +149,28 @@ export function parseGitBranchLines(output: string): GitBranchesResult {
 
   return { current, branches };
 }
+
+/**
+ * 解析 unified diff 输出，统计增删行数与区块数量。
+ * 忽略 diff 文件头（--- 和 +++），仅统计真正的改动行（+ 与 -）。
+ */
+export function parseUncommittedDiff(rawDiff: string): { additions: number; deletions: number; hunksCount: number } {
+  let additions = 0;
+  let deletions = 0;
+  let hunksCount = 0;
+  if (!rawDiff || typeof rawDiff !== 'string') {
+    return { additions, deletions, hunksCount };
+  }
+  const lines = rawDiff.split('\n');
+  for (const line of lines) {
+    if (line.startsWith('@@')) {
+      hunksCount++;
+    } else if (line.startsWith('+') && !line.startsWith('+++')) {
+      additions++;
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      deletions++;
+    }
+  }
+  return { additions, deletions, hunksCount };
+}
+

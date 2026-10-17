@@ -1457,6 +1457,42 @@ body[data-ds-dark-theme] .dsh-github-help-title {
 body[data-ds-dark-theme] .dsh-github-help-desc {
   color: var(--dsw-alias-label-secondary, #8b949e);
 }
+
+/* 16. 未提交文件清单交互与 Git Diff 对比视图 */
+.dsh-github-dirty-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  user-select: none;
+}
+.dsh-github-dirty-item:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.05));
+}
+body[data-ds-dark-theme] .dsh-github-dirty-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.dsh-github-dirty-item:active {
+  background: var(--dsw-alias-interactive-bg-active, rgba(0, 0, 0, 0.08));
+}
+body[data-ds-dark-theme] .dsh-github-dirty-item:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dsh-github-inline-diff-view {
+  animation: dsh-github-fade-in 0.15s ease-out;
+}
+@keyframes dsh-github-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+body[data-ds-dark-theme] .dsh-github-inline-diff-content {
+  background-color: var(--dsw-alias-bg-layer-2, #1c2128) !important;
+  border-color: var(--dsw-alias-border-l1, #30363d) !important;
+}
 `;
 
 export function injectStyles() {

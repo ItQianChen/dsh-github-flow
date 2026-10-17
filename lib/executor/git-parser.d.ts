@@ -9,7 +9,7 @@ import type { GitLocalStatus, GitCommitEntry, GitBranchesResult } from '../types
  *   `## master` / `## HEAD (no branch)`               无 upstream（ahead/behind 未知=-1）
  * 后续每行 `<XY> <path>` 为 porcelain 变更项（XY 两字符状态码，?? = untracked）。
  */
-export declare function parseGitStatusOutput(output: string): GitLocalStatus | null;
+export declare function parseGitStatusOutput(output: string, maxFiles?: number): GitLocalStatus | null;
 /**
  * 解析 `git log` 输出为提交条目数组。
  * 支持两种形态：
@@ -23,3 +23,12 @@ export declare function parseGitLogLines(output: string): GitCommitEntry[];
  * 格式为: %(refname:short)|%(HEAD)|%(upstream:short)|%(committerdate:relative)|%(objectname:short)|%(subject)
  */
 export declare function parseGitBranchLines(output: string): GitBranchesResult;
+/**
+ * 解析 unified diff 输出，统计增删行数与区块数量。
+ * 忽略 diff 文件头（--- 和 +++），仅统计真正的改动行（+ 与 -）。
+ */
+export declare function parseUncommittedDiff(rawDiff: string): {
+    additions: number;
+    deletions: number;
+    hunksCount: number;
+};
