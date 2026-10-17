@@ -43,6 +43,22 @@ export declare function createSkillTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            directory: {
+                type: string;
+                description: string;
+            };
+            dry_run: {
+                type: string;
+                description: string;
+            };
+            fix: {
+                type: string;
+                description: string;
+            };
+            tag: {
+                type: string;
+                description: string;
+            };
             confirm: {
                 type: string;
                 description: string;
@@ -59,5 +75,5 @@ export declare function createSkillTool(executor: GhExecutor): {
             text: string;
         }[];
     };
-    execute(args: any, execContext: any): Promise<Record<string, any>>;
+    execute(args: any, execContext: any): Promise<Record<string, any> | import("../renderers/skill.js").SkillPublishReport>;
 };

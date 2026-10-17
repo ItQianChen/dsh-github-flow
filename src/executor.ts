@@ -239,9 +239,20 @@ export class GhExecutor {
         }
       }
 
+      // 失败时若子进程输出了 stdout（如 gh skill publish 校验未通过时的 TSV 诊断行），
+      // 予以保留并应用同样的字符/字节截断预算，以便上层渲染器结构化解析诊断信息，避免丢失关键现场
+      let rawOutput: string | undefined;
+      if (err.stdout) {
+        const outText = Buffer.isBuffer(err.stdout) ? err.stdout.toString('utf8') : String(err.stdout);
+        if (outText.trim()) {
+          rawOutput = truncateOutput(outText.trim(), this.maxOutputChars, this.maxOutputBytes).text;
+        }
+      }
+
       return {
         ok: false,
         error: friendlyError,
+        rawOutput,
       };
     }
   }
