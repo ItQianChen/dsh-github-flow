@@ -13,6 +13,13 @@ export function renderSkillMarkdown(args: any, value: any): string {
     ].join('\n');
   }
   if (typeof value.result === 'string') return value.result;
+
+  // 6.0 特化 action 处理（update）
+  if (args?.action === 'update' || value?.action === 'update') {
+    const extra = value.output || value.detail;
+    return `### 🔄 ${value.message || 'Agent Skills 更新结果'}\n` + (extra ? `\`\`\`text\n${String(extra).trim()}\n\`\`\`` : '');
+  }
+
   if (typeof value.message === 'string' && !value.items) {
     const extra = value.detail || value.output;
     return `**${value.message}**` + (extra ? `\n\`\`\`\n${extra}\n\`\`\`` : '');

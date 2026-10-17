@@ -22,6 +22,8 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_status\` | 跨仓库待办与动态聚合看板 | 账号维度汇总指派给我的 Issue/PR、等待评审、被 @提及 以及订阅仓库近期动态 |
 | \`github_agent_task\` | 云端智能体编码任务会话治理 | 查阅已分派任务列表、检视任务状态与会话日志、向云端 Agent 发起新编码重构任务 |
 | \`github_discussion\` | 团队技术讨论与开源社区 RFC 闭环 | 浏览讨论列表、检视正文与评论楼层、发起新讨论、编辑正文与追加回复 |
+| \`github_project\` | Projects v2 项目看板与任务规划 | 查阅项目列表/详情、浏览看板条目 (Items)、添加 Issue/PR 到看板、创建草稿任务与删除条目 |
+| \`github_codespace\` | 云端远程开发环境管控 (MVP) | 查阅运行中实例、检视机器规格配置、停机防计费 (stop)、安全销毁环境 (delete，需 confirm) |
 | \`github_help\` | 路由导航、官方语法速查与故障自愈 | 遇到不确定的操作、搜索语法或接口报错时查询用法与诊断配方 |
 
 💡 **使用准则**：优先调用高层语义工具（pr / issue / run / repo / release / secret）；当高层工具无法满足特殊接口需求时，再降级使用 \`github_api\`。
@@ -253,6 +255,31 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **编辑讨论**: \`github_discussion(action: 'edit', discussion_number: 123, title: '新标题', body: '修正后的正文')\`
 - **发表讨论回复**: \`github_discussion(action: 'comment', discussion_number: 123, body: '赞同该方案！')\``,
 
+  project: `### 📋 github_project 项目看板与规划指南
+
+基于 GitHub Projects v2，支持项目看板与任务全生命周期管理：
+- **查看项目列表**: \`github_project(action: 'list', owner: '@me', closed: false)\`
+  - 缺省 owner 为 \`@me\`（当前用户），可指定组织或用户名称。
+- **查看项目详情**: \`github_project(action: 'view', project_number: 1)\`
+- **浏览看板条目 (Items)**: \`github_project(action: 'item-list', project_number: 1, query: 'is:open')\`
+- **添加现有 Issue/PR 到看板**: \`github_project(action: 'item-add', project_number: 1, url: 'https://github.com/owner/repo/issues/10')\`
+- **创建草稿条目**: \`github_project(action: 'item-create', project_number: 1, title: '待调研技术方案', body: '方案说明...')\`
+- **删除看板条目**: \`github_project(action: 'item-delete', item_id: 'PVTI_...', confirm: true)\`
+  - 必须附加 \`confirm: true\`；仅解除条目与看板的关联，不删除 Issue/PR 原型。
+- 🔑 若报缺少权限，在终端执行单行自愈授权命令：\`gh auth refresh -s read:project\``,
+
+  codespace: `### ☁️ github_codespace 云端开发环境指南
+
+管理 GitHub Codespaces 云端远程工作区（精选高频实用 MVP）：
+- **查看云端环境列表**: \`github_codespace(action: 'list', limit: 30)\`
+- **检视实例配置与状态**: \`github_codespace(action: 'view', codespace: 'fuzzy-spoon-69vj')\`
+  - 必须显式提供 \`codespace\` 名称，杜绝交互式挂起。
+- **停止运行环境 (防计费)**: \`github_codespace(action: 'stop', codespace: 'fuzzy-spoon-69vj')\`
+  - 立即向云端实例发送停机信号，防止持续扣除计算核时配额。
+- **安全销毁实例**: \`github_codespace(action: 'delete', codespace: 'fuzzy-spoon-69vj', confirm: true)\`
+  - 物理销毁不可逆，必须附加 \`confirm: true\`。
+- 🔑 若报缺少权限，在终端执行单行自愈授权命令：\`gh auth refresh -h github.com -s codespace\``,
+
   mapping: `### 🗺️ gh 命令 ↔ 插件工具映射总表
 
 #### 一、已覆盖域映射（语义化 action 精确对照）
@@ -367,6 +394,24 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`gh discussion edit\` | \`github_discussion(action:'edit', discussion_number:…)\` | 修改讨论标题或正文 |
 | \`gh discussion comment\` | \`github_discussion(action:'comment', discussion_number:…, body:…)\` | 追加讨论评论 |
 
+**Project（github_project，6 action）**
+| gh 命令 | 插件调用 | 备注 |
+| :--- | :--- | :--- |
+| \`gh project list\` | \`github_project(action:'list')\` | 项目看板列表，默认 @me |
+| \`gh project view\` | \`github_project(action:'view', project_number:…)\` | 项目元数据与描述 |
+| \`gh project item-list\` | \`github_project(action:'item-list', project_number:…)\` | 任务条目看板 |
+| \`gh project item-add\` | \`github_project(action:'item-add', project_number:…, url:…)\` | 关联 Issue/PR 到看板 |
+| \`gh project item-create\` | \`github_project(action:'item-create', project_number:…, title:…)\` | 创建草稿条目 |
+| \`gh project item-delete\` | \`github_project(action:'item-delete', item_id:…, confirm:true)\` | 移除条目，需 confirm |
+
+**Codespace（github_codespace，4 action）**
+| gh 命令 | 插件调用 | 备注 |
+| :--- | :--- | :--- |
+| \`gh codespace list\` | \`github_codespace(action:'list')\` | 云端开发环境列表 |
+| \`gh codespace view\` | \`github_codespace(action:'view', codespace:…)\` | 实例详情，名称必填 |
+| \`gh codespace stop\` | \`github_codespace(action:'stop', codespace:…)\` | 关机防计费 |
+| \`gh codespace delete\` | \`github_codespace(action:'delete', codespace:…, confirm:true)\` | 销毁实例，需 confirm |
+
 #### 二、归属提示（命令域与工具名不同构）
 
 - \`gh workflow …\` / \`gh search …\` / \`gh variable …\` 分别归 **github_run / github_repo / github_secret**（不是独立工具）
@@ -378,8 +423,6 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 
 | gh 域 | 用途 | 推荐 REST 端点 |
 | :--- | :--- | :--- |
-| \`gh project\` | Projects v2 | \`graphql\`（Projects API 仅 GraphQL） |
-| \`gh codespace\` | 云端开发环境 | \`user/codespaces\` |
 | \`gh org\` | 组织信息 | \`orgs/{org}\` |
 | \`gh auth/config/extension/alias\` | 本机配置类 | 多数无需 API（本机文件/命令） |
 | \`gh browse\` | 打开浏览器 | 直接给用户 URL 即可 |
@@ -448,6 +491,8 @@ export function createHelpTool(executor: GhExecutor) {
             'status',
             'agent_task',
             'discussion',
+            'project',
+            'codespace',
             'mapping',
             'search_syntax',
             'troubleshooting',

@@ -16,14 +16,14 @@ function normalizeOutput(data: any): Record<string, any> {
 export function createSkillTool(executor: GhExecutor) {
   return {
     name: 'github_skill',
-    description: '通过 GitHub CLI 官方生态发现与管理 Agent Skills：跨仓库检索开源 Skills、预览 SKILL.md 内容、安装到本地 Agent 宿主（Claude Code / Cursor / Copilot 等）、查看已安装列表、以及合规自检与安全发布（publish）。install 会写入磁盘，需 confirm: true；publish 默认 --dry-run 零副作用自检，正式发布需 tag 与 confirm: true。基于 gh CLI preview 特性（需 gh >= 2.9x）。',
+    description: '通过 GitHub CLI 官方生态发现与管理 Agent Skills：跨仓库检索开源 Skills、预览 SKILL.md 内容、安装到本地 Agent 宿主（Claude Code / Cursor / Copilot 等）、查看已安装列表、合规自检与安全发布（publish）以及检查与同步更新（update）。install 会写入磁盘需 confirm；publish 默认 --dry-run 自检，正式发布需 tag 与 confirm；update 默认 --dry-run 检查。基于 gh CLI preview 特性（需 gh >= 2.9x）。',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['search', 'preview', 'install', 'list', 'publish'],
-          description: 'Skill 操作类型。',
+          enum: ['search', 'preview', 'install', 'list', 'publish', 'update'],
+          description: 'Skill 操作类型。search 检索、preview 预览、install 安装、list 查看已安装、publish 校验/发布、update 检查与同步更新。',
         },
         query: {
           type: 'string',
@@ -73,6 +73,11 @@ export function createSkillTool(executor: GhExecutor) {
         tag: {
           type: 'string',
           description: '发布的版本 Tag（如 "v1.0.0"），正式发布（dry_run: false）时必填（防交互式挂起）。',
+        },
+        skill_names: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '要更新的特定 Skill 名称列表（update 动作可选）。',
         },
         confirm: {
           type: 'boolean',
@@ -216,6 +221,31 @@ export function createSkillTool(executor: GhExecutor) {
           const combinedOutput = res.rawOutput || '';
           const stderrText = res.error || '';
           return parseSkillPublishOutput(combinedOutput, stderrText, res.ok, 'dry-run', targetDir);
+        }
+
+        case 'update': {
+          const isDryRun = args.dry_run !== false;
+          const updateCmd = ['skill', 'update'];
+          if (isDryRun) updateCmd.push('--dry-run');
+          if (args.all === true) updateCmd.push('--all');
+          if (Array.isArray(args.skill_names) && args.skill_names.length > 0) {
+            args.skill_names.forEach((name: string) => {
+              if (name && typeof name === 'string' && name.trim()) {
+                updateCmd.push(name.trim());
+              }
+            });
+          } else if (args.skill_name && typeof args.skill_name === 'string') {
+            updateCmd.push(args.skill_name.trim());
+          }
+
+          const res = await executor.run(updateCmd, { ...runOpts, rawText: true, timeoutMs: 90_000 });
+          if (!res.ok) throw new Error(res.error);
+          return {
+            mode: isDryRun ? 'dry-run' : 'update',
+            action: 'update',
+            message: isDryRun ? 'Agent Skills 更新检查完成（Dry-run 只读模式）' : 'Agent Skills 已完成更新同步',
+            output: res.rawOutput || 'All skills up to date.',
+          };
         }
 
         default:

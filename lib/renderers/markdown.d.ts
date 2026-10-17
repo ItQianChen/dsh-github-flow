@@ -18,3 +18,5 @@ export * from './gist.js';
 export * from './status.js';
 export * from './agent-task.js';
 export * from './discussion.js';
+export * from './project.js';
+export * from './codespace.js';

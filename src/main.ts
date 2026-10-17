@@ -14,6 +14,8 @@ import { createGistTool } from './tools/gist.js';
 import { createStatusTool } from './tools/status.js';
 import { createAgentTaskTool } from './tools/agent-task.js';
 import { createDiscussionTool } from './tools/discussion.js';
+import { createProjectTool } from './tools/project.js';
+import { createCodespaceTool } from './tools/codespace.js';
 import { createHelpTool } from './tools/help.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
@@ -120,6 +122,8 @@ export function apply(ctx: any, config: PluginConfig = {}) {
     ctx.tools.register(createStatusTool(executor));
     ctx.tools.register(createAgentTaskTool(executor));
     ctx.tools.register(createDiscussionTool(executor));
+    ctx.tools.register(createProjectTool(executor));
+    ctx.tools.register(createCodespaceTool(executor));
     ctx.tools.register(createHelpTool(executor));
   }
 

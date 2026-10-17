@@ -59,6 +59,13 @@ export declare function createSkillTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            skill_names: {
+                type: string;
+                items: {
+                    type: string;
+                };
+                description: string;
+            };
             confirm: {
                 type: string;
                 description: string;
