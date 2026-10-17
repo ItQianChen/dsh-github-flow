@@ -1270,6 +1270,193 @@ body[data-ds-dark-theme] .dsh-github-branch-item:hover {
 body[data-ds-dark-theme] .dsh-github-branch-item.active {
   color: #3fb950;
 }
+
+/* 15. 独立沉浸式指南大窗口 (Help Modal) 双主题体系 */
+.dsh-github-help-dialog {
+  width: 920px;
+  max-width: 92vw;
+  height: 85vh;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+  color: var(--dsw-alias-label-primary, #1f2328);
+  font-family: var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+body[data-ds-dark-theme] .dsh-github-help-dialog {
+  background: var(--dsw-alias-bg-layer-2, #1c2128);
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  color: var(--dsw-alias-label-primary, #f0f6fc);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.65);
+}
+
+.dsh-github-help-header {
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  background: var(--dsw-alias-bg-base, #ffffff);
+}
+body[data-ds-dark-theme] .dsh-github-help-header {
+  background: var(--dsw-alias-bg-layer-2, #1c2128);
+  border-bottom-color: var(--dsw-alias-border-l1, #30363d);
+}
+
+.dsh-github-help-nav {
+  display: flex;
+  gap: 8px;
+  padding: 10px 22px;
+  background: var(--dsw-alias-bg-module-platform, rgba(9, 105, 218, 0.05));
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  flex-shrink: 0;
+}
+body[data-ds-dark-theme] .dsh-github-help-nav {
+  background: rgba(56, 139, 253, 0.08);
+  border-bottom-color: var(--dsw-alias-border-l1, #30363d);
+}
+
+.dsh-github-help-tab-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #656d76);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+body[data-ds-dark-theme] .dsh-github-help-tab-btn {
+  color: var(--dsw-alias-label-secondary, #8b949e);
+}
+.dsh-github-help-tab-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+body[data-ds-dark-theme] .dsh-github-help-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f0f6fc;
+}
+.dsh-github-help-tab-btn.active {
+  font-weight: 600;
+  background: var(--dsw-alias-link, #0969da);
+  color: #ffffff !important;
+  border-color: var(--dsw-alias-link, #0969da);
+}
+body[data-ds-dark-theme] .dsh-github-help-tab-btn.active {
+  background: #1f6feb;
+  border-color: #1f6feb;
+}
+
+.dsh-github-help-scroll-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px;
+  box-sizing: border-box;
+}
+.dsh-github-help-scroll-body::-webkit-scrollbar {
+  width: 6px;
+}
+.dsh-github-help-scroll-body::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+body[data-ds-dark-theme] .dsh-github-help-scroll-body::-webkit-scrollbar-thumb {
+  background: #30363d;
+}
+
+.dsh-github-help-card {
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-module-platform, rgba(9, 105, 218, 0.04));
+  border: 1px solid var(--dsw-alias-border-l2, rgba(9, 105, 218, 0.18));
+  transition: border-color 0.15s ease;
+}
+body[data-ds-dark-theme] .dsh-github-help-card {
+  background: rgba(56, 139, 253, 0.05);
+  border-color: rgba(56, 139, 253, 0.18);
+}
+.dsh-github-help-card:hover {
+  border-color: rgba(9, 105, 218, 0.35);
+}
+body[data-ds-dark-theme] .dsh-github-help-card:hover {
+  border-color: rgba(56, 139, 253, 0.4);
+}
+
+.dsh-github-prompt-box {
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary, #1f2328);
+  word-break: break-all;
+}
+body[data-ds-dark-theme] .dsh-github-prompt-box {
+  background: #0d1117;
+  border-color: #30363d;
+  color: #79c0ff;
+}
+
+.dsh-github-help-step-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--dsw-alias-link, #0969da);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+body[data-ds-dark-theme] .dsh-github-help-step-badge {
+  background: #1f6feb;
+  box-shadow: 0 0 10px rgba(31, 111, 235, 0.35);
+}
+
+.dsh-github-help-footer {
+  padding: 12px 22px;
+  border-top: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  flex-shrink: 0;
+}
+body[data-ds-dark-theme] .dsh-github-help-footer {
+  background: var(--dsw-alias-bg-layer-2, #1c2128);
+  border-top-color: var(--dsw-alias-border-l1, #30363d);
+}
+
+.dsh-github-help-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+body[data-ds-dark-theme] .dsh-github-help-title {
+  color: var(--dsw-alias-label-primary, #f0f6fc);
+}
+
+.dsh-github-help-desc {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #656d76);
+  line-height: 1.5;
+}
+body[data-ds-dark-theme] .dsh-github-help-desc {
+  color: var(--dsw-alias-label-secondary, #8b949e);
+}
 `;
 
 export function injectStyles() {

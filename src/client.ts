@@ -30,6 +30,7 @@ import { NetworkAlertBanner } from './ui/network-banner.js';
 import { SyncStatusBadge } from './ui/sync-status-badge.js';
 import { CommitDetailModal } from './ui/commit-modal.js';
 import { GlobalSyncSettingsModal } from './ui/sync-settings-modal.js';
+import { GithubHelpModal } from './ui/help-modal.js';
 import { GithubWorkspacePanel } from './ui/workspace-panel.js';
 
 export {
@@ -59,6 +60,7 @@ export {
   SyncStatusBadge,
   CommitDetailModal,
   GlobalSyncSettingsModal,
+  GithubHelpModal,
   GithubWorkspacePanel,
 };
 
@@ -101,11 +103,12 @@ window.__ModuleLoader__.load({
       updateInfo: any = null,
       syncStatus: string = "",
       lastSyncedAt: number = 0,
-      onOpenSettings: (() => void) | null = null,
+      onOpenSettings: ((section?: string) => void) | null = null,
       cwd: string | null = null,
       onSelectCommit: ((c: any) => void) | null = null,
       gitLogPagination: any = null,
-      onShowToast: ((msg: string) => void) | null = null
+      onShowToast: ((msg: string) => void) | null = null,
+      onOpenHelp: (() => void) | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -153,11 +156,21 @@ window.__ModuleLoader__.load({
             },
             loading ? "刷新中..." : "🔄 刷新"
           ),
+          (onOpenHelp || onOpenSettings) ? h(
+            "button",
+            {
+              className: "dsh-github-btn-sm",
+              onClick: () => (onOpenHelp ? onOpenHelp() : (onOpenSettings && onOpenSettings("help"))),
+              title: "打开使用帮助与实战手册大窗口（Esc 可退出）",
+              style: { padding: "4px 8px", fontSize: "12px" },
+            },
+            "❓"
+          ) : null,
           onOpenSettings ? h(
             "button",
             {
               className: "dsh-github-btn-sm",
-              onClick: onOpenSettings,
+              onClick: () => onOpenSettings("sync"),
               title: "配置数据同步节奏、本地缓存、网络代理与插件信息",
               style: { padding: "4px 10px" },
             },
@@ -1021,6 +1034,7 @@ window.__ModuleLoader__.load({
       var [aboutModalOpen, setAboutModalOpen] = React.useState(false);
       var [rightbarModalOpen, setRightbarModalOpen] = React.useState(false);
       var [rightbarModalSection, setRightbarModalSection] = React.useState("sync");
+      var [helpModalOpen, setHelpModalOpen] = React.useState(false);
       var [selectedCommit, setSelectedCommit] = React.useState(null as any);
       var [extraCommits, setExtraCommits] = React.useState([] as any[]);
       var [loadingMore, setLoadingMore] = React.useState(false);
@@ -1105,8 +1119,12 @@ window.__ModuleLoader__.load({
         };
       }, []);
 
-      var openRightbarSettings = () => {
-        setRightbarModalSection("sync");
+      var openRightbarSettings = (section?: string) => {
+        if (section) {
+          setRightbarModalSection(section);
+        } else {
+          setRightbarModalSection("sync");
+        }
         setRightbarModalOpen(true);
       };
 
@@ -1157,7 +1175,8 @@ window.__ModuleLoader__.load({
             hasMore: hasMoreCommits,
             onLoadMore: loadMoreCommits,
           },
-          showToast
+          showToast,
+          () => setHelpModalOpen(true)
         ),
         h(GlobalSyncSettingsModal, {
           isOpen: aboutModalOpen,
@@ -1178,6 +1197,10 @@ window.__ModuleLoader__.load({
             setLastSyncedAt(0);
             setSyncStatus("loading");
           },
+        }),
+        h(GithubHelpModal, {
+          isOpen: helpModalOpen,
+          onClose: () => setHelpModalOpen(false),
         }),
         selectedCommit
           ? h(CommitDetailModal, {

@@ -13,6 +13,7 @@ declare function NetworkAlertBanner(props: any): any;
 declare function UpgradeNotificationCard(props: any): any;
 declare function AuthGuideCard(props: any): any;
 declare function GlobalSyncSettingsModal(props: any): any;
+declare function GithubHelpModal(props: any): any;
 declare function fetchWithRetry(url: string, options?: any, config?: any): Promise<any>;
 
 /**
@@ -30,6 +31,7 @@ export function GithubWorkspacePanel() {
 
   var [isSettingsModalOpen, setIsSettingsModalOpen] = React.useState(false);
   var [settingsInitialSection, setSettingsInitialSection] = React.useState("sync");
+  var [isHelpModalOpen, setIsHelpModalOpen] = React.useState(false);
   var [error, setError] = React.useState(null as string | null);
   var [updateInfo, setUpdateInfo] = React.useState(null as any);
   var [activeTab, setActiveTab] = React.useState("workspaces");
@@ -324,6 +326,16 @@ export function GithubWorkspacePanel() {
           disabled: loading,
         },
         loading ? "同步中..." : "🔄 刷新全局数据"
+      ),
+      h(
+        "button",
+        {
+          className: "dsh-github-btn-sm",
+          onClick: () => setIsHelpModalOpen(true),
+          title: "打开使用帮助与实战手册大窗口（Esc 可退出）",
+          style: { padding: "6px 12px" },
+        },
+        "📖 使用指南"
       ),
       h(
         "button",
@@ -744,6 +756,10 @@ export function GithubWorkspacePanel() {
     authGuideEl,
     tabsEl,
     contentEl,
-    settingsModalEl
+    settingsModalEl,
+    h(GithubHelpModal, {
+      isOpen: isHelpModalOpen,
+      onClose: () => setIsHelpModalOpen(false),
+    })
   );
 }

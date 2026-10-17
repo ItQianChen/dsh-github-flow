@@ -19,5 +19,6 @@ import { NetworkAlertBanner } from './ui/network-banner.js';
 import { SyncStatusBadge } from './ui/sync-status-badge.js';
 import { CommitDetailModal } from './ui/commit-modal.js';
 import { GlobalSyncSettingsModal } from './ui/sync-settings-modal.js';
+import { GithubHelpModal } from './ui/help-modal.js';
 import { GithubWorkspacePanel } from './ui/workspace-panel.js';
-export { formatRelativeTime, rollupCiStatus, reviewDecisionBadge, eventLabel, GITHUB_PANEL_CSS, injectStyles, renderOctocat, renderGitIcon, renderOctocatBadge, renderPluginBadge, getLocalSyncSettings, saveLocalSyncSettings, getStoredGlobalOverview, saveStoredGlobalOverview, clearStoredGlobalOverview, getCacheStorageMeta, getRightbarStorageKey, getStoredRightbarSnapshot, saveStoredRightbarData, BranchSelectorDropdown, AuthGuideCard, UpgradeNotificationCard, NetworkAlertBanner, SyncStatusBadge, CommitDetailModal, GlobalSyncSettingsModal, GithubWorkspacePanel, };
+export { formatRelativeTime, rollupCiStatus, reviewDecisionBadge, eventLabel, GITHUB_PANEL_CSS, injectStyles, renderOctocat, renderGitIcon, renderOctocatBadge, renderPluginBadge, getLocalSyncSettings, saveLocalSyncSettings, getStoredGlobalOverview, saveStoredGlobalOverview, clearStoredGlobalOverview, getCacheStorageMeta, getRightbarStorageKey, getStoredRightbarSnapshot, saveStoredRightbarData, BranchSelectorDropdown, AuthGuideCard, UpgradeNotificationCard, NetworkAlertBanner, SyncStatusBadge, CommitDetailModal, GlobalSyncSettingsModal, GithubHelpModal, GithubWorkspacePanel, };

@@ -412,7 +412,7 @@ export function GlobalSyncSettingsModal(props: {
               )
             ),
             h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.6" } },
-              "让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手脚。原生复用宿主机 gh CLI 安全凭据，深度打通本地 Git 工作区与云端协作，提供 9 大领域 Agent 工具、人类 Slash 指令、Web 全景驾驶舱与一键跨平台升级。"
+              "让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手脚。原生复用宿主机 gh CLI 安全凭据，深度打通本地 Git 工作区与云端协作，提供 18 大领域 Agent 工具、人类 Slash 指令、Web 全景驾驶舱与一键跨平台升级。"
             ),
             h("div", { style: { display: "flex", flexDirection: "column", gap: "8px", marginBottom: "14px" } },
               h("div", { style: { display: "flex", alignItems: "center", gap: "8px", fontSize: "12px" } },

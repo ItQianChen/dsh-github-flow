@@ -67,6 +67,7 @@ function bundleClient() {
     'sync-status-badge.js',
     'commit-modal.js',
     'sync-settings-modal.js',
+    'help-modal.js',
   ];
 
   let leadingCode = '';
@@ -78,7 +79,7 @@ function bundleClient() {
         code = compressCss(code);
       }
       code = code.replace(/^\s*import\s+[^;]+;\s*$/gm, '');
-      code = code.replace(/\bexport\s+(function|const|var|let)\b/g, '$1');
+      code = code.replace(/\bexport\s+(async\s+)?(function|const|var|let|class)\b/g, '$1$2');
       code = code.replace(/\bexport\s*\{[^}]*\}\s*;?/g, '');
       leadingCode += `\n// ---- [Bundled: ${mod}] ----\n` + code.trim() + '\n';
     }
@@ -92,7 +93,7 @@ function bundleClient() {
     if (fs.existsSync(modPath)) {
       let code = fs.readFileSync(modPath, 'utf8');
       code = code.replace(/^\s*import\s+[^;]+;\s*$/gm, '');
-      code = code.replace(/\bexport\s+(function|const|var|let)\b/g, '$1');
+      code = code.replace(/\bexport\s+(async\s+)?(function|const|var|let|class)\b/g, '$1$2');
       code = code.replace(/\bexport\s*\{[^}]*\}\s*;?/g, '');
       trailingCode += `\n// ---- [Bundled: ${mod}] ----\n` + code.trim() + '\n';
     }
@@ -118,6 +119,14 @@ function bundleClient() {
   }
 
   mainContent = mainContent.trim() + '\n';
+
+  // 刚性防线：客户端闭包内绝对不能含有裸 export 语句，防止浏览器触发 Uncaught SyntaxError: Unexpected token 'export' 崩溃
+  const illegalExportMatch = mainContent.match(/\bexport\s+(async\s+)?(function|const|var|let|class)\b/);
+  if (illegalExportMatch) {
+    console.error('[build] ❌ 严重语法错误：lib/client.js 闭包内检测到非法残留的 export 关键字:', illegalExportMatch[0]);
+    process.exit(1);
+  }
+
   fs.writeFileSync(clientPath, mainContent, 'utf8');
   console.log('[build] ✅ 已成功聚合前端子模块并完成 CSS 压缩瘦身');
 }
