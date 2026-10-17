@@ -16,3 +16,5 @@ export * from './ruleset.js';
 export * from './cache.js';
 export * from './gist.js';
 export * from './status.js';
+export * from './agent-task.js';
+export * from './discussion.js';
