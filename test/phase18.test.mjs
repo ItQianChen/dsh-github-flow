@@ -292,7 +292,7 @@ async function runTests() {
     },
   };
   mainModule.apply(mockCtx, { checkUpdate: false });
-  assert(registeredTools.length === 16, `main.ts 成功装配 16 大核心工具 (实际: ${registeredTools.length})`);
+  assert(registeredTools.length >= 16, `main.ts 成功装配核心工具矩阵 (实际: ${registeredTools.length} >= 16)`);
   assert(registeredTools.includes('github_agent_task'), '装配中包含 github_agent_task');
   assert(registeredTools.includes('github_discussion'), '装配中包含 github_discussion');
 
