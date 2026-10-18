@@ -1,7 +1,7 @@
 /**
  * 格式化 Discussion 状态徽标
  */
-export declare function formatDiscussionStateBadge(state?: string, answered?: boolean): string;
+export declare function formatDiscussionStateBadge(state?: string, answered?: boolean, closed?: boolean): string;
 /**
  * 渲染 Discussion 列表表格
  */

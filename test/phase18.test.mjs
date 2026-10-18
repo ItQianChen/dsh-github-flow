@@ -119,7 +119,7 @@ async function runTests() {
   const lastTaskCmd = recordedCmds[0].cmd;
   assert(lastTaskCmd[0] === 'agent-task' && lastTaskCmd[1] === 'list', '调用 gh agent-task list');
   assert(lastTaskCmd.includes('-L') && lastTaskCmd.includes('15'), '传递 -L limit 参数');
-  assert(lastTaskCmd.includes('-R') && lastTaskCmd.includes('owner/repo'), '传递 -R 目标仓库');
+  assert(!lastTaskCmd.includes('-R'), 'agent-task list 为用户全局动作，不传递 -R 防止 CLI 报错');
   assert(lastTaskCmd.includes('--json'), '声明了 --json 字段');
 
   // view 缺失 task_id 拦截防挂起
@@ -133,10 +133,11 @@ async function runTests() {
 
   // view 正常查询并拉取日志
   recordedCmds = [];
-  const taskViewRes = await agentTaskTool.execute({ action: 'view', task_id: 'e2fa49d2', log: true });
+  const taskViewRes = await agentTaskTool.execute({ action: 'view', task_id: 'e2fa49d2', repo: 'owner/repo', log: true });
   assert(taskViewRes.name === '实现用户身份鉴权模块', '成功获取任务详情');
   assert(taskViewRes.logs === 'Session log fetched', 'log: true 成功触发会话日志查询并挂载');
   assert(recordedCmds.length === 2, '执行了详情查询与日志查询两条命令');
+  assert(recordedCmds[0].cmd.includes('-R') && recordedCmds[0].cmd.includes('owner/repo'), 'view 操作传递 -R 目标仓库');
   assert(recordedCmds[1].cmd.includes('--log'), '第二条命令包含 --log 标志');
 
   // create

@@ -11,7 +11,7 @@ function normalizeOutput(data: any): Record<string, any> {
   return { result: data !== undefined && data !== null ? data : '' };
 }
 
-const DISCUSSION_LIST_FIELDS = 'number,title,body,category,author,state,createdAt,updatedAt,url,labels,answered';
+const DISCUSSION_LIST_FIELDS = 'number,title,body,category,author,closed,createdAt,updatedAt,url,labels,answered,stateReason';
 const DISCUSSION_VIEW_FIELDS = 'number,title,body,category,author,state,createdAt,updatedAt,url,labels,answered,comments';
 
 export function createDiscussionTool(executor: GhExecutor) {

@@ -269,7 +269,19 @@ export function createRepoTool(executor: GhExecutor) {
           if (content.includes('\0')) {
             throw new Error(`「${args.path}」是二进制文件（检测到 NUL 字节），不适合文本读取。请改用 github_api(endpoint: 'repos/${owner}/${repoName}/contents/${args.path.split('/').map(encodeURIComponent).join('/')}', raw: true, binary 场景自行落盘) 获取字节流。`);
           }
-          return { path: args.path, ref: args.ref, content, size: content.length, ...(res.degraded ? { degraded: res.degraded, degradedReason: res.degradedReason } : {}) };
+          const resultObj: Record<string, any> = {
+            path: args.path,
+            content,
+            size: content.length,
+          };
+          if (args.ref) {
+            resultObj.ref = args.ref;
+          }
+          if (res.degraded) {
+            resultObj.degraded = res.degraded;
+            resultObj.degradedReason = res.degradedReason;
+          }
+          return resultObj;
         }
 
         case 'read_dir': {

@@ -3,12 +3,12 @@ import { sanitizeCell } from './common.js';
 /**
  * 格式化 Discussion 状态徽标
  */
-export function formatDiscussionStateBadge(state?: string, answered?: boolean): string {
+export function formatDiscussionStateBadge(state?: string, answered?: boolean, closed?: boolean): string {
   if (answered) return '🟢 ANSWERED';
-  const upper = String(state || 'OPEN').toUpperCase();
-  if (upper === 'OPEN') return '🔵 OPEN';
-  if (upper === 'CLOSED') return '🟣 CLOSED';
-  return `⚪ ${upper}`;
+  const effective = state ? String(state).toUpperCase() : (closed ? 'CLOSED' : 'OPEN');
+  if (effective === 'OPEN') return '🔵 OPEN';
+  if (effective === 'CLOSED') return '🟣 CLOSED';
+  return `⚪ ${effective}`;
 }
 
 /**
@@ -25,7 +25,7 @@ export function renderDiscussionList(items: any[]): string {
     const link = d.url ? `[${num}](${d.url})` : num;
     const title = sanitizeCell(d.title || '(无标题)', 45);
     const category = sanitizeCell(d.category?.name || d.category || 'General', 15);
-    const stateBadge = formatDiscussionStateBadge(d.state, d.answered);
+    const stateBadge = formatDiscussionStateBadge(d.state, d.answered, d.closed);
     const author = d.author?.login || d.author || '-';
     const updated = d.updatedAt ? d.updatedAt.split('T')[0] : (d.createdAt ? d.createdAt.split('T')[0] : '-');
 
@@ -50,7 +50,7 @@ export function renderDiscussionView(d: any): string {
 
   const num = d.number ? `#${d.number}` : '';
   const title = d.title || '(无标题)';
-  const stateBadge = formatDiscussionStateBadge(d.state, d.answered);
+  const stateBadge = formatDiscussionStateBadge(d.state, d.answered, d.closed);
   const category = d.category?.name || d.category || 'General';
   const author = d.author?.login || d.author || '-';
   const created = d.createdAt || '-';

@@ -71,11 +71,11 @@ export function createAgentTaskTool(executor: GhExecutor) {
       switch (args.action) {
         case 'list': {
           const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.min(args.limit, 100) : 30;
+          // 注意：gh agent-task list 属于账号级任务列表命令，上游 gh CLI 官方不接受 -R/--repo 标志
           const listCmd = [
             'agent-task', 'list',
             '-L', String(limit),
             '--json', AGENT_TASK_JSON_FIELDS,
-            ...repoArgs,
           ];
           const res = await executor.run(listCmd, runOpts);
           if (!res.ok) throw new Error(res.error);

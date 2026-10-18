@@ -27,6 +27,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_help\` | 路由导航、官方语法速查与故障自愈 | 遇到不确定的操作、搜索语法或接口报错时查询用法与诊断配方 |
 
 💡 **使用准则**：优先调用高层语义工具（pr / issue / run / repo / release / secret）；当高层工具无法满足特殊接口需求时，再降级使用 \`github_api\`。
+💬 **人类指令**：聊天框支持 \`/gh status\`（大盘看板）、\`/gh upgrade\`（一键升级插件）、\`/gh help\`（快捷帮助）。
 🗺️ **命令对照**：不确定某 gh 命令对应哪个工具？\`github_help(topic: 'mapping')\` 查询完整映射表（含未覆盖域的 API 引导）。`,
 
   pr: `### 🔀 github_pr 详细操作指南
@@ -241,21 +242,23 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 
 管理与调度 GitHub Copilot Coding Agent 云端智能体会话：
 - **查看任务列表**: \`github_agent_task(action: 'list', limit: 30)\`
+  - 账号全局任务全景列表（注：上游 gh CLI 原生不接收 -R/--repo 限制，默认列出当前用户所有活跃会话）。
 - **检视任务会话与日志**: \`github_agent_task(action: 'view', task_id: 'e2fa49d2-...', log: true)\`
-  - 必须提供 \`task_id\`（支持 Session ID、PR 编号或 URL），附加 \`log: true\` 可完整拉取任务执行过程日志。
-- **派发新编码任务**: \`github_agent_task(action: 'create', prompt: '为用户模块补全单元测试', base_branch: 'main')\`
-  - 支持附加 \`custom_agent: 'my-agent'\` 指定仓库预设的智能体定义。`,
+  - 必须提供 \`task_id\`（支持 Session ID、PR 编号或 URL），支持 \`repo: 'owner/repo'\`，附加 \`log: true\` 可完整拉取任务执行过程日志。
+- **派发新编码任务**: \`github_agent_task(action: 'create', prompt: '为用户模块补全单元测试', base_branch: 'main', repo: 'owner/repo')\`
+  - 支持附加 \`custom_agent: 'my-agent'\` 指定仓库预设的智能体定义，支持 \`repo\` 定向派发。`,
 
   discussion: `### 💬 github_discussion 讨论区操作指南
 
 基于 GitHub CLI 的 \`gh discussion\` preview 特性，支持团队架构探讨、RFC 与社区互动：
 - **查看讨论列表**: \`github_discussion(action: 'list', category: 'General', state: 'open', limit: 30)\`
-  - 支持按 \`category\`（分类）、\`state\`（open/closed/all）、\`labels\` 以及 \`search\`（关键词）过滤。
+  - 支持按 \`category\`（分类）、\`state\`（open/closed/all）、\`labels\` 以及 \`search\`（关键词）过滤；状态自动结构化映射为 OPEN / CLOSED / ANSWERED。
 - **检视讨论正文与回复楼层**: \`github_discussion(action: 'view', discussion_number: 123, comments: true)\`
 - **发起新讨论**: \`github_discussion(action: 'create', title: 'RFC: 架构演进方案', category: 'Ideas', body: '详细方案...')\`
   - \`title\`、\`category\` 与 \`body\` 均为必填项。
 - **编辑讨论**: \`github_discussion(action: 'edit', discussion_number: 123, title: '新标题', body: '修正后的正文')\`
-- **发表讨论回复**: \`github_discussion(action: 'comment', discussion_number: 123, body: '赞同该方案！')\``,
+- **发表讨论回复**: \`github_discussion(action: 'comment', discussion_number: 123, body: '赞同该方案！')\`
+- 💡 **提示**：若报错「discussions disabled」，说明目标仓库未在 GitHub 仓库「Settings -> General -> Features」中启用 Discussions 社区功能。`,
 
   project: `### 📋 github_project 项目看板与规划指南
 
@@ -465,7 +468,18 @@ const KNOWLEDGE_BASE: Record<string, string> = {
    - *解法*：宿主机尚未安装 gh。Windows 运行 \`winget install GitHub.cli\`，macOS 运行 \`brew install gh\`，然后执行 \`gh auth login\` 登录。
  5. **报 \`unknown command "skill" for "gh"\`**:
     - *原因*：\`gh skill\` 是 GitHub CLI 2.9x 引入的 preview 特性，宿主机版本过低。
-    - *解法*：升级 gh（Windows: \`winget upgrade GitHub.cli\`；macOS: \`brew upgrade gh\`）后重试；升级前可改用 \`github_api\` 检索 \`SKILL.md\` 文件路径作为替代。`
+    - *解法*：升级 gh（Windows: \`winget upgrade GitHub.cli\`；macOS: \`brew upgrade gh\`）后重试；升级前可改用 \`github_api\` 检索 \`SKILL.md\` 文件路径作为替代。
+ 6. **报 \`the token ... needs the '<scope>' scope\` (缺少权限)**:
+    - *原因*：GitHub Token 缺少对应操作的最小 Scope 权限（如 Codespaces 需要 \`codespace\` 权限，Projects v2 需要 \`read:project\` 权限）。
+    - *解法*：在系统终端执行单行自愈命令完成授权刷新（无需重启插件，即刻生效）：
+      - Codespace: \`gh auth refresh -h github.com -s codespace\`
+      - Project: \`gh auth refresh -s read:project\`
+ 7. **报 \`the '...' repository has discussions disabled\`**:
+    - *原因*：目标 GitHub 仓库未开启 Discussions 社区功能。
+    - *解法*：需管理员前往 GitHub 网页端 \`Settings -> General -> Features\` 勾选开启 \`Discussions\`。
+ 8. **操作被拦截提示 \`Awaiting confirmation\`**:
+    - *原因*：对于高危破坏性操作（如合并 PR、删除分支、物理删除 Issue、清空构建缓存、删除密钥、销毁 Codespace），插件设置了强制安全确认防线，未确认时绝对不触发底层 CLI。
+    - *解法*：审阅影响评估报告后，在参数中显式传入 \`confirm: true\` 即可放行。`
 };
 
 export function createHelpTool(executor: GhExecutor) {
