@@ -177,3 +177,104 @@ export function parseUncommittedDiff(rawDiff: string): { additions: number; dele
   return { additions, deletions, hunksCount };
 }
 
+export interface GitStatFileInfo {
+  path: string;
+  total: number;
+  additions: number;
+  deletions: number;
+  isBinary: boolean;
+  rawRight?: string;
+}
+
+export interface GitStatSummary {
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+}
+
+export interface GitStatParsedResult {
+  files: GitStatFileInfo[];
+  summary: GitStatSummary | null;
+}
+
+/**
+ * 解析 `git show --stat` 或 `git log --stat` 的统计文本为结构化列表与增删数字。
+ * 能够从 `19 ++++++++++++++++++-` 精准推导 additions=18, deletions=1，
+ * 提取文件路径与 `X files changed, Y insertions(+), Z deletions(-)` 汇总。
+ */
+export function parseGitStatText(statText: string): GitStatParsedResult | null {
+  if (!statText || typeof statText !== 'string') return null;
+  const lines = statText.split('\n');
+  const files: GitStatFileInfo[] = [];
+  let summary: GitStatSummary | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // 检查汇总行（如 6 files changed, 62 insertions(+), 6 deletions(-)）
+    const summaryMatch = trimmed.match(/(\d+)\s+files?\s+changed(?:,\s+(\d+)\s+insertions?\(\+\))?(?:,\s+(\d+)\s+deletions?\(-\))?/i);
+    if (summaryMatch) {
+      summary = {
+        filesChanged: parseInt(summaryMatch[1], 10),
+        insertions: parseInt(summaryMatch[2] || '0', 10),
+        deletions: parseInt(summaryMatch[3] || '0', 10),
+      };
+      continue;
+    }
+
+    // 检查文件变更行（包含 | 分隔符）
+    const pipeIdx = trimmed.indexOf('|');
+    if (pipeIdx > 0) {
+      let left = trimmed.slice(0, pipeIdx).trim();
+      const right = trimmed.slice(pipeIdx + 1).trim();
+
+      // 去除文件名两端可能的双引号
+      if (left.startsWith('"') && left.endsWith('"') && left.length >= 2) {
+        left = left.slice(1, -1);
+      }
+
+      if (/^Bin\b/i.test(right)) {
+        files.push({ path: left, total: 0, additions: 0, deletions: 0, isBinary: true, rawRight: right });
+      } else {
+        const numMatch = right.match(/^(\d+)(.*)$/);
+        if (numMatch) {
+          const total = parseInt(numMatch[1], 10);
+          const graph = numMatch[2].trim();
+          let plusCount = 0;
+          let minusCount = 0;
+          for (let i = 0; i < graph.length; i++) {
+            if (graph[i] === '+') plusCount++;
+            else if (graph[i] === '-') minusCount++;
+          }
+          let additions = 0;
+          let deletions = 0;
+          if (plusCount === 0 && minusCount === 0) {
+            additions = total;
+          } else if (minusCount === 0) {
+            additions = total;
+            deletions = 0;
+          } else if (plusCount === 0) {
+            additions = 0;
+            deletions = total;
+          } else {
+            if (plusCount + minusCount === total) {
+              additions = plusCount;
+              deletions = minusCount;
+            } else {
+              const addExact = Math.round((total * plusCount) / (plusCount + minusCount));
+              additions = addExact;
+              deletions = Math.max(0, total - addExact);
+            }
+          }
+          files.push({ path: left, total, additions, deletions, isBinary: false });
+        }
+      }
+    }
+  }
+
+  if (files.length === 0 && !summary) return null;
+  return { files, summary };
+}
+
+

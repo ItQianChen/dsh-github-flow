@@ -6,7 +6,7 @@ declare global {
   }
 }
 
-import { formatRelativeTime, rollupCiStatus, reviewDecisionBadge, eventLabel, fetchWithRetry } from './ui/utils.js';
+import { formatRelativeTime, rollupCiStatus, reviewDecisionBadge, eventLabel, fetchWithRetry, parseGitStatText } from './ui/utils.js';
 import { GITHUB_PANEL_CSS, injectStyles } from './ui/styles.js';
 import { renderOctocat, renderGitIcon, renderOctocatBadge, renderPluginBadge } from './ui/icons.js';
 import {
@@ -22,6 +22,9 @@ import {
   getRightbarStorageKey,
   getStoredRightbarSnapshot,
   saveStoredRightbarData,
+  getStoredHeaderCardsVisible,
+  saveStoredHeaderCardsVisible,
+  HEADER_CARDS_STORAGE_KEY,
 } from './ui/storage.js';
 import { BranchSelectorDropdown } from './ui/branch-selector.js';
 import { AuthGuideCard } from './ui/auth-guide-card.js';
@@ -38,6 +41,7 @@ export {
   rollupCiStatus,
   reviewDecisionBadge,
   eventLabel,
+  parseGitStatText,
   GITHUB_PANEL_CSS,
   injectStyles,
   renderOctocat,
@@ -53,6 +57,9 @@ export {
   getRightbarStorageKey,
   getStoredRightbarSnapshot,
   saveStoredRightbarData,
+  getStoredHeaderCardsVisible,
+  saveStoredHeaderCardsVisible,
+  HEADER_CARDS_STORAGE_KEY,
   BranchSelectorDropdown,
   AuthGuideCard,
   UpgradeNotificationCard,
@@ -420,7 +427,9 @@ window.__ModuleLoader__.load({
       activeDiffFile: any = null,
       onSelectDiffFile: ((f: any) => void) | null = null,
       onCloseDiff: (() => void) | null = null,
-      onOpenInDsh: ((filePath: string) => void) | null = null
+      onOpenInDsh: ((filePath: string) => void) | null = null,
+      headerCardsVisible: boolean = true,
+      onToggleHeaderCards: (() => void) | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -459,6 +468,25 @@ window.__ModuleLoader__.load({
         h(
           "div",
           { style: { display: "flex", alignItems: "center", gap: "6px" } },
+          isRightbar && onToggleHeaderCards ? h(
+            "button",
+            {
+              className: "dsh-github-btn-sm" + (!headerCardsVisible ? " active" : ""),
+              onClick: onToggleHeaderCards,
+              title: headerCardsVisible ? "收起上方仓库信息与快捷操作栏（增加下方工作区高度）" : "展开上方仓库信息与快捷操作栏",
+              style: {
+                padding: "4px 8px",
+                fontSize: "11px",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "3px",
+                cursor: "pointer",
+              },
+              "aria-expanded": headerCardsVisible ? "true" : "false",
+            },
+            headerCardsVisible ? "🔼 收起" : "🔽 展开"
+          ) : null,
           h(
             "button",
             {
@@ -794,12 +822,20 @@ window.__ModuleLoader__.load({
                               {
                                 style: {
                                   fontSize: "11px",
-                                  opacity: 0.6,
+                                  opacity: 0.7,
                                   padding: "6px 0",
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "center",
                                   gap: "6px",
+                                  cursor: "pointer",
+                                  borderRadius: "4px",
+                                },
+                                title: "向下滑动滚轮或点击加载更多",
+                                onClick: function () {
+                                  if (dirtyPagination && typeof dirtyPagination.onLoadMore === "function") {
+                                    dirtyPagination.onLoadMore();
+                                  }
                                 },
                               },
                               h("span", null, "⬇️ 向下滑动自动加载"),
@@ -1101,7 +1137,15 @@ window.__ModuleLoader__.load({
         gitSt ? h("div", { "data-tab-page": "dirty", hidden: defaultTab !== "dirty" }, dirtySectionEl) : null
       );
 
-      return [headerEl, networkAlertBannerEl, upgradeBannerEl, authGuideEl, repoCardEl, actionsBarEl, tabbedContentEl].filter(Boolean);
+      return [
+        headerEl,
+        networkAlertBannerEl,
+        upgradeBannerEl,
+        authGuideEl,
+        headerCardsVisible ? repoCardEl : null,
+        headerCardsVisible ? actionsBarEl : null,
+        tabbedContentEl,
+      ].filter(Boolean);
     }
 
     // 1. 右侧栏专属视图 (Right Sidebar Tab Body)
@@ -1455,6 +1499,15 @@ window.__ModuleLoader__.load({
       var [loadingMoreDirty, setLoadingMoreDirty] = React.useState(false);
       var [hasMoreDirty, setHasMoreDirty] = React.useState(true);
       var [activeDiffFile, setActiveDiffFile] = React.useState(null as any);
+      var [headerCardsVisible, setHeaderCardsVisible] = React.useState(() => getStoredHeaderCardsVisible());
+
+      var toggleHeaderCards = React.useCallback(() => {
+        setHeaderCardsVisible(function (prev: boolean) {
+          var next = !prev;
+          saveStoredHeaderCardsVisible(next);
+          return next;
+        });
+      }, []);
 
       React.useEffect(function () {
         setExtraCommits([]);
@@ -1586,9 +1639,48 @@ window.__ModuleLoader__.load({
             }
           }
         };
+
+        // 监听鼠标滚轮向下滚事件（即使用户收起卡片导致内容暂未撑出滚动条，只要向下滚轮也能瞬间响应！）
+        var onWheel = function (e: any) {
+          if (!e || e.deltaY <= 0) return;
+          var activeBtn = el.querySelector(".dsh-github-tab-btn.active");
+          var activeTab = activeBtn ? activeBtn.getAttribute("data-tab-btn") : (el.getAttribute("data-active-tab") || "git");
+          var threshold = 120;
+          var atBottom = (el.scrollHeight - el.scrollTop - el.clientHeight < threshold) || (el.scrollHeight <= el.clientHeight + 40);
+          if (atBottom) {
+            if (activeTab === "git") {
+              loadMoreCommits();
+            } else if (activeTab === "dirty") {
+              loadMoreDirtyFiles();
+            }
+          }
+        };
+
         el.addEventListener("scroll", onScroll, { passive: true });
-        return function () { el.removeEventListener("scroll", onScroll); };
-      }, [data, extraCommits, loadingMore, hasMoreCommits, cwd, extraDirtyFiles, loadingMoreDirty, hasMoreDirty, visibleDirtyCount]);
+        el.addEventListener("wheel", onWheel, { passive: true });
+        return function () {
+          el.removeEventListener("scroll", onScroll);
+          el.removeEventListener("wheel", onWheel);
+        };
+      }, [data, extraCommits, loadingMore, hasMoreCommits, cwd, extraDirtyFiles, loadingMoreDirty, hasMoreDirty, visibleDirtyCount, headerCardsVisible]);
+
+      // 视口充盈智能自适应：当用户点击收起卡片导致页面变矮、未能产生滚动条时，自动将后续条目拉取补齐！
+      React.useEffect(function () {
+        var el = containerRef && containerRef.current;
+        if (!el) return;
+        var timer = setTimeout(function () {
+          var activeBtn = el.querySelector(".dsh-github-tab-btn.active");
+          var activeTab = activeBtn ? activeBtn.getAttribute("data-tab-btn") : (el.getAttribute("data-active-tab") || "git");
+          if (activeTab === "dirty") {
+            var total = data?.gitStatus?.dirtyCount || 0;
+            var hasMore = total > 0 && visibleDirtyCount < total;
+            if (hasMore && el.scrollHeight <= el.clientHeight + 60) {
+              loadMoreDirtyFiles();
+            }
+          }
+        }, 120);
+        return function () { clearTimeout(timer); };
+      }, [headerCardsVisible, visibleDirtyCount, data]);
 
       React.useEffect(() => {
         var onOpenAbout = () => {
@@ -1699,7 +1791,9 @@ window.__ModuleLoader__.load({
           activeDiffFile,
           (f: any) => setActiveDiffFile(f),
           () => setActiveDiffFile(null),
-          openFileInDsh
+          openFileInDsh,
+          headerCardsVisible,
+          toggleHeaderCards
         ),
         h(GlobalSyncSettingsModal, {
           isOpen: aboutModalOpen,

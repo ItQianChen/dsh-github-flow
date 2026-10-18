@@ -25,7 +25,7 @@ async function runTests() {
   }
 
   console.log('\n--- 1. parseGitStatusOutput 契约与 maxFiles 扩展测试 ---');
-  const { GhExecutor, parseGitStatusOutput, parseUncommittedDiff } = await import('../lib/executor.js');
+  const { GhExecutor, parseGitStatusOutput, parseUncommittedDiff, parseGitStatText } = await import('../lib/executor.js');
 
   const manyLines = ['## master...origin/master'].concat(Array.from({ length: 45 }, (_, i) => ` M file_${i}.ts`)).join('\n');
   const defaultParsed = parseGitStatusOutput(manyLines);
@@ -62,6 +62,28 @@ index 1234567..89abcdef 100644
 
   assert(parseUncommittedDiff('').additions === 0, '空字符串安全返回 0 增删');
 
+  console.log('\n--- 2b. parseGitStatText 提交统计纯文本结构化解析测试 ---');
+  const sampleStat = ` lib/client.js   | 19 ++++++++++++++++++-
+ lib/executor.js |  8 ++++++--
+ lib/types.d.ts  |  2 ++
+ src/client.ts   | 29 ++++++++++++++++++++++++++++-
+ src/executor.ts |  8 ++++++--
+ src/types.ts    |  2 ++
+ 6 files changed, 62 insertions(+), 6 deletions(-)`;
+
+  const parsedStat = parseGitStatText(sampleStat);
+  assert(parsedStat !== null, '成功解析 stat 统计文本');
+  assert(parsedStat.files.length === 6, '精确解析出 6 个文件变更条目');
+  assert(parsedStat.files[0].path === 'lib/client.js', '首个文件路径正确');
+  assert(parsedStat.files[0].total === 19, '首个文件总变更行数正确 (19)');
+  assert(parsedStat.files[0].additions === 18 && parsedStat.files[0].deletions === 1, '首个文件精确推导 +18 和 -1');
+  assert(parsedStat.files[1].additions === 6 && parsedStat.files[1].deletions === 2, '次个文件精确推导 +6 和 -2');
+  assert(parsedStat.files[2].additions === 2 && parsedStat.files[2].deletions === 0, '第三文件纯新增 +2 和 0');
+  assert(parsedStat.summary !== null, '成功解析出末尾汇总对象');
+  assert(parsedStat.summary.filesChanged === 6, '汇总文件变更数 6');
+  assert(parsedStat.summary.insertions === 62, '汇总新增行数 +62');
+  assert(parsedStat.summary.deletions === 6, '汇总删除行数 -6');
+
   console.log('\n--- 3. getUncommittedFiles 与 getFileDiff 执行引擎逻辑测试 ---');
   const executor = new GhExecutor();
 
@@ -94,6 +116,8 @@ index 1234567..89abcdef 100644
 
   console.log('\n--- 5. lib/client.js 自包含前端产物断言 ---');
   const clientBundle = fs.readFileSync(path.resolve('lib/client.js'), 'utf8');
+  assert(clientBundle.includes('parseGitStatText'), 'Bundle 产物包含 parseGitStatText 统计解析函数');
+  assert(clientBundle.includes('dsh-github-stat-list'), 'Bundle 产物包含 dsh-github-stat-list 容器类');
   assert(clientBundle.includes('UncommittedDiffView'), 'Bundle 产物包含 UncommittedDiffView 原生二级下钻视图');
   assert(clientBundle.includes('activeDiffFile'), 'Bundle 产物维护 activeDiffFile 状态');
   assert(clientBundle.includes('dsh-github-inline-diff-view'), 'Bundle 产物包含二级下钻容器类');
@@ -103,6 +127,9 @@ index 1234567..89abcdef 100644
   assert(clientBundle.includes('visibleDirtyCount'), 'Bundle 产物维护 visibleDirtyCount 切片状态');
   assert(clientBundle.includes('dsh-github-dirty-item'), 'Bundle 产物包含未提交交互样式选择器');
   assert(clientBundle.includes('sidebarRight'), 'Bundle 产物在 inject 中声明 sidebarRight 可选依赖');
+  assert(clientBundle.includes('headerCardsVisible'), 'Bundle 产物包含 headerCardsVisible 折叠状态');
+  assert(clientBundle.includes('toggleHeaderCards'), 'Bundle 产物包含 toggleHeaderCards 切换函数');
+  assert(clientBundle.includes('getStoredHeaderCardsVisible'), 'Bundle 产物包含 getStoredHeaderCardsVisible 偏好读取函数');
 
   console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.log(`Phase 21 测试通过: ${passed} / ${total}`);

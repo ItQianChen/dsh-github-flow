@@ -1493,6 +1493,42 @@ body[data-ds-dark-theme] .dsh-github-inline-diff-content {
   background-color: var(--dsw-alias-bg-layer-2, #1c2128) !important;
   border-color: var(--dsw-alias-border-l1, #30363d) !important;
 }
+
+/* 17. 提交详情文件变更统计结构化高亮 */
+.dsh-github-stat-list {
+  border: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+  background: var(--dsw-alias-bg-module-platform, #f6f8fa);
+}
+body[data-ds-dark-theme] .dsh-github-stat-list {
+  border-color: var(--dsw-alias-border-l1, #30363d) !important;
+  background: var(--dsw-alias-bg-layer-2, #1c2128) !important;
+}
+
+.dsh-github-stat-row {
+  transition: background-color 0.15s ease;
+}
+.dsh-github-stat-row:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+body[data-ds-dark-theme] .dsh-github-stat-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* 18. 右侧栏上方卡片折叠/展开动画与按钮样式 */
+.dsh-github-header-cards-collapsed {
+  display: none !important;
+}
+
+.dsh-github-btn-sm.active {
+  background: var(--dsw-alias-state-attention-subtle, rgba(234, 179, 8, 0.15)) !important;
+  color: var(--dsw-alias-state-attention-primary, #9a6700) !important;
+  border-color: var(--dsw-alias-state-attention-primary, #d29922) !important;
+}
+body[data-ds-dark-theme] .dsh-github-btn-sm.active {
+  background: rgba(234, 179, 8, 0.2) !important;
+  color: #f0b72f !important;
+  border-color: #d29922 !important;
+}
 `;
 
 export function injectStyles() {

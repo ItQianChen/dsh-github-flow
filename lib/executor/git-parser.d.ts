@@ -32,3 +32,26 @@ export declare function parseUncommittedDiff(rawDiff: string): {
     deletions: number;
     hunksCount: number;
 };
+export interface GitStatFileInfo {
+    path: string;
+    total: number;
+    additions: number;
+    deletions: number;
+    isBinary: boolean;
+    rawRight?: string;
+}
+export interface GitStatSummary {
+    filesChanged: number;
+    insertions: number;
+    deletions: number;
+}
+export interface GitStatParsedResult {
+    files: GitStatFileInfo[];
+    summary: GitStatSummary | null;
+}
+/**
+ * 解析 `git show --stat` 或 `git log --stat` 的统计文本为结构化列表与增删数字。
+ * 能够从 `19 ++++++++++++++++++-` 精准推导 additions=18, deletions=1，
+ * 提取文件路径与 `X files changed, Y insertions(+), Z deletions(-)` 汇总。
+ */
+export declare function parseGitStatText(statText: string): GitStatParsedResult | null;

@@ -20,7 +20,7 @@ import type { ProxyManager } from './proxy.js';
 // 子模块纯函数解耦导入并对外部 Re-export 保证 100% 向后兼容
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
-import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff } from './executor/git-parser.js';
+import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
 
 export {
@@ -34,6 +34,7 @@ export {
   parseGitLogLines,
   parseGitBranchLines,
   parseUncommittedDiff,
+  parseGitStatText,
   getPlatformInstallGuide,
   getGhUpgradeHint,
 };

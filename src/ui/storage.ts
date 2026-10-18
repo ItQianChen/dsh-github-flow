@@ -130,3 +130,28 @@ export function saveStoredRightbarData(cwd: string | null, data: any) {
     }));
   } catch (e) {}
 }
+
+export const HEADER_CARDS_STORAGE_KEY = "dsh_github_header_cards_visible_v1";
+
+/**
+ * 读取右侧栏上方仓库卡片与快捷操作栏的折叠/展开偏好（默认为 true 展开）
+ */
+export function getStoredHeaderCardsVisible(): boolean {
+  try {
+    var raw = localStorage.getItem(HEADER_CARDS_STORAGE_KEY);
+    if (raw === null || raw === undefined) return true;
+    return raw !== "false";
+  } catch (e) {
+    return true;
+  }
+}
+
+/**
+ * 持久化保存右侧栏上方仓库卡片与快捷操作栏的展开/折叠偏好
+ */
+export function saveStoredHeaderCardsVisible(visible: boolean): void {
+  try {
+    localStorage.setItem(HEADER_CARDS_STORAGE_KEY, visible ? "true" : "false");
+  } catch (e) {}
+}
+

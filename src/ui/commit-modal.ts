@@ -1,5 +1,6 @@
 declare const React: any;
 declare function renderGitIcon(size?: number, color?: string): any;
+declare function parseGitStatText(statText: string): any;
 
 /**
  * 提交详情模态弹窗组件（与设置弹窗同构）
@@ -43,6 +44,10 @@ export function CommitDetailModal(props: {
     effectiveStat = fetchedDetail;
   }
 
+  var parsedStat = React.useMemo(() => {
+    return effectiveStat && typeof parseGitStatText === "function" ? parseGitStatText(effectiveStat) : null;
+  }, [effectiveStat]);
+
   return h(
     "div",
     {
@@ -54,7 +59,7 @@ export function CommitDetailModal(props: {
       "div",
       {
         className: "dsh-github-modal-dialog",
-        style: { width: "94%", maxWidth: "460px", maxHeight: "84vh", display: "flex", flexDirection: "column", overflow: "hidden" },
+        style: { width: "94%", maxWidth: "520px", maxHeight: "86vh", display: "flex", flexDirection: "column", overflow: "hidden" },
         onClick: function (e: any) { e.stopPropagation(); },
       },
       h(
@@ -119,28 +124,205 @@ export function CommitDetailModal(props: {
         effectiveStat
           ? h(
               "div",
-              null,
-              h("div", { style: { fontSize: "11px", fontWeight: 600, marginBottom: "4px", opacity: 0.8 } }, "📁 文件变更统计:"),
+              { style: { display: "flex", flexDirection: "column", gap: "6px" } },
               h(
-                "pre",
+                "div",
                 {
-                  className: "dsh-github-commit-pre",
                   style: {
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
                     fontSize: "11px",
-                    lineHeight: "1.5",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                    margin: 0,
-                    maxHeight: "34vh",
-                    overflowY: "auto",
-                    padding: "8px 10px",
-                    borderRadius: "6px",
-                    background: "var(--dsw-alias-bg-module-platform, #f6f8fa)",
-                    border: "1px solid var(--dsw-alias-border-l2, #e1e4e8)",
+                    fontWeight: 600,
                   },
                 },
-                effectiveStat
-              )
+                h(
+                  "div",
+                  { style: { opacity: 0.85, display: "flex", alignItems: "center", gap: "6px" } },
+                  "📁 文件变更统计",
+                  parsedStat?.summary
+                    ? h("span", { style: { opacity: 0.65, fontWeight: 400 } }, `(${parsedStat.summary.filesChanged} 个文件)`)
+                    : parsedStat?.files
+                    ? h("span", { style: { opacity: 0.65, fontWeight: 400 } }, `(${parsedStat.files.length} 个文件)`)
+                    : null
+                ),
+                parsedStat?.summary
+                  ? h(
+                      "div",
+                      { style: { display: "flex", gap: "6px", fontFamily: "monospace", fontWeight: 600 } },
+                      parsedStat.summary.insertions > 0
+                        ? h(
+                            "span",
+                            {
+                              style: {
+                                color: "var(--dsw-alias-state-success-primary, #1a7f37)",
+                                backgroundColor: "var(--dsw-alias-state-success-subtle, rgba(46,160,67,0.12))",
+                                padding: "1px 6px",
+                                borderRadius: "10px",
+                              },
+                            },
+                            `+${parsedStat.summary.insertions}`
+                          )
+                        : null,
+                      parsedStat.summary.deletions > 0
+                        ? h(
+                            "span",
+                            {
+                              style: {
+                                color: "var(--dsw-alias-state-error-primary, #cf222e)",
+                                backgroundColor: "var(--dsw-alias-state-error-subtle, rgba(248,81,73,0.12))",
+                                padding: "1px 6px",
+                                borderRadius: "10px",
+                              },
+                            },
+                            `-${parsedStat.summary.deletions}`
+                          )
+                        : null
+                    )
+                  : null
+              ),
+              parsedStat && parsedStat.files && parsedStat.files.length > 0
+                ? h(
+                    "div",
+                    {
+                      className: "dsh-github-stat-list",
+                      style: {
+                        borderRadius: "6px",
+                        border: "1px solid var(--dsw-alias-border-l2, #e1e4e8)",
+                        background: "var(--dsw-alias-bg-module-platform, #f6f8fa)",
+                        maxHeight: "36vh",
+                        overflowY: "auto",
+                        display: "flex",
+                        flexDirection: "column",
+                      },
+                    },
+                    parsedStat.files.map(function (f: any, idx: number) {
+                      var diffBlocks: any[] = [];
+                      if (!f.isBinary && f.total > 0) {
+                        var totalRatio = f.additions + f.deletions;
+                        var addBlocks = totalRatio > 0 ? Math.round((f.additions / totalRatio) * 5) : 0;
+                        var delBlocks = totalRatio > 0 ? Math.round((f.deletions / totalRatio) * 5) : 0;
+                        if (f.additions > 0 && addBlocks === 0) addBlocks = 1;
+                        if (f.deletions > 0 && delBlocks === 0) delBlocks = 1;
+                        while (addBlocks + delBlocks > 5) {
+                          if (addBlocks > delBlocks) addBlocks--;
+                          else delBlocks--;
+                        }
+                        var neutralBlocks = Math.max(0, 5 - addBlocks - delBlocks);
+
+                        for (var bi = 0; bi < addBlocks; bi++) {
+                          diffBlocks.push(h("span", { key: "a" + bi, style: { width: "3px", height: "8px", borderRadius: "1px", backgroundColor: "var(--dsw-alias-state-success-primary, #1a7f37)" } }));
+                        }
+                        for (var bj = 0; bj < delBlocks; bj++) {
+                          diffBlocks.push(h("span", { key: "d" + bj, style: { width: "3px", height: "8px", borderRadius: "1px", backgroundColor: "var(--dsw-alias-state-error-primary, #cf222e)" } }));
+                        }
+                        for (var bk = 0; bk < neutralBlocks; bk++) {
+                          diffBlocks.push(h("span", { key: "n" + bk, style: { width: "3px", height: "8px", borderRadius: "1px", backgroundColor: "var(--dsw-alias-border-subtle, rgba(0,0,0,0.15))" } }));
+                        }
+                      }
+
+                      return h(
+                        "div",
+                        {
+                          key: idx,
+                          className: "dsh-github-stat-row",
+                          style: {
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "6px 10px",
+                            fontSize: "11px",
+                            lineHeight: "1.4",
+                            borderBottom: idx < parsedStat.files.length - 1 ? "1px solid var(--dsw-alias-border-subtle, rgba(0,0,0,0.06))" : "none",
+                            gap: "8px",
+                          },
+                          title: f.path + (f.isBinary ? " (二进制文件)" : ` (+${f.additions}, -${f.deletions})`),
+                        },
+                        h(
+                          "div",
+                          {
+                            style: {
+                              fontFamily: "ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              flex: 1,
+                              minWidth: 0,
+                              color: "var(--dsw-alias-label-primary, #1f2328)",
+                            },
+                          },
+                          f.path
+                        ),
+                        h(
+                          "div",
+                          {
+                            style: {
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              flexShrink: 0,
+                              fontFamily: "monospace",
+                              fontWeight: 600,
+                            },
+                          },
+                          f.isBinary
+                            ? h("span", { style: { opacity: 0.6, fontSize: "10px" } }, "二进制")
+                            : [
+                                f.additions > 0
+                                  ? h(
+                                      "span",
+                                      {
+                                        key: "add",
+                                        style: { color: "var(--dsw-alias-state-success-primary, #1a7f37)" },
+                                      },
+                                      `+${f.additions}`
+                                    )
+                                  : null,
+                                f.deletions > 0
+                                  ? h(
+                                      "span",
+                                      {
+                                        key: "del",
+                                        style: { color: "var(--dsw-alias-state-error-primary, #cf222e)" },
+                                      },
+                                      `-${f.deletions}`
+                                    )
+                                  : null,
+                                diffBlocks.length > 0
+                                  ? h(
+                                      "div",
+                                      {
+                                        key: "bar",
+                                        style: { display: "flex", gap: "1px", marginLeft: "2px", alignItems: "center" },
+                                      },
+                                      ...diffBlocks
+                                    )
+                                  : null,
+                              ]
+                        )
+                      );
+                    })
+                  )
+                : h(
+                    "pre",
+                    {
+                      className: "dsh-github-commit-pre",
+                      style: {
+                        fontSize: "11px",
+                        lineHeight: "1.5",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        margin: 0,
+                        maxHeight: "34vh",
+                        overflowY: "auto",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        background: "var(--dsw-alias-bg-module-platform, #f6f8fa)",
+                        border: "1px solid var(--dsw-alias-border-l2, #e1e4e8)",
+                      },
+                    },
+                    effectiveStat
+                  )
             )
           : null,
         !effectiveBody && !effectiveStat

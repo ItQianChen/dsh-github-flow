@@ -27,3 +27,19 @@ export declare function fetchWithRetry(url: string, options?: RequestInit, confi
     res: Response;
     json: any;
 }>;
+export interface GitStatItem {
+    path: string;
+    total: number;
+    additions: number;
+    deletions: number;
+    isBinary: boolean;
+    rawRight?: string;
+}
+export declare function parseGitStatText(statText: string): {
+    files: GitStatItem[];
+    summary: {
+        filesChanged: number;
+        insertions: number;
+        deletions: number;
+    } | null;
+} | null;
