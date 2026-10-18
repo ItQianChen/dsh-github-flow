@@ -42,9 +42,12 @@ export function parseGitStatusOutput(output: string, maxFiles = 20): GitLocalSta
     if (line.length < 4) continue;
     const status = line.slice(0, 2).trim() || 'M';
     // 路径可能含空格（git 不加引号场景）；rename 形态 `R  old -> new` 取 new
-    let p = line.slice(3);
+    let p = line.slice(3).trim();
     const renameArrow = p.indexOf(' -> ');
-    if (renameArrow >= 0) p = p.slice(renameArrow + 4);
+    if (renameArrow >= 0) p = p.slice(renameArrow + 4).trim();
+    if (p.startsWith('"') && p.endsWith('"') && p.length >= 2) {
+      p = p.slice(1, -1);
+    }
     dirtyFiles.push({ status, path: p });
   }
 

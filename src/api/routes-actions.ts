@@ -263,6 +263,15 @@ export function registerActionRoutes(
               sendJson(res, 200, { ok: r.ok, data: r, error: r.error });
               break;
             }
+            case 'uncommitted_files':
+            case 'get_uncommitted_files': {
+              const limit = Math.min(Math.max(1, Number(payload.limit) || 15), 100);
+              const skip = Math.max(0, Number(payload.skip) || 0);
+              const resolvedCwd = executor.resolveWorkspaceCwd(cwd);
+              const r = await executor.getUncommittedFiles(resolvedCwd, limit, skip);
+              sendJson(res, 200, { ok: true, data: r });
+              break;
+            }
             default:
               sendJson(res, 400, { ok: false, message: `未知的操作类型: ${payload.action}` });
           }

@@ -81,6 +81,11 @@ window.__ModuleLoader__.load({
      * 重设 hidden/active，用户手动切的 Tab 会被一次后台数据同步拽回默认页。
      */
     function applyTabState(container: HTMLElement, tabKey: string) {
+      container.setAttribute("data-active-tab", tabKey);
+      var rightbar = container.closest(".dsh-github-rightbar-container");
+      if (rightbar) {
+        rightbar.setAttribute("data-active-tab", tabKey);
+      }
       var pages = container.querySelectorAll("[data-tab-page]");
       pages.forEach(function (page) {
         (page as HTMLElement).hidden = page.getAttribute("data-tab-page") !== tabKey;
@@ -754,28 +759,30 @@ window.__ModuleLoader__.load({
                   hasMoreDirtyToLoad
                     ? h(
                         "div",
-                        { style: { textAlign: "center", margin: "10px 0 4px" } },
+                        { style: { marginTop: "10px", textAlign: "center" } },
                         dirtyPagination?.loadingMore
-                          ? h("div", { style: { fontSize: "11px", opacity: 0.65 } }, "⏳ 正在加载更多未提交变更...")
+                          ? h("div", { style: { fontSize: "11px", opacity: 0.75, padding: "6px 0" } }, "⏳ 正在加载更多未提交变更…")
                           : h(
-                              "button",
+                              "div",
                               {
-                                className: "dsh-github-btn-sm",
-                                style: { fontSize: "11px", padding: "4px 12px", cursor: "pointer" },
-                                onClick: function () {
-                                  if (dirtyPagination && typeof dirtyPagination.onLoadMore === "function") {
-                                    dirtyPagination.onLoadMore();
-                                  }
+                                style: {
+                                  fontSize: "11px",
+                                  opacity: 0.6,
+                                  padding: "6px 0",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: "6px",
                                 },
-                                title: "向下滑动或点击加载下 15 条未提交变更",
                               },
-                              `向下滑动或点击加载更多 (${displayedDirty.length} / ${totalDirtyCount})`
+                              h("span", null, "⬇️ 向下滑动自动加载"),
+                              h("span", { style: { fontFamily: "monospace" } }, `(${displayedDirty.length} / ${totalDirtyCount})`)
                             )
                       )
                     : totalDirtyCount > 15
                     ? h(
                         "div",
-                        { style: { textAlign: "center", fontSize: "11px", opacity: 0.55, margin: "8px 0 2px" } },
+                        { style: { textAlign: "center", fontSize: "11px", opacity: 0.5, padding: "6px 0", marginTop: "8px" } },
                         `✓ 已加载全部 ${totalDirtyCount} 个未提交变更`
                       )
                     : null
@@ -1028,6 +1035,10 @@ window.__ModuleLoader__.load({
       var switchTab = function (container: HTMLElement, tabKey: string) {
         container.setAttribute("data-active-tab", tabKey);
         applyTabState(container, tabKey);
+        var rightbar = container.closest(".dsh-github-rightbar-container");
+        if (rightbar) {
+          rightbar.setAttribute("data-active-tab", tabKey);
+        }
       };
 
       var tabsBarEl = h(
@@ -1461,56 +1472,87 @@ window.__ModuleLoader__.load({
       };
 
       var loadMoreDirtyFiles = function () {
-        if (loadingMoreDirty || !hasMoreDirty) return;
+        if (loadingMoreDirty) return;
         var total = data?.gitStatus?.dirtyCount || 0;
-        var currentLoaded = (data?.gitStatus?.dirtyFiles?.length || 0) + extraDirtyFiles.length;
+        var baseFiles = data?.gitStatus?.dirtyFiles || [];
+        var loadedCount = baseFiles.length + extraDirtyFiles.length;
 
-        // 若已拉取的未提交文件数多于当前展现上限，先直接扩大视图（0ms 前端切片）
-        if (visibleDirtyCount + 15 <= currentLoaded) {
-          setVisibleDirtyCount(function (prev: number) { return prev + 15; });
+        // 若当前已持有的文件列表中还有未展示的内容，按 15 条步长递增展示窗口（0ms 纯前端瞬时响应）
+        if (visibleDirtyCount < loadedCount) {
+          setVisibleDirtyCount(function (prev: number) {
+            return Math.min(prev + 15, loadedCount);
+          });
           return;
         }
 
+        // 若当前已展示数已经达到总数，说明全量全部展示完毕，无需发起请求
         if (visibleDirtyCount >= total && total > 0) {
           setHasMoreDirty(false);
           return;
         }
 
+        // 仅在当前已知条数小于总数时向后端增量拉取后续条目
         setLoadingMoreDirty(true);
-        var skip = currentLoaded;
+        var skip = loadedCount;
         var limit = 15;
         var url = "/api/github/uncommitted-files?limit=" + limit + "&skip=" + skip + (cwd ? "&cwd=" + encodeURIComponent(cwd) : "");
-        fetch(url)
-          .then(function (r: any) { return r.json(); })
-          .then(function (j: any) {
+
+        var fetchWithFallback = async function () {
+          try {
+            var r = await fetch(url);
+            if (r.status === 404) {
+              // 自动无缝降级走常驻端点 /api/github/action
+              r = await fetch("/api/github/action", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "get_uncommitted_files",
+                  limit: limit,
+                  skip: skip,
+                  cwd: cwd || undefined,
+                }),
+              });
+            }
+            if (!r.ok) {
+              setLoadingMoreDirty(false);
+              return;
+            }
+            var j = await r.json().catch(function () { return null; });
             setLoadingMoreDirty(false);
             if (j && j.ok && j.data && Array.isArray(j.data.items)) {
               if (j.data.items.length === 0) {
                 setHasMoreDirty(false);
               } else {
-                setExtraDirtyFiles(function (prev: any[]) { return prev.concat(j.data.items); });
-                setVisibleDirtyCount(function (prev: number) { return prev + j.data.items.length; });
-                if (!j.data.hasMore || (currentLoaded + j.data.items.length) >= total) {
+                setExtraDirtyFiles(function (prev: any[]) {
+                  return prev.concat(j.data.items);
+                });
+                setVisibleDirtyCount(function (prev: number) {
+                  return prev + j.data.items.length;
+                });
+                if (!j.data.hasMore || (loadedCount + j.data.items.length) >= total) {
                   setHasMoreDirty(false);
                 }
               }
             } else {
               setHasMoreDirty(false);
             }
-          })
-          .catch(function () {
+          } catch (e) {
             setLoadingMoreDirty(false);
-          });
+          }
+        };
+
+        fetchWithFallback();
       };
 
       React.useEffect(function () {
         var el = containerRef && containerRef.current;
         if (!el) return;
         var onScroll = function () {
-          var activeTab = el.getAttribute("data-active-tab");
-          var threshold = 80;
+          var activeBtn = el.querySelector(".dsh-github-tab-btn.active");
+          var activeTab = activeBtn ? activeBtn.getAttribute("data-tab-btn") : (el.getAttribute("data-active-tab") || "git");
+          var threshold = 120;
           if (el.scrollHeight - el.scrollTop - el.clientHeight < threshold) {
-            if (!activeTab || activeTab === "git") {
+            if (activeTab === "git") {
               loadMoreCommits();
             } else if (activeTab === "dirty") {
               loadMoreDirtyFiles();
