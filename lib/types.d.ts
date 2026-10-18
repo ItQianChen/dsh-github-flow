@@ -116,6 +116,8 @@ export interface RepoMetadata {
     description?: string;
     isPrivate?: boolean;
     url?: string;
+    stargazerCount?: number;
+    forkCount?: number;
 }
 /** Git 分支详情项（供分支切换器下拉列表消费） */
 export interface GitBranchItem {

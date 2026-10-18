@@ -963,7 +963,7 @@ export class GhExecutor {
 
     // 1. 优先尝试由 gh 直接根据当前上下文识别
     const res = await this.run<any>(
-      ['repo', 'view', '--json', 'nameWithOwner,name,owner,defaultBranchRef,description,isPrivate,url'],
+      ['repo', 'view', '--json', 'nameWithOwner,name,owner,defaultBranchRef,description,isPrivate,url,stargazerCount,forkCount'],
       { cwd: targetCwd, timeoutMs: 10_000 }
     );
 
@@ -977,6 +977,8 @@ export class GhExecutor {
         description: d.description || '',
         isPrivate: Boolean(d.isPrivate),
         url: d.url || `https://github.com/${d.nameWithOwner}`,
+        stargazerCount: typeof d.stargazerCount === 'number' ? d.stargazerCount : 0,
+        forkCount: typeof d.forkCount === 'number' ? d.forkCount : 0,
       };
     }
 
@@ -993,7 +995,7 @@ export class GhExecutor {
 
           // 使用精确的 owner/repo 向 gh 获取元数据（显式传参，不依赖无上下文的探测）
           const directRes = await this.run<any>(
-            ['repo', 'view', nameWithOwner, '--json', 'nameWithOwner,name,owner,defaultBranchRef,description,isPrivate,url'],
+            ['repo', 'view', nameWithOwner, '--json', 'nameWithOwner,name,owner,defaultBranchRef,description,isPrivate,url,stargazerCount,forkCount'],
             { cwd: targetCwd, timeoutMs: 10_000 }
           );
 
@@ -1007,6 +1009,8 @@ export class GhExecutor {
               description: d.description || '',
               isPrivate: Boolean(d.isPrivate),
               url: d.url || `https://github.com/${nameWithOwner}`,
+              stargazerCount: typeof d.stargazerCount === 'number' ? d.stargazerCount : 0,
+              forkCount: typeof d.forkCount === 'number' ? d.forkCount : 0,
             };
           }
 

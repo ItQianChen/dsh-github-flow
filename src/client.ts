@@ -497,7 +497,34 @@ window.__ModuleLoader__.load({
       var repoCardEl = h(
         "div",
         { className: "dsh-github-card" },
-        h("div", { className: "dsh-github-card-title" }, "当前工作区 GitHub 仓库"),
+        h(
+          "div",
+          { className: "dsh-github-card-title", style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+          h("span", null, "当前工作区 GitHub 仓库"),
+          repo && repo.stargazerCount !== undefined
+            ? h(
+                "a",
+                {
+                  href: `${repo.url}/stargazers`,
+                  target: "_blank",
+                  className: "dsh-github-badge",
+                  style: {
+                    textDecoration: "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "3px",
+                    fontWeight: 600,
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    padding: "1px 6px",
+                  },
+                  title: `当前仓库 Star 数量: ${repo.stargazerCount}（点击前往 GitHub 查看）`,
+                },
+                "⭐ ",
+                String(repo.stargazerCount)
+              )
+            : null
+        ),
         h(
           "div",
           { className: "dsh-github-card-value" },
