@@ -120,14 +120,15 @@ export function sniffImageMime(buf: Buffer): string | null {
 /** 图片下载护栏：按真实资源消耗计算——单图字节与目录总量，无张数截断 */
 export const IMG_MAX_BYTES = 5 * 1024 * 1024;      // 单图 5MB
 export const IMG_DIR_MAX_BYTES = 15 * 1024 * 1024;  // 图片缓存目录总量 15MB
+export const IMG_DIR_LOW_WATERMARK = 10 * 1024 * 1024; // LRU 淘汰低水位目标 10MB
 
 /** 图片落盘目录（按内容寻址命名，重复下载天然去重） */
-function imageStoreDir(): string {
+export function imageStoreDir(): string {
   return path.join(os.homedir(), '.dsh', 'data', 'dsh-github-flow', 'images');
 }
 
 /** 粗略统计图片目录现有总量（遍历一次，文件数有护栏上限不会失控） */
-function imageDirSize(dir: string): number {
+export function imageDirSize(dir: string): number {
   let total = 0;
   try {
     for (const f of fs.readdirSync(dir)) {
@@ -135,6 +136,70 @@ function imageDirSize(dir: string): number {
     }
   } catch {}
   return total;
+}
+
+export interface LruEvictionResult {
+  freedBytes: number;
+  evictedCount: number;
+  evictedFiles: string[];
+}
+
+/**
+ * LRU 图片缓存淘汰：当目录空间不足以容纳新图片时，按最后修改时间（mtime）淘汰最旧的历史文件。
+ *
+ * 护栏纪律：
+ * 1. 保护当前批次已写入的文件（protectFiles）：避免同一批次内前一张图被后一张图立即顶替；
+ * 2. 仅淘汰历史文件：按 mtime 升序排列（最旧优先），逐一清理直到目录大小降至目标低水位；
+ * 3. 容错防御：单文件删除失败（如文件被锁定）静默跳过继续尝试下一个，绝不崩溃中断。
+ */
+export function evictLruImages(
+  dir: string,
+  neededBytes: number,
+  protectFiles: Set<string> = new Set(),
+  maxDirBytes: number = IMG_DIR_MAX_BYTES,
+  targetBytes: number = IMG_DIR_LOW_WATERMARK
+): LruEvictionResult {
+  const result: LruEvictionResult = { freedBytes: 0, evictedCount: 0, evictedFiles: [] };
+  if (!fs.existsSync(dir)) return result;
+
+  let currentSize = imageDirSize(dir);
+  if (currentSize + neededBytes <= maxDirBytes) {
+    return result;
+  }
+
+  const candidates: Array<{ path: string; size: number; mtime: number }> = [];
+  try {
+    const entries = fs.readdirSync(dir);
+    for (const name of entries) {
+      const fullPath = path.join(dir, name);
+      if (protectFiles.has(fullPath)) continue;
+      try {
+        const stat = fs.statSync(fullPath);
+        if (stat.isFile()) {
+          candidates.push({ path: fullPath, size: stat.size, mtime: stat.mtimeMs });
+        }
+      } catch {}
+    }
+  } catch {
+    return result;
+  }
+
+  candidates.sort((a, b) => a.mtime - b.mtime);
+
+  for (const item of candidates) {
+    if (currentSize + neededBytes <= maxDirBytes && currentSize <= targetBytes) {
+      break;
+    }
+    try {
+      fs.unlinkSync(item.path);
+      currentSize -= item.size;
+      result.freedBytes += item.size;
+      result.evictedCount++;
+      result.evictedFiles.push(item.path);
+    } catch {}
+  }
+
+  return result;
 }
 
 export interface DownloadedImage {
@@ -197,6 +262,7 @@ export async function downloadImages(
   const images: DownloadedImage[] = [];
   const failures: string[] = [];
   const remaining: string[] = [];
+  const currentBatchFiles = new Set<string>();
   let budgetExhausted = false;
 
   // 无张数截断：字节护栏按真实资源消耗逐张判定。触顶后仍继续遍历——
@@ -221,6 +287,13 @@ export async function downloadImages(
       failures.push(`${url.slice(-24)}: 内容不是图片（魔数校验失败）`);
       continue;
     }
+
+    // 空间护栏检查：若超出目录上限，优先触发 LRU 淘汰历史文件以腾出预算
+    if (dirSize + buf.length > IMG_DIR_MAX_BYTES) {
+      const { freedBytes } = evictLruImages(dir, buf.length, currentBatchFiles);
+      dirSize = Math.max(0, dirSize - freedBytes);
+    }
+
     if (dirSize + buf.length > IMG_DIR_MAX_BYTES) {
       budgetExhausted = true;
       remaining.push(url);
@@ -230,6 +303,7 @@ export async function downloadImages(
     const ext = mime.includes('svg') ? 'svg' : mime.split('/')[1].replace('jpeg', 'jpg');
     const file = path.join(dir, `${crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16)}.${ext}`);
     fs.writeFileSync(file, buf);
+    currentBatchFiles.add(file);
     // 累计已写入量：下张图的总量护栏判定必须基于最新值（否则多图可突破上限）
     dirSize += buf.length;
     images.push({ file, mimeType: mime, url, bytes: buf.length });

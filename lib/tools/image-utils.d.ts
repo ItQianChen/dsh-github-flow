@@ -37,6 +37,25 @@ export declare function sniffImageMime(buf: Buffer): string | null;
 /** 图片下载护栏：按真实资源消耗计算——单图字节与目录总量，无张数截断 */
 export declare const IMG_MAX_BYTES: number;
 export declare const IMG_DIR_MAX_BYTES: number;
+export declare const IMG_DIR_LOW_WATERMARK: number;
+/** 图片落盘目录（按内容寻址命名，重复下载天然去重） */
+export declare function imageStoreDir(): string;
+/** 粗略统计图片目录现有总量（遍历一次，文件数有护栏上限不会失控） */
+export declare function imageDirSize(dir: string): number;
+export interface LruEvictionResult {
+    freedBytes: number;
+    evictedCount: number;
+    evictedFiles: string[];
+}
+/**
+ * LRU 图片缓存淘汰：当目录空间不足以容纳新图片时，按最后修改时间（mtime）淘汰最旧的历史文件。
+ *
+ * 护栏纪律：
+ * 1. 保护当前批次已写入的文件（protectFiles）：避免同一批次内前一张图被后一张图立即顶替；
+ * 2. 仅淘汰历史文件：按 mtime 升序排列（最旧优先），逐一清理直到目录大小降至目标低水位；
+ * 3. 容错防御：单文件删除失败（如文件被锁定）静默跳过继续尝试下一个，绝不崩溃中断。
+ */
+export declare function evictLruImages(dir: string, neededBytes: number, protectFiles?: Set<string>, maxDirBytes?: number, targetBytes?: number): LruEvictionResult;
 export interface DownloadedImage {
     file: string;
     mimeType: string;
