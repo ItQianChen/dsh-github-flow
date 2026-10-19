@@ -9,6 +9,7 @@ import type { UpdateChecker } from '../updater.js';
 import { mapLimit, tryReadWorkspaces, findWorkspacePathBySession, findMostRecentWorkspacePath, hasGitDir } from '../workspace.js';
 import type { GitHubOverviewData, GlobalOverviewData, UserRepoItem, WorkspaceMatrixItem, PrItem, IssueItem, WorkflowRunItem, IssueStats, GlobalIssueItem } from '../types.js';
 import { resolveIssueCategories, calculateIssueStats, basenameSafe, sendJson, type RouteDeps } from './route-helpers.js';
+import { describeDeterministicError } from '../executor/error-classifier.js';
 
 /** 探测单个工作区时在途的 gh 进程数上限；libuv 线程池默认 4，留出余量给其他请求 */
 const WORKSPACE_PROBE_CONCURRENCY = 3;
@@ -50,6 +51,22 @@ export function registerOverviewRoutes(
         }
 
         const now = Date.now();
+
+        // 先行检查当前工作区是否真实包含 .git，无 .git 铁证判定为未关联仓库
+        const isGitRepo = hasGitDir(cwd);
+
+        // 缓存失效判定：比对 remote 配置指纹，而不是比对解析出的仓库身份。
+        //
+        // 为什么换：身份比对把「解析器的正确性」变成了「缓存有效性的前置条件」。
+        // 多 remote 布局下（如 upstream 段写在 origin 段之前），取「第一个
+        // github.com 匹配」会拿到上游仓库，与缓存里的 fork 身份恒失配，于是
+        // 每次请求都作废缓存、重拉 6 个 gh 子进程。指纹只回答「配置变没变」，
+        // 不依赖任何语义理解，对该类偏差免疫。
+        //
+        // 指纹读取是纯本地 readFileSync（几 KB），与 hasGitDir 同级开销，零子进程。
+        const remoteFingerprint = isGitRepo ? executor.getRemoteFingerprint(cwd) : null;
+        cacheMap.invalidateIfFingerprintChanged(cwd, remoteFingerprint);
+
         const cachedData = cacheMap.get(cwd, now);
         if (cachedData && !force) {
           sendJson(res, 200, {
@@ -62,8 +79,6 @@ export function registerOverviewRoutes(
         }
 
         const auth = await executor.checkAuth(cwd);
-        // 先行检查当前工作区是否真实包含 .git，无 .git 铁证判定为未关联仓库
-        const isGitRepo = hasGitDir(cwd);
         const repo = isGitRepo ? await executor.getRepoMetadata(cwd) : null;
 
         // 若当前工作区未关联 Git 仓库，直接返回纯净空状态，坚决不拉取远端数据
@@ -78,7 +93,7 @@ export function registerOverviewRoutes(
             lastUpdated: new Date().toISOString(),
             updateInfo: checker.getQuickStatus(),
           };
-          cacheMap.set(cwd, emptyData, now);
+          cacheMap.set(cwd, emptyData, now, remoteFingerprint);
           sendJson(res, 200, { ok: true, data: emptyData, fromCache: false, cwd });
           return;
         }
@@ -86,6 +101,9 @@ export function registerOverviewRoutes(
         let pullRequests: PrItem[] = [];
         let issues: IssueItem[] = [];
         let runs: WorkflowRunItem[] = [];
+        // 确定性降级说明（非错误）：在 if 块内累积、在块外随响应一起落缓存，
+        // 因此必须在请求作用域声明，不能藏在分支里。
+        const deterministicNotices: string[] = [];
         // 面板增强信息载体（git 状态/Release 锚定/分支 PR——全部可选字段，
         // 进缓存与快照时旧消费方零破坏，渲染层 ?. 兜底）
         const freshExtras: Record<string, any> = {};
@@ -107,16 +125,35 @@ export function registerOverviewRoutes(
             ),
           ]);
 
-          // 核心数据拉取故障检测：若拉取核心业务数据遭遇失败（网络超时/断网/接口报错），
-          // 绝对不能把失败伪装成「0 个 PR、0 个 Issue」并假装成功返回！
-          const failures: string[] = [];
-          if (!prsRes.ok) failures.push(`PR 获取失败: ${prsRes.error || '网络或接口异常'}`);
-          if (!issuesRes.ok) failures.push(`Issue 获取失败: ${issuesRes.error || '网络或接口异常'}`);
-          if (!runsRes.ok) failures.push(`Actions 获取失败: ${runsRes.error || '网络或接口异常'}`);
+          // 核心数据拉取故障检测：把失败按语义拆成两堆。
+          //
+          // 为什么必须拆：`gh` 对所有失败都返回非零退出，但两类失败的性质完全不同——
+          // · 确定性（仓库关了 Issues / 仓库不存在 / 无权限）：重试一万次也还是失败，
+          //   正确处置是「该字段降级为空列表 + 一句说明」，绝不能伪装成网络故障；
+          // · 传输层（超时 / 断连 / 代理阻断）：值得回退历史快照并允许重试。
+          // 旧实现把两者混为一谈，导致「仓库关了 Issues」弹出「网络连接失败」横幅，
+          // 还被客户端重试器当成可恢复抖动反复空烧。
+          const transientFailures: string[] = [];
+          const collectFailure = (res: { ok: boolean; error?: string; errorKind?: string }, label: string) => {
+            if (res.ok) return;
+            const msg = res.error || '接口异常';
+            // errorKind 由 GhExecutor 统一分类（单一事实源），这里只做分流
+            if (res.errorKind === 'deterministic') {
+              deterministicNotices.push(`${label}: ${describeDeterministicError(msg) || msg}`);
+            } else {
+              transientFailures.push(`${label}: ${msg}`);
+            }
+          };
+          collectFailure(prsRes, 'PR 获取失败');
+          collectFailure(issuesRes, 'Issue 获取失败');
+          collectFailure(runsRes, 'Actions 获取失败');
 
-          if (failures.length > 0) {
-            const failureReason = failures.join('；');
-            // 若此前内存有缓存，保全已有缓存内容，附加 networkError 与 partialFailure
+          if (transientFailures.length > 0) {
+            const failureReason = transientFailures.join('；');
+            // 若此前内存有缓存，保全已有缓存内容，附加 networkError 与 partialFailure。
+            // repo 必须用本次新鲜解析值覆盖：列表数据旧一点可以接受，仓库身份旧了就是错的
+            // （典型场景：用户把 origin 从上游换成自己的 fork 后，issue list 永久失败，
+            //  失败分支从不写缓存，旧身份被 freeze 在 fallback 里永远出不来）。
             const fallbackCached = cacheMap.getFallback(cwd) || cacheMap.get(cwd, now);
             if (fallbackCached && (fallbackCached.pullRequests.length > 0 || fallbackCached.issues.length > 0 || fallbackCached.runs.length > 0)) {
               sendJson(res, 200, {
@@ -126,6 +163,7 @@ export function registerOverviewRoutes(
                 error: failureReason,
                 data: {
                   ...fallbackCached,
+                  repo: repo || fallbackCached.repo,
                   networkError: true,
                   networkErrorReason: failureReason,
                   auth: { ...fallbackCached.auth, networkError: true, networkErrorReason: failureReason },
@@ -213,10 +251,13 @@ export function registerOverviewRoutes(
           runs,
           lastUpdated: new Date().toISOString(),
           updateInfo: checker.getQuickStatus(),
+          // 确定性降级说明随数据一起落缓存：它是仓库的稳定属性（Issues 关着就一直关着），
+          // 每次请求重新声明没有意义，也不该让它冒泡成 networkError。
+          ...(deterministicNotices.length > 0 ? { notices: deterministicNotices } : {}),
           ...freshExtras,
         };
 
-        cacheMap.set(cwd, freshData, now);
+        cacheMap.set(cwd, freshData, now, remoteFingerprint);
 
         sendJson(res, 200, { ok: true, data: freshData, fromCache: false, cwd });
       } catch (err: any) {
@@ -256,6 +297,8 @@ export function registerOverviewRoutes(
         let issueStats: IssueStats = { total: 0, reported: 0, assigned: 0, created: 0 };
         let workspaceMatrix: WorkspaceMatrixItem[] = [];
         let workspaceError: string | undefined;
+        // 全局驾驶舱的确定性降级说明（同单仓库口径：在分支内累积、块外落缓存）
+        const globalNotices: string[] = [];
 
         if (auth.loggedIn) {
           // 并发执行：1. 账号下仓库列表 2. 个人 PRs 3. 三维 Issue 检索（名下仓库用户提单 + 指派待办 + 我创建的）
@@ -294,10 +337,21 @@ export function registerOverviewRoutes(
           const assignedIssuesRes = queryResults[3].status === 'fulfilled' ? queryResults[3].value : { ok: false };
           const authorIssuesRes = queryResults[4].status === 'fulfilled' ? queryResults[4].value : { ok: false };
 
-          // 检测全局拉取是否发生网络故障，绝不把网络失败当作「0 仓库、0 PR」伪造成功
+          // 检测全局拉取是否发生网络故障，绝不把网络失败当作「0 仓库、0 PR」伪造成功。
+          // 与单仓库概览同一口径：确定性失败（账号级搜索本就不存在确定性场景，
+          // 但仓库列表拉取可能命中 404/403）不进入网络故障分支，只作为 notice 透出。
           const globalFailures: string[] = [];
-          if (!reposRes.ok) globalFailures.push(`仓库列表拉取失败: ${(reposRes as any).error || '网络或接口异常'}`);
-          if (!prsRes.ok) globalFailures.push(`个人 PR 拉取失败: ${(prsRes as any).error || '网络或接口异常'}`);
+          const collectGlobalFailure = (res: { ok: boolean; error?: string; errorKind?: string }, label: string) => {
+            if (res.ok) return;
+            const msg = res.error || '接口异常';
+            if (res.errorKind === 'deterministic') {
+              globalNotices.push(`${label}: ${describeDeterministicError(msg) || msg}`);
+            } else {
+              globalFailures.push(`${label}: ${msg}`);
+            }
+          };
+          collectGlobalFailure(reposRes as any, '仓库列表拉取失败');
+          collectGlobalFailure(prsRes as any, '个人 PR 拉取失败');
 
           if (globalFailures.length > 0) {
             const globalNetReason = globalFailures.join('；');
@@ -413,6 +467,7 @@ export function registerOverviewRoutes(
           lastUpdated: new Date().toISOString(),
           updateInfo: checker.getQuickStatus(),
           ...(workspaceError ? { workspaceError } : {}),
+          ...(globalNotices.length > 0 ? { notices: globalNotices } : {}),
         };
 
         globalCache.set('global', globalData, now);

@@ -2,9 +2,11 @@ import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConf
 import type { ProxyManager } from './proxy.js';
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
-import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText } from './executor/git-parser.js';
+import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
-export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, getPlatformInstallGuide, getGhUpgradeHint, };
+import { classifyGhError, describeDeterministicError, isRetryableError, type GhErrorKind } from './executor/error-classifier.js';
+export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, getPlatformInstallGuide, getGhUpgradeHint, classifyGhError, describeDeterministicError, isRetryableError, };
+export type { GhErrorKind };
 export declare class GhExecutor {
     ghPath: string;
     defaultTimeoutMs: number;
@@ -200,6 +202,41 @@ export declare class GhExecutor {
      * 3. 精准分流网络超时/异常（networkError）与真正的未认证（explicitLoggedOut）。
      */
     private probeAuth;
+    /**
+     * 解析工作区真实的 git 目录，兼容三种物理形态：
+     *
+     *   1. `.git` 为目录（常规仓库）→ 直接用它
+     *   2. `.git` 为文件且首行是 `gitdir: <path>`（worktree / submodule 检出）
+     *      → 读指针指向的目录
+     *   3. 指针目标含 `commondir`（worktree 特有）→ 继续解析到共享仓库目录
+     *
+     * 为什么必须处理 2/3：worktree 的 `.git` 是文件，其下根本没有 config；
+     * 主仓库 config 在 `<gitdir>/<commondir>` 指向处（实测 commondir 内容为 `../..`）。
+     * 不解析就会让所有依赖 config 的能力在该形态下静默失效——而 worktree 恰恰是
+     * 多任务并行开发的常用形态。
+     *
+     * @returns 绝对路径；非 Git 目录/指针不可解析时返回 null（调用方保守处理，绝不抛错）
+     */
+    resolveGitDirPath(cwd?: string): string | null;
+    /**
+     * remote 配置指纹：全部 remote url 去重、排序、拼接后取 SHA-256 前 12 位。
+     *
+     * 为什么不用身份解析做缓存失效判定：身份解析要回答「变成了什么」，
+     * 一旦解析器对某种 config 布局有偏差（如双 remote 时取错 remote 段），
+     * 比对就永远失配——缓存再也不命中，每次请求都重拉全部 gh 子进程。
+     * 指纹只回答「变了没有」，不依赖任何语义理解，因此对该类偏差免疫。
+     *
+     * 反例（实测）：`git remote rename origin upstream` 后 `git remote add origin <fork>`，
+     * config 里 upstream 段排在 origin 段前，取「第一个 github.com 匹配」会拿到上游，
+     * 而 git 权威解析（branch.<name>.remote → origin）拿到的是 fork。
+     *
+     * @returns 12 位十六进制指纹；仅当「非 Git 目录 / config 不可读」时返回 null
+     *          （调用方据此保守判定为「未变更」，绝不因探测失败误清空缓存）。
+     *          注意：**config 可读但没有任何 remote 时返回的是空集合的哈希，不是 null**——
+     *          「仓库没有远程」是一个确定事实，它与「读不到配置」必须区分开：
+     *          否则用户删光 remote 后指纹恒为 null，旧快照再也无法失效。
+     */
+    getRemoteFingerprint(cwd?: string): string | null;
     /**
      * 仅从本地 .git/config 解析仓库身份，绝不发起网络请求。
      *

@@ -88,3 +88,56 @@ export function NetworkAlertBanner(props: {
     )
   );
 }
+
+/**
+ * 确定性降级说明条（非错误）。
+ *
+ * 为什么要与 NetworkAlertBanner 分开：仓库关闭了 Issues、未启用 Discussions
+ * 属于仓库的**稳定配置事实**，不是故障。把它塞进「网络连接失败」横幅会产生
+ * 三重误导——用户去查网线、客户端启动阶梯重试、自动同步每 5 分钟空转一轮。
+ * 这里只做安静陈述：一句话说明为什么列表是空的，不提供重试按钮。
+ */
+export function RepoNoticeBar(props: {
+  isRightbar?: boolean;
+  notices?: string[] | null;
+}) {
+  var notices = Array.isArray(props.notices) ? props.notices.filter(Boolean) : [];
+  if (notices.length === 0) return null;
+  var isRightbar = Boolean(props.isRightbar);
+  var h = React.createElement;
+
+  return h(
+    "div",
+    {
+      className: "dsh-github-repo-notice",
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: "3px",
+        padding: isRightbar ? "8px 10px" : "10px 14px",
+        marginBottom: "10px",
+        borderRadius: "8px",
+        background: "rgba(84, 174, 255, 0.10)",
+        border: "1px solid rgba(84, 174, 255, 0.35)",
+        fontSize: "12px",
+        color: "var(--dsw-alias-label-primary, #1f2328)",
+      },
+    },
+    h(
+      "div",
+      { style: { display: "flex", alignItems: "center", gap: "6px", fontWeight: 600 } },
+      h("span", null, "ℹ️"),
+      h("span", null, "仓库配置提示")
+    ),
+    ...notices.map(function (n, i) {
+      return h(
+        "div",
+        {
+          key: "notice-" + i,
+          style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", lineHeight: 1.5 },
+        },
+        n
+      );
+    })
+  );
+}

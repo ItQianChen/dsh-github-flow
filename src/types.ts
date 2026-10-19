@@ -82,6 +82,14 @@ export interface GhResult<T = unknown> {
   truncated?: boolean;
   /** 二进制模式下的字节长度（data 为 Buffer 时存在） */
   binaryBytes?: number;
+  /**
+   * 失败语义分类（仅 ok=false 时存在）。
+   *
+   * 为什么挂在结果上而不是让调用方自己 parse error 文本：调用方散落在
+   * 各工具与路由里，重复实现文本匹配必然漂移；分类规则只应有一份事实源
+   * （src/executor/error-classifier.ts）。上层据此决定「重试 / 回退快照 / 直接降级」。
+   */
+  errorKind?: 'transient' | 'deterministic' | 'unknown';
 }
 
 export interface AuthInstallGuide {
@@ -260,6 +268,14 @@ export interface GitHubOverviewData {
   networkError?: boolean;
   /** 网络异常的原因或提示 */
   networkErrorReason?: string;
+  /**
+   * 确定性降级说明（非错误）。
+   *
+   * 为什么与 networkError 分开：仓库关闭 Issues、未启用 Discussions 这类
+   * 「配置事实」不是故障，不该触发网络告警横幅与重试。它们只需要在面板上
+   * 安静地说明一句「该仓库未开启 Issues」，让用户知道空列表是正常的。
+   */
+  notices?: string[];
   /** 插件版本与升级信息（由内存缓存快速读取，不阻塞首屏业务） */
   updateInfo?: UpdateInfo;
   /** 本地 Git 状态（ahead/behind/dirty，remote-tracking 快照语义）；非 Git 工作区为 undefined */
@@ -330,6 +346,11 @@ export interface GlobalOverviewData {
   networkErrorReason?: string;
   /** 工作区矩阵读取失败的原因。区分「没有工作区」与「读不到工作区」，避免把故障显示成空状态 */
   workspaceError?: string;
+  /**
+   * 确定性降级说明（非错误）：仓库关闭 Issues、未启用 Discussions 等配置事实。
+   * 与 networkError 互斥——它不是故障，不该触发告警横幅与重试。
+   */
+  notices?: string[];
   /** 插件版本与升级信息（由内存缓存快速读取，不阻塞首屏业务） */
   updateInfo?: UpdateInfo;
 }

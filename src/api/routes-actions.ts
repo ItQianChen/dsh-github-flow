@@ -150,8 +150,12 @@ export function registerActionRoutes(
     kind: 'exact',
     path: '/api/github/refresh',
     handler: async (req: any, res: any) => {
-      cacheMap.clear();
-      globalCache.clear();
+      // 连容灾底座一起清：用户点「重试刷新」的语义是「宁可空白也重来」。
+      // 只清活动缓存会留下一个致命死角——失败分支从不写缓存，于是 fallback
+      // 里的旧快照一旦冻结就永久生效（仓库身份改错了也永远出不来），
+      // 刷新按钮点了等于没点。
+      cacheMap.clear({ keepFallback: false });
+      globalCache.clear({ keepFallback: false });
       sendJson(res, 200, { ok: true, message: '缓存已清空，下次读取将拉取最新数据' });
     },
   });

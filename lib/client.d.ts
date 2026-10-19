@@ -15,10 +15,10 @@ import { getLocalSyncSettings, saveLocalSyncSettings, getStoredGlobalOverview, s
 import { BranchSelectorDropdown } from './ui/branch-selector.js';
 import { AuthGuideCard } from './ui/auth-guide-card.js';
 import { UpgradeNotificationCard } from './ui/upgrade-card.js';
-import { NetworkAlertBanner } from './ui/network-banner.js';
+import { NetworkAlertBanner, RepoNoticeBar } from './ui/network-banner.js';
 import { SyncStatusBadge } from './ui/sync-status-badge.js';
 import { CommitDetailModal } from './ui/commit-modal.js';
 import { GlobalSyncSettingsModal } from './ui/sync-settings-modal.js';
 import { GithubHelpModal } from './ui/help-modal.js';
 import { GithubWorkspacePanel } from './ui/workspace-panel.js';
-export { formatRelativeTime, rollupCiStatus, reviewDecisionBadge, eventLabel, parseGitStatText, GITHUB_PANEL_CSS, injectStyles, renderOctocat, renderGitIcon, renderOctocatBadge, renderPluginBadge, getLocalSyncSettings, saveLocalSyncSettings, getStoredGlobalOverview, saveStoredGlobalOverview, clearStoredGlobalOverview, getCacheStorageMeta, getRightbarStorageKey, getStoredRightbarSnapshot, saveStoredRightbarData, getStoredHeaderCardsVisible, saveStoredHeaderCardsVisible, HEADER_CARDS_STORAGE_KEY, BranchSelectorDropdown, AuthGuideCard, UpgradeNotificationCard, NetworkAlertBanner, SyncStatusBadge, CommitDetailModal, GlobalSyncSettingsModal, GithubHelpModal, GithubWorkspacePanel, };
+export { formatRelativeTime, rollupCiStatus, reviewDecisionBadge, eventLabel, parseGitStatText, GITHUB_PANEL_CSS, injectStyles, renderOctocat, renderGitIcon, renderOctocatBadge, renderPluginBadge, getLocalSyncSettings, saveLocalSyncSettings, getStoredGlobalOverview, saveStoredGlobalOverview, clearStoredGlobalOverview, getCacheStorageMeta, getRightbarStorageKey, getStoredRightbarSnapshot, saveStoredRightbarData, getStoredHeaderCardsVisible, saveStoredHeaderCardsVisible, HEADER_CARDS_STORAGE_KEY, BranchSelectorDropdown, AuthGuideCard, UpgradeNotificationCard, NetworkAlertBanner, RepoNoticeBar, SyncStatusBadge, CommitDetailModal, GlobalSyncSettingsModal, GithubHelpModal, GithubWorkspacePanel, };

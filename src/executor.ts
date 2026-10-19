@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,8 +21,9 @@ import type { ProxyManager } from './proxy.js';
 // 子模块纯函数解耦导入并对外部 Re-export 保证 100% 向后兼容
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
-import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText } from './executor/git-parser.js';
+import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
+import { classifyGhError, describeDeterministicError, isRetryableError, type GhErrorKind } from './executor/error-classifier.js';
 
 export {
   parseGhVersion,
@@ -35,9 +37,14 @@ export {
   parseGitBranchLines,
   parseUncommittedDiff,
   parseGitStatText,
+  parseRemoteUrls,
   getPlatformInstallGuide,
   getGhUpgradeHint,
+  classifyGhError,
+  describeDeterministicError,
+  isRetryableError,
 };
+export type { GhErrorKind };
 
 const execFileAsync = promisify(execFile);
 
@@ -197,7 +204,8 @@ export class GhExecutor {
         const errBuf = Buffer.isBuffer(stderr) ? stderr : (stderr ? Buffer.from(String(stderr)) : null);
         if (!buf.length) {
           const errMsg = errBuf ? errBuf.toString('utf8').trim() : '';
-          return { ok: false, error: errMsg || '二进制输出为空' };
+          const msg = errMsg || '二进制输出为空';
+          return { ok: false, error: msg, errorKind: classifyGhError(msg) };
         }
         return { ok: true, data: buf as unknown as T, binaryBytes: buf.length, truncated: false };
       }
@@ -255,6 +263,9 @@ export class GhExecutor {
         ok: false,
         error: friendlyError,
         rawOutput,
+        // 失败语义分类：上层（概览路由 / UI 重试器）据此决定是重试、回退快照
+        // 还是直接把「仓库关了 Issues」降级成空列表。分类只有这一处事实源。
+        errorKind: classifyGhError(friendlyError),
       };
     }
   }
@@ -911,6 +922,98 @@ export class GhExecutor {
       scopes,
       raw,
     };
+  }
+
+  /**
+   * 解析工作区真实的 git 目录，兼容三种物理形态：
+   *
+   *   1. `.git` 为目录（常规仓库）→ 直接用它
+   *   2. `.git` 为文件且首行是 `gitdir: <path>`（worktree / submodule 检出）
+   *      → 读指针指向的目录
+   *   3. 指针目标含 `commondir`（worktree 特有）→ 继续解析到共享仓库目录
+   *
+   * 为什么必须处理 2/3：worktree 的 `.git` 是文件，其下根本没有 config；
+   * 主仓库 config 在 `<gitdir>/<commondir>` 指向处（实测 commondir 内容为 `../..`）。
+   * 不解析就会让所有依赖 config 的能力在该形态下静默失效——而 worktree 恰恰是
+   * 多任务并行开发的常用形态。
+   *
+   * @returns 绝对路径；非 Git 目录/指针不可解析时返回 null（调用方保守处理，绝不抛错）
+   */
+  resolveGitDirPath(cwd?: string): string | null {
+    const targetCwd = cwd || this.resolveWorkspaceCwd();
+    try {
+      const dotGit = path.join(targetCwd, '.git');
+      if (!fs.existsSync(dotGit)) return null;
+
+      const st = fs.statSync(dotGit);
+      if (st.isDirectory()) return dotGit;
+      if (!st.isFile()) return null;
+
+      // worktree/submodule：.git 是文本文件，内容形如 `gitdir: C:/repo/.git/worktrees/wt`
+      const pointer = fs.readFileSync(dotGit, 'utf8');
+      const m = /^\s*gitdir:\s*(.+?)\s*$/m.exec(pointer);
+      if (!m) return null;
+      // 指针可能是相对路径（相对 .git 文件所在目录）
+      const gitDirRaw = m[1].replace(/[\\/]+$/, '');
+      const gitDir = path.isAbsolute(gitDirRaw) ? path.normalize(gitDirRaw) : path.resolve(targetCwd, gitDirRaw);
+      if (!fs.existsSync(gitDir)) return null;
+
+      // worktree：<gitdir>/commondir 记录共享仓库目录（相对 gitdir）
+      const commonDirFile = path.join(gitDir, 'commondir');
+      if (fs.existsSync(commonDirFile)) {
+        try {
+          const rel = fs.readFileSync(commonDirFile, 'utf8').trim();
+          if (rel) {
+            const common = path.resolve(gitDir, rel);
+            if (fs.existsSync(path.join(common, 'config'))) return common;
+          }
+        } catch {
+          // commondir 读失败 → 退回 gitDir 本身（至少还能读到 worktree 局部配置）
+        }
+      }
+
+      return gitDir;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * remote 配置指纹：全部 remote url 去重、排序、拼接后取 SHA-256 前 12 位。
+   *
+   * 为什么不用身份解析做缓存失效判定：身份解析要回答「变成了什么」，
+   * 一旦解析器对某种 config 布局有偏差（如双 remote 时取错 remote 段），
+   * 比对就永远失配——缓存再也不命中，每次请求都重拉全部 gh 子进程。
+   * 指纹只回答「变了没有」，不依赖任何语义理解，因此对该类偏差免疫。
+   *
+   * 反例（实测）：`git remote rename origin upstream` 后 `git remote add origin <fork>`，
+   * config 里 upstream 段排在 origin 段前，取「第一个 github.com 匹配」会拿到上游，
+   * 而 git 权威解析（branch.<name>.remote → origin）拿到的是 fork。
+   *
+   * @returns 12 位十六进制指纹；仅当「非 Git 目录 / config 不可读」时返回 null
+   *          （调用方据此保守判定为「未变更」，绝不因探测失败误清空缓存）。
+   *          注意：**config 可读但没有任何 remote 时返回的是空集合的哈希，不是 null**——
+   *          「仓库没有远程」是一个确定事实，它与「读不到配置」必须区分开：
+   *          否则用户删光 remote 后指纹恒为 null，旧快照再也无法失效。
+   */
+  getRemoteFingerprint(cwd?: string): string | null {
+    try {
+      const gitDir = this.resolveGitDirPath(cwd);
+      if (!gitDir) return null;
+      const configPath = path.join(gitDir, 'config');
+      if (!fs.existsSync(configPath)) return null;
+
+      const urls = parseRemoteUrls(fs.readFileSync(configPath, 'utf8'));
+
+      // 排序后拼接：remote 数量、书写顺序、命名方式都不影响指纹——
+      // 只有「url 集合本身」变化才会改变指纹，这正是「配置变没变」的定义。
+      // 空集合同样参与哈希（得到空串的 SHA-256 前缀），语义是「已读、无 remote」，
+      // 与读取失败的 null 是两回事。
+      const normalized = [...urls].sort().join('\n');
+      return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex').slice(0, 12);
+    } catch {
+      return null;
+    }
   }
 
   /**

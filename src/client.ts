@@ -29,7 +29,7 @@ import {
 import { BranchSelectorDropdown } from './ui/branch-selector.js';
 import { AuthGuideCard } from './ui/auth-guide-card.js';
 import { UpgradeNotificationCard } from './ui/upgrade-card.js';
-import { NetworkAlertBanner } from './ui/network-banner.js';
+import { NetworkAlertBanner, RepoNoticeBar } from './ui/network-banner.js';
 import { SyncStatusBadge } from './ui/sync-status-badge.js';
 import { CommitDetailModal } from './ui/commit-modal.js';
 import { GlobalSyncSettingsModal } from './ui/sync-settings-modal.js';
@@ -64,6 +64,7 @@ export {
   AuthGuideCard,
   UpgradeNotificationCard,
   NetworkAlertBanner,
+  RepoNoticeBar,
   SyncStatusBadge,
   CommitDetailModal,
   GlobalSyncSettingsModal,
@@ -453,6 +454,13 @@ window.__ModuleLoader__.load({
             },
           })
         : null;
+
+      // 仓库配置提示条：与网络告警互斥展示。
+      // 仓库关了 Issues 时不该同时出现「网络连接失败」——那是两件性质相反的事
+      // （一个是稳定配置事实，一个是瞬时传输故障）。有真网络错误时以错误优先。
+      var repoNoticeBarEl = networkAlertBannerEl
+        ? null
+        : h(RepoNoticeBar, { isRightbar, notices: data?.notices });
 
       var headerEl = h(
         "div",
@@ -1140,6 +1148,7 @@ window.__ModuleLoader__.load({
       return [
         headerEl,
         networkAlertBannerEl,
+        repoNoticeBarEl,
         upgradeBannerEl,
         authGuideEl,
         headerCardsVisible ? repoCardEl : null,
@@ -1297,11 +1306,38 @@ window.__ModuleLoader__.load({
             if (isFail) {
               setSyncStatus("failed");
               setError(failReason);
+              // 失败响应也可能携带「本次新鲜解析」的仓库身份与认证态（后端在
+              // 回退旧快照时已用新鲜 repo 覆盖旧值）。身份字段永远采纳，
+              // 业务列表才走「非空才覆盖」的防冲刷策略。
+              //
+              // 为什么必须拆开：旧逻辑把「要不要整体替换」和「列表是否有内容」
+              // 绑在一起，于是仓库身份修正会被空列表连坐否决——用户换了 remote
+              // 之后面板永远显示旧仓库，刷新也救不回来。
               var curData = dataRef.current;
-              if (curData && (curData.pullRequests?.length > 0 || curData.issues?.length > 0 || curData.runs?.length > 0)) {
-                if (json.data.pullRequests?.length > 0 || json.data.issues?.length > 0) {
-                  setData(json.data);
-                }
+              if (curData) {
+                var hasFreshList = (json.data.pullRequests?.length > 0 || json.data.issues?.length > 0);
+                setData(function (prev: any) {
+                  if (!prev) return json.data;
+                  var merged = {
+                    ...prev,
+                    // 身份 / 认证 / 通知：始终采纳最新（这些字段不可能是「空数据假象」）
+                    repo: json.data.repo || prev.repo,
+                    auth: json.data.auth || prev.auth,
+                    notices: json.data.notices,
+                    updateInfo: json.data.updateInfo || prev.updateInfo,
+                    lastUpdated: json.data.lastUpdated || prev.lastUpdated,
+                  };
+                  // 业务列表：仅有新内容时才替换，防止把「好数据」冲刷成空数组
+                  if (hasFreshList) {
+                    merged.pullRequests = json.data.pullRequests;
+                    merged.issues = json.data.issues;
+                    merged.issueStats = json.data.issueStats;
+                  }
+                  if (json.data.runs?.length > 0) {
+                    merged.runs = json.data.runs;
+                  }
+                  return merged;
+                });
               } else {
                 setData(json.data);
               }
@@ -1310,6 +1346,8 @@ window.__ModuleLoader__.load({
               }
             } else {
               setData(json.data);
+              // 落快照前统一判定：带离线标记的数据不写（saveStoredRightbarData 内部还有一道），
+              // 且身份变更后的快照会覆盖旧键——localStorage 的 key 是 cwd，天然随路径对齐。
               saveStoredRightbarData(cwd, json.data);
               var syncTs = json.fromCache && json.data.lastUpdated
                 ? (Date.parse(json.data.lastUpdated) || Date.now())

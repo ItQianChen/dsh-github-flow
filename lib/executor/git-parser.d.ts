@@ -55,3 +55,15 @@ export interface GitStatParsedResult {
  * 提取文件路径与 `X files changed, Y insertions(+), Z deletions(-)` 汇总。
  */
 export declare function parseGitStatText(statText: string): GitStatParsedResult | null;
+/**
+ * 提取 `.git/config` 中所有 `[remote "..."]` 段内的 url。
+ *
+ * 为什么必须按段扫描而不是全文抓 `url = `：`[submodule "..."]` 段同样带 url
+ * （实测 `[submodule "lib"] url = https://github.com/x/y.git`）。全文正则会把
+ * 子模块的远程算进指纹，导致一次 `git submodule add` 就触发整个面板缓存的
+ * 无谓作废。子模块的 url 与本工作区关联哪个 GitHub 仓库毫无关系。
+ *
+ * 输出语义：保持文件中的出现顺序、已去重、不含空值。
+ * 排序交给调用方（指纹需要稳定顺序，但那是调用方的语义，纯函数不该替它决定）。
+ */
+export declare function parseRemoteUrls(configText: string): string[];

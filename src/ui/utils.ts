@@ -50,6 +50,16 @@ export function eventLabel(event: any): string {
   return e || "";
 }
 
+/**
+ * 确定性失败的特征（客户端侧兜底判定）。
+ *
+ * 为什么这里还要再写一份：后端 GhExecutor 已统一分类并通过 errorKind 分流，
+ * 但浏览器端拿不到 errorKind，只能看到拼接后的错误文本。这类错误重试一万次
+ * 也不会变好（仓库就是关着 Issues），必须阻止阶梯退避把 7 秒白白烧掉。
+ * 与服务端共用同一组特征串，改动时两边同步。
+ */
+var DETERMINISTIC_HINT_RE = /repository has disabled|Could not resolve to a Repository|Branch not found|HTTP 403|Not Found \(HTTP 404\)|rate limit/i;
+
 export interface FetchRetryConfig {
   maxRetries?: number; // 默认 3 次
   baseDelayMs?: number; // 基础等待时间，默认 1000ms
@@ -113,7 +123,10 @@ export async function fetchWithRetry(
 
         if (isNetworkError) {
           failureReason = currentJson.error || currentJson.data?.networkErrorReason || "云端接口网络抖动";
-          shouldRetry = true;
+          // 后端已把「确定性失败」（仓库关了 Issues / 仓库不存在 / 无权限）从
+          // networkError 里剥离，只留真正的传输层故障。但历史版本或第三方实现
+          // 仍可能把确定性文本塞进同一条链路，这里再兜一道：命中即放弃重试。
+          shouldRetry = !DETERMINISTIC_HINT_RE.test(String(failureReason));
         } else {
           // 成功获取完整且无网络错误的数据
           return { res: currentRes, json: currentJson };

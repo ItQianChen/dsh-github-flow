@@ -277,4 +277,55 @@ export function parseGitStatText(statText: string): GitStatParsedResult | null {
   return { files, summary };
 }
 
+/**
+ * 提取 `.git/config` 中所有 `[remote "..."]` 段内的 url。
+ *
+ * 为什么必须按段扫描而不是全文抓 `url = `：`[submodule "..."]` 段同样带 url
+ * （实测 `[submodule "lib"] url = https://github.com/x/y.git`）。全文正则会把
+ * 子模块的远程算进指纹，导致一次 `git submodule add` 就触发整个面板缓存的
+ * 无谓作废。子模块的 url 与本工作区关联哪个 GitHub 仓库毫无关系。
+ *
+ * 输出语义：保持文件中的出现顺序、已去重、不含空值。
+ * 排序交给调用方（指纹需要稳定顺序，但那是调用方的语义，纯函数不该替它决定）。
+ */
+export function parseRemoteUrls(configText: string): string[] {
+  if (typeof configText !== 'string' || !configText) return [];
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  // 段头：`[remote "origin"]` / `[remote 'origin']` / 无引号的 `[core]`
+  let inRemoteSection = false;
+
+  for (const rawLine of configText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+
+    if (line.startsWith('[')) {
+      // 只认 `[remote "<name>"]` / `[remote.<name>]` / `[remote]` 三种真实 git 段头。
+      // 前瞻断言限定 remote 之后必须是空白/引号/点/右括号，排除 `[remote-tracking]`
+      // 这类同前缀但语义无关的段（`\b` 做不到——`-` 是非单词字符，会被判为词边界）。
+      inRemoteSection = /^\[\s*remote(?=[\s."\]])/i.test(line);
+      continue;
+    }
+
+    if (!inRemoteSection) continue;
+
+    const m = /^url\s*=\s*(.+)$/i.exec(line);
+    if (m) {
+      let url = m[1].trim();
+      // git 允许给值加引号并在解析时剥掉（实测 `url = "https://..."` 会得到无引号值）。
+      // 不剥离会让「同一个 url 从带引号改成不带引号」被误判成配置变更，
+      // 从而触发一次无谓的缓存作废。
+      if (url.length >= 2 && ((url.startsWith('"') && url.endsWith('"')) || (url.startsWith("'") && url.endsWith("'")))) {
+        url = url.slice(1, -1).trim();
+      }
+      if (url && !seen.has(url)) {
+        seen.add(url);
+        urls.push(url);
+      }
+    }
+  }
+
+  return urls;
+}
+
 

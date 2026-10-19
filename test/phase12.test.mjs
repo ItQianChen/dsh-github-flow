@@ -224,10 +224,14 @@ async function runTests() {
     const { TtlCache } = await import('../lib/cache.js');
 
     const fakeCache = new TtlCache(100000);
-    // 注入已有 1 条有效 PR 的缓存
+    // 注入已有 1 条有效 PR 的缓存。
+    // 仓库身份必须与当前工作区真实身份一致：since v0.5.1 缓存读取前会做一次
+    // 身份失效校验（.git/config 变了就作废脏快照），种一个假 owner 会被直接清掉，
+    // 那是校验在正常工作，不是本用例要验的「网络故障时保全列表」行为。
+    const realIdentity = new GhExecutor().getRepoIdentityFromLocal(process.cwd());
     fakeCache.set(process.cwd(), {
       auth: { installed: true, loggedIn: true },
-      repo: { nameWithOwner: 'test/repo', name: 'repo', owner: 'test', defaultBranch: 'main' },
+      repo: realIdentity || { nameWithOwner: 'test/repo', name: 'repo', owner: 'test', defaultBranch: 'main' },
       pullRequests: [{ number: 123, title: 'Existing Important PR' }],
       issues: [],
       runs: [],
