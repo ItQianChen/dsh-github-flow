@@ -2,11 +2,12 @@ import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConf
 import type { ProxyManager } from './proxy.js';
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
-import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls } from './executor/git-parser.js';
+import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl } from './executor/git-parser.js';
+import type { ParsedGitConfig, ParsedRemote } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
 import { classifyGhError, describeDeterministicError, isRetryableError, type GhErrorKind } from './executor/error-classifier.js';
-export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, getPlatformInstallGuide, getGhUpgradeHint, classifyGhError, describeDeterministicError, isRetryableError, };
-export type { GhErrorKind };
+export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, getPlatformInstallGuide, getGhUpgradeHint, classifyGhError, describeDeterministicError, isRetryableError, };
+export type { GhErrorKind, ParsedGitConfig, ParsedRemote };
 export declare class GhExecutor {
     ghPath: string;
     defaultTimeoutMs: number;
@@ -203,19 +204,26 @@ export declare class GhExecutor {
      */
     private probeAuth;
     /**
-     * 解析工作区真实的 git 目录，兼容三种物理形态：
+     * 解析工作区真实 git 目录的**两个**路径：局部目录与共享仓库目录。
      *
-     *   1. `.git` 为目录（常规仓库）→ 直接用它
-     *   2. `.git` 为文件且首行是 `gitdir: <path>`（worktree / submodule 检出）
-     *      → 读指针指向的目录
-     *   3. 指针目标含 `commondir`（worktree 特有）→ 继续解析到共享仓库目录
+     * 为什么必须分开：worktree 的 `HEAD` 在局部目录（`.git/worktrees/<name>/HEAD`），
+     * 而 `config` 在共享目录（`commondir` 指向处）。只解析其中一个必然读错：
+     *   - 只读局部 → 找不到 config（remote 配置在共享目录）
+     *   - 只读共享 → 拿到**主工作树**的分支名，进而按错误分支查 `branch.*.remote`
      *
-     * 为什么必须处理 2/3：worktree 的 `.git` 是文件，其下根本没有 config；
-     * 主仓库 config 在 `<gitdir>/<commondir>` 指向处（实测 commondir 内容为 `../..`）。
-     * 不解析就会让所有依赖 config 的能力在该形态下静默失效——而 worktree 恰恰是
-     * 多任务并行开发的常用形态。
+     * 实测：主工作树 HEAD 是 `ref: refs/heads/master`，worktree 的是 `ref: refs/heads/feat`。
      *
-     * @returns 绝对路径；非 Git 目录/指针不可解析时返回 null（调用方保守处理，绝不抛错）
+     * 常规仓库两者指向同一目录。
+     *
+     * @returns 两个绝对路径；非 Git 目录/指针不可解析时返回 null（绝不抛错）
+     */
+    resolveGitDirInfo(cwd?: string): {
+        localDir: string;
+        commonDir: string;
+    } | null;
+    /**
+     * 解析工作区真实的 git 目录（共享仓库目录）。
+     * 薄封装自 resolveGitDirInfo：读 `config` 的场景（远程指纹）只需要共享目录。
      */
     resolveGitDirPath(cwd?: string): string | null;
     /**
@@ -238,13 +246,23 @@ export declare class GhExecutor {
      */
     getRemoteFingerprint(cwd?: string): string | null;
     /**
-     * 仅从本地 .git/config 解析仓库身份，绝不发起网络请求。
+     * 读取并解析工作区的 git 远程视图（`.git/config` + `HEAD`）。
+     * 内部方法：把「两个路径各读哪个文件」的细节收敛在一处，
+     * 避免各调用点自己拼路径读错 worktree 的文件。
+     */
+    private readParsedGitConfig;
+    /**
+     * 仅从本地 `.git/config` 解析仓库身份，绝不发起网络请求。
      *
      * 为什么需要它：全局驾驶舱要为每个工作区认识别仓库，而 getRepoMetadata 会调用
      * `gh repo view` 走网络。实测 5 个工作区时该端点冷启动 20.5 秒，其中绝大部分耗在这 5 次
      * 网络往返上——而有界并发根本救不了它，因为瓶颈是网络延迟而不是进程排队。
      * 工作区矩阵只需要「这个目录属于哪个仓库」这一身份信息，本地 .git/config 已经完整具备，
      * 描述/star 数等富字段是当前仓库详情才需要的。这一步把每个工作区从 1 次网络往返降为 0。
+     *
+     * 解析口径与 git 一致（三级回落），不再「取 config 里第一个 github.com 匹配」——
+     * 后者在 `git remote rename origin upstream` + `add origin <fork>` 的布局下会取到上游，
+     * 而 git 认的是 origin（实测）。
      */
     getRepoIdentityFromLocal(cwd?: string): RepoMetadata | null;
     /**

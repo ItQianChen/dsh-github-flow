@@ -21,7 +21,8 @@ import type { ProxyManager } from './proxy.js';
 // 子模块纯函数解耦导入并对外部 Re-export 保证 100% 向后兼容
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
-import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls } from './executor/git-parser.js';
+import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl } from './executor/git-parser.js';
+import type { ParsedGitConfig, ParsedRemote } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
 import { classifyGhError, describeDeterministicError, isRetryableError, type GhErrorKind } from './executor/error-classifier.js';
 
@@ -38,13 +39,16 @@ export {
   parseUncommittedDiff,
   parseGitStatText,
   parseRemoteUrls,
+  parseGitConfig,
+  resolveRemoteTarget,
+  parseGithubUrl,
   getPlatformInstallGuide,
   getGhUpgradeHint,
   classifyGhError,
   describeDeterministicError,
   isRetryableError,
 };
-export type { GhErrorKind };
+export type { GhErrorKind, ParsedGitConfig, ParsedRemote };
 
 const execFileAsync = promisify(execFile);
 
@@ -925,57 +929,63 @@ export class GhExecutor {
   }
 
   /**
-   * 解析工作区真实的 git 目录，兼容三种物理形态：
+   * 解析工作区真实 git 目录的**两个**路径：局部目录与共享仓库目录。
    *
-   *   1. `.git` 为目录（常规仓库）→ 直接用它
-   *   2. `.git` 为文件且首行是 `gitdir: <path>`（worktree / submodule 检出）
-   *      → 读指针指向的目录
-   *   3. 指针目标含 `commondir`（worktree 特有）→ 继续解析到共享仓库目录
+   * 为什么必须分开：worktree 的 `HEAD` 在局部目录（`.git/worktrees/<name>/HEAD`），
+   * 而 `config` 在共享目录（`commondir` 指向处）。只解析其中一个必然读错：
+   *   - 只读局部 → 找不到 config（remote 配置在共享目录）
+   *   - 只读共享 → 拿到**主工作树**的分支名，进而按错误分支查 `branch.*.remote`
    *
-   * 为什么必须处理 2/3：worktree 的 `.git` 是文件，其下根本没有 config；
-   * 主仓库 config 在 `<gitdir>/<commondir>` 指向处（实测 commondir 内容为 `../..`）。
-   * 不解析就会让所有依赖 config 的能力在该形态下静默失效——而 worktree 恰恰是
-   * 多任务并行开发的常用形态。
+   * 实测：主工作树 HEAD 是 `ref: refs/heads/master`，worktree 的是 `ref: refs/heads/feat`。
    *
-   * @returns 绝对路径；非 Git 目录/指针不可解析时返回 null（调用方保守处理，绝不抛错）
+   * 常规仓库两者指向同一目录。
+   *
+   * @returns 两个绝对路径；非 Git 目录/指针不可解析时返回 null（绝不抛错）
    */
-  resolveGitDirPath(cwd?: string): string | null {
+  resolveGitDirInfo(cwd?: string): { localDir: string; commonDir: string } | null {
     const targetCwd = cwd || this.resolveWorkspaceCwd();
     try {
       const dotGit = path.join(targetCwd, '.git');
       if (!fs.existsSync(dotGit)) return null;
 
       const st = fs.statSync(dotGit);
-      if (st.isDirectory()) return dotGit;
+      if (st.isDirectory()) return { localDir: dotGit, commonDir: dotGit };
       if (!st.isFile()) return null;
 
       // worktree/submodule：.git 是文本文件，内容形如 `gitdir: C:/repo/.git/worktrees/wt`
       const pointer = fs.readFileSync(dotGit, 'utf8');
       const m = /^\s*gitdir:\s*(.+?)\s*$/m.exec(pointer);
       if (!m) return null;
-      // 指针可能是相对路径（相对 .git 文件所在目录）
       const gitDirRaw = m[1].replace(/[\\/]+$/, '');
-      const gitDir = path.isAbsolute(gitDirRaw) ? path.normalize(gitDirRaw) : path.resolve(targetCwd, gitDirRaw);
-      if (!fs.existsSync(gitDir)) return null;
+      const localDir = path.isAbsolute(gitDirRaw) ? path.normalize(gitDirRaw) : path.resolve(targetCwd, gitDirRaw);
+      if (!fs.existsSync(localDir)) return null;
 
-      // worktree：<gitdir>/commondir 记录共享仓库目录（相对 gitdir）
-      const commonDirFile = path.join(gitDir, 'commondir');
+      // worktree：<localDir>/commondir 记录共享仓库目录（相对 localDir）
+      const commonDirFile = path.join(localDir, 'commondir');
       if (fs.existsSync(commonDirFile)) {
         try {
           const rel = fs.readFileSync(commonDirFile, 'utf8').trim();
           if (rel) {
-            const common = path.resolve(gitDir, rel);
-            if (fs.existsSync(path.join(common, 'config'))) return common;
+            const common = path.resolve(localDir, rel);
+            if (fs.existsSync(path.join(common, 'config'))) return { localDir, commonDir: common };
           }
         } catch {
-          // commondir 读失败 → 退回 gitDir 本身（至少还能读到 worktree 局部配置）
+          // commondir 读失败 → 退回 localDir（至少还能读到局部配置）
         }
       }
 
-      return gitDir;
+      return { localDir, commonDir: localDir };
     } catch {
       return null;
     }
+  }
+
+  /**
+   * 解析工作区真实的 git 目录（共享仓库目录）。
+   * 薄封装自 resolveGitDirInfo：读 `config` 的场景（远程指纹）只需要共享目录。
+   */
+  resolveGitDirPath(cwd?: string): string | null {
+    return this.resolveGitDirInfo(cwd)?.commonDir ?? null;
   }
 
   /**
@@ -1017,39 +1027,74 @@ export class GhExecutor {
   }
 
   /**
-   * 仅从本地 .git/config 解析仓库身份，绝不发起网络请求。
+   * 读取并解析工作区的 git 远程视图（`.git/config` + `HEAD`）。
+   * 内部方法：把「两个路径各读哪个文件」的细节收敛在一处，
+   * 避免各调用点自己拼路径读错 worktree 的文件。
+   */
+  private readParsedGitConfig(cwd?: string): ParsedGitConfig | null {
+    const info = this.resolveGitDirInfo(cwd);
+    if (!info) return null;
+    try {
+      const configPath = path.join(info.commonDir, 'config');
+      if (!fs.existsSync(configPath)) return null;
+      const configText = fs.readFileSync(configPath, 'utf8');
+      // HEAD 必须从 localDir 读：worktree 下 commonDir/HEAD 是主工作树的分支名
+      const headPath = path.join(info.localDir, 'HEAD');
+      const headText = fs.existsSync(headPath) ? fs.readFileSync(headPath, 'utf8') : null;
+      return parseGitConfig(configText, headText);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 仅从本地 `.git/config` 解析仓库身份，绝不发起网络请求。
    *
    * 为什么需要它：全局驾驶舱要为每个工作区认识别仓库，而 getRepoMetadata 会调用
    * `gh repo view` 走网络。实测 5 个工作区时该端点冷启动 20.5 秒，其中绝大部分耗在这 5 次
    * 网络往返上——而有界并发根本救不了它，因为瓶颈是网络延迟而不是进程排队。
    * 工作区矩阵只需要「这个目录属于哪个仓库」这一身份信息，本地 .git/config 已经完整具备，
    * 描述/star 数等富字段是当前仓库详情才需要的。这一步把每个工作区从 1 次网络往返降为 0。
+   *
+   * 解析口径与 git 一致（三级回落），不再「取 config 里第一个 github.com 匹配」——
+   * 后者在 `git remote rename origin upstream` + `add origin <fork>` 的布局下会取到上游，
+   * 而 git 认的是 origin（实测）。
    */
   getRepoIdentityFromLocal(cwd?: string): RepoMetadata | null {
-    const targetCwd = cwd || this.resolveWorkspaceCwd();
-    try {
-      const gitConfigPath = path.join(targetCwd, '.git', 'config');
-      if (!fs.existsSync(gitConfigPath)) return null;
+    const cfg = this.readParsedGitConfig(cwd);
+    if (!cfg) return null;
 
-      const configText = fs.readFileSync(gitConfigPath, 'utf8');
-      const match = configText.match(/github\.com[:/]([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?(?:\s|\r|\n|$)/i);
-      if (!match) return null;
-
-      const owner = match[1];
-      const repoName = match[2];
-      const nameWithOwner = `${owner}/${repoName}`;
+    const fromRemote = (remote: ParsedRemote | null): RepoMetadata | null => {
+      if (!remote) return null;
+      const gh = parseGithubUrl(remote.url);
+      if (!gh) return null;
+      const nameWithOwner = `${gh.owner}/${gh.repo}`;
       return {
         nameWithOwner,
-        name: repoName,
-        owner,
+        name: gh.repo,
+        owner: gh.owner,
         defaultBranch: 'main',
         description: '',
         isPrivate: false,
         url: `https://github.com/${nameWithOwner}`,
       };
-    } catch {
-      return null;
+    };
+
+    // Tier 1：git 认定的那个 remote（branch.<当前分支>.remote → origin → 首个）
+    const primary = fromRemote(resolveRemoteTarget(cfg));
+    if (primary) return primary;
+
+    // Tier 2：扫描其余 remote 的 GitHub URL。
+    // 为什么保留这一级：GHE 作 origin、GitHub 作 upstream 的布局下 Tier 1 必然无解，
+    // 而旧实现（全文扫第一个 github.com）在这种布局下能给出 upstream。
+    // 保留可避免无声的行为回退；它只在 Tier 1 完全无解时启用，
+    // 不影响「取错 remote」这个核心修复。
+    for (const r of cfg.remotes) {
+      const hit = fromRemote(r);
+      if (hit) return hit;
     }
+
+    return null;
   }
 
   /**
@@ -1086,51 +1131,46 @@ export class GhExecutor {
       };
     }
 
-    // 2. 原生文件解析：直接读取本地 .git/config 文件（0 子进程开销、免疫沙箱 EPERM）
-    try {
-      const gitConfigPath = path.join(targetCwd, '.git', 'config');
-      if (fs.existsSync(gitConfigPath)) {
-        const configText = fs.readFileSync(gitConfigPath, 'utf8');
-        const match = configText.match(/github\.com[:/]([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?(?:\s|\r|\n|$)/i);
-        if (match) {
-          const owner = match[1];
-          const repoName = match[2];
-          const nameWithOwner = `${owner}/${repoName}`;
+    // 2. 原生文件解析：走与 getRepoIdentityFromLocal 完全相同的解析器
+    //    （0 子进程开销、免疫沙箱 EPERM）。
+    //    为什么不再自己写一份正则：两处各维护一份必然漂移，且旧正则
+    //    「取第一个 github.com 匹配」在多 remote 布局下会取到上游仓库。
+    const local = this.getRepoIdentityFromLocal(targetCwd);
+    if (local) {
+      const { owner, name: repoName, nameWithOwner } = local;
 
-          // 使用精确的 owner/repo 向 gh 获取元数据（显式传参，不依赖无上下文的探测）
-          const directRes = await this.run<any>(
-            ['repo', 'view', nameWithOwner, '--json', 'nameWithOwner,name,owner,defaultBranchRef,description,isPrivate,url,stargazerCount,forkCount'],
-            { cwd: targetCwd, timeoutMs: 10_000 }
-          );
+      // 使用精确的 owner/repo 向 gh 获取元数据（显式传参，不依赖无上下文的探测）
+      const directRes = await this.run<any>(
+        ['repo', 'view', nameWithOwner, '--json', 'nameWithOwner,name,owner,defaultBranchRef,description,isPrivate,url,stargazerCount,forkCount'],
+        { cwd: targetCwd, timeoutMs: 10_000 }
+      );
 
-          if (directRes.ok && directRes.data && directRes.data.nameWithOwner) {
-            const d = directRes.data;
-            return {
-              nameWithOwner: d.nameWithOwner || nameWithOwner,
-              name: d.name || repoName,
-              owner: d.owner?.login || owner,
-              defaultBranch: d.defaultBranchRef?.name || 'main',
-              description: d.description || '',
-              isPrivate: Boolean(d.isPrivate),
-              url: d.url || `https://github.com/${nameWithOwner}`,
-              stargazerCount: typeof d.stargazerCount === 'number' ? d.stargazerCount : 0,
-              forkCount: typeof d.forkCount === 'number' ? d.forkCount : 0,
-            };
-          }
-
-          // 若离线或网络受限，由本地 git remote 配置兜底返回
-          return {
-            nameWithOwner,
-            name: repoName,
-            owner,
-            defaultBranch: 'main',
-            description: '已成功关联本地 Git 远程仓库',
-            isPrivate: false,
-            url: `https://github.com/${nameWithOwner}`,
-          };
-        }
+      if (directRes.ok && directRes.data && directRes.data.nameWithOwner) {
+        const d = directRes.data;
+        return {
+          nameWithOwner: d.nameWithOwner || nameWithOwner,
+          name: d.name || repoName,
+          owner: d.owner?.login || owner,
+          defaultBranch: d.defaultBranchRef?.name || 'main',
+          description: d.description || '',
+          isPrivate: Boolean(d.isPrivate),
+          url: d.url || `https://github.com/${nameWithOwner}`,
+          stargazerCount: typeof d.stargazerCount === 'number' ? d.stargazerCount : 0,
+          forkCount: typeof d.forkCount === 'number' ? d.forkCount : 0,
+        };
       }
-    } catch {}
+
+      // 若离线或网络受限，由本地 git remote 配置兜底返回
+      return {
+        nameWithOwner,
+        name: repoName,
+        owner,
+        defaultBranch: 'main',
+        description: '已成功关联本地 Git 远程仓库',
+        isPrivate: false,
+        url: `https://github.com/${nameWithOwner}`,
+      };
+    }
 
     return null;
   }

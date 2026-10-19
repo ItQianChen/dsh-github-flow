@@ -67,3 +67,69 @@ export declare function parseGitStatText(statText: string): GitStatParsedResult 
  * 排序交给调用方（指纹需要稳定顺序，但那是调用方的语义，纯函数不该替它决定）。
  */
 export declare function parseRemoteUrls(configText: string): string[];
+/** 单个 remote 段的解析结果 */
+export interface ParsedRemote {
+    name: string;
+    url: string;
+}
+/** `.git/config` + `HEAD` 的解析结果，是「这个工作区关联哪个仓库」的唯一事实源 */
+export interface ParsedGitConfig {
+    /** 每个 remote 名对应的第一个 url（身份解析用；同名多 url 时取首个） */
+    remotes: ParsedRemote[];
+    /**
+     * 全部 remote url 行（指纹用）。
+     *
+     * 为什么与 remotes 分开：身份解析需要「remote 名 → url」的一对一映射，
+     * 而指纹需要「配置里出现过的所有 url」。同一个 remote 允许写多行 url
+     * （git 认首个，但配置确实是多行），若指纹也按名字去重，第二行 url 的
+     * 变化就检测不到——那会让「用户改了备用 url」这种情况静默漏检。
+     */
+    allUrls: string[];
+    /** 当前分支名（来自 HEAD 的 `ref: refs/heads/<name>`）；detached HEAD 时为 null */
+    currentBranch: string | null;
+    /** `branch.<currentBranch>.remote` 的值；无配置或无当前分支时为 null */
+    branchRemote: string | null;
+}
+/**
+ * 解析 `.git/config` 与 `HEAD`，产出与 git 语义一致的远程视图。
+ *
+ * 为什么把 HEAD 一起解析：`branch.<name>.remote` 的 `<name>` 是**当前分支**，
+ * 不知道当前分支就无法按 git 的规则选出 remote，只能退化成「取第一个」——
+ * 那正是本次要修的错误。
+ *
+ * @param configText `.git/config` 全文
+ * @param headText   HEAD 文件全文。worktree 场景必须传**局部 gitdir** 下的那个，
+ *                   传共享目录的会拿到主工作树分支名（实测两者不同）。
+ */
+export declare function parseGitConfig(configText: string, headText?: string | null): ParsedGitConfig;
+/**
+ * 按 git 的规则选出「这个工作区关联的 remote」。
+ *
+ * 优先级与 git 一致：
+ *   1. `branch.<当前分支>.remote` —— 当前分支显式跟踪的 remote
+ *   2. `origin`                  —— git 的默认远程
+ *   3. 第一个 remote              —— 兜底（保持既有行为）
+ *
+ * 特殊值 `.` 表示跟踪**本地分支**而非远程（实测可设置），跳过第 1 级——
+ * 拿 "." 去查 `[remote "."]` 必然查不到，且语义上它根本不是远程。
+ */
+export declare function resolveRemoteTarget(cfg: ParsedGitConfig): ParsedRemote | null;
+/**
+ * 从 remote url 中提取 GitHub 的 owner/repo。
+ *
+ * 覆盖形态（均实测于真实 clone / hand-written config）：
+ *   https://github.com/o/r.git
+ *   git@github.com:o/r.git
+ *   ssh://git@github.com/o/r.git
+ *   https://user:token@github.com/o/r.git
+ *   带尾斜杠 / 不带 .git
+ *
+ * 非 github.com 的 host 一律返回 null（GHE 不在支持范围）。
+ * 为什么绝不"猜一个"：错误身份比没有身份更有害——面板会显示一个
+ * 用户根本不认识的仓库，且所有后续判断都建立在错误前提上。
+ * 正则两端锚定，杜绝 `github.com.evil.com` 这类子串误匹配。
+ */
+export declare function parseGithubUrl(url: string): {
+    owner: string;
+    repo: string;
+} | null;

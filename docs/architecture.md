@@ -169,7 +169,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **22 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1041 项全量自动化测试断言**：
+项目配备了 **23 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1091 项全量自动化测试断言**：
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
 - `phase3`：Release 资产交付、Secret 密文管道与 Skills 检索；
@@ -191,4 +191,5 @@
 - `phase19`：github_project（Projects v2 看板）、github_codespace（云端开发机）与 skill update；
 - `phase20`：TelemetryRingBuffer、Cordis tools/result 事件总线运行时遥测、降级率统计与健康度看板；
 - `phase21`：未提交数据滚动分页、文件级 Diff 二级下钻与 DSH 原生打开文件联动；
-- `phase22`：remote 配置指纹与缓存失效契约（parseRemoteUrls 段扫描、指纹对书写顺序/命名免疫、worktree `.git` 指针解析、TtlCache 指纹命中与保守失效）。
+- `phase22`：remote 配置指纹与缓存失效契约（parseRemoteUrls 段扫描、指纹对书写顺序/命名免疫、worktree `.git` 指针解析、TtlCache 指纹命中与保守失效）；
+- `phase23`：离线身份解析对齐 git 规则（branch.<当前分支>.remote → origin → 首个三级回落、`.` 特殊值、六种 URL 形态、worktree HEAD/config 分居、旧「取第一个 github.com」正则移除断言）。

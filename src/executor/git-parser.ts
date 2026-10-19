@@ -289,43 +289,210 @@ export function parseGitStatText(statText: string): GitStatParsedResult | null {
  * 排序交给调用方（指纹需要稳定顺序，但那是调用方的语义，纯函数不该替它决定）。
  */
 export function parseRemoteUrls(configText: string): string[] {
-  if (typeof configText !== 'string' || !configText) return [];
-  const urls: string[] = [];
-  const seen = new Set<string>();
-  // 段头：`[remote "origin"]` / `[remote 'origin']` / 无引号的 `[core]`
-  let inRemoteSection = false;
+  return parseGitConfig(configText).allUrls;
+}
 
-  for (const rawLine of configText.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+/** 单个 remote 段的解析结果 */
+export interface ParsedRemote {
+  name: string;
+  url: string;
+}
 
-    if (line.startsWith('[')) {
-      // 只认 `[remote "<name>"]` / `[remote.<name>]` / `[remote]` 三种真实 git 段头。
-      // 前瞻断言限定 remote 之后必须是空白/引号/点/右括号，排除 `[remote-tracking]`
-      // 这类同前缀但语义无关的段（`\b` 做不到——`-` 是非单词字符，会被判为词边界）。
-      inRemoteSection = /^\[\s*remote(?=[\s."\]])/i.test(line);
-      continue;
-    }
+/** `.git/config` + `HEAD` 的解析结果，是「这个工作区关联哪个仓库」的唯一事实源 */
+export interface ParsedGitConfig {
+  /** 每个 remote 名对应的第一个 url（身份解析用；同名多 url 时取首个） */
+  remotes: ParsedRemote[];
+  /**
+   * 全部 remote url 行（指纹用）。
+   *
+   * 为什么与 remotes 分开：身份解析需要「remote 名 → url」的一对一映射，
+   * 而指纹需要「配置里出现过的所有 url」。同一个 remote 允许写多行 url
+   * （git 认首个，但配置确实是多行），若指纹也按名字去重，第二行 url 的
+   * 变化就检测不到——那会让「用户改了备用 url」这种情况静默漏检。
+   */
+  allUrls: string[];
+  /** 当前分支名（来自 HEAD 的 `ref: refs/heads/<name>`）；detached HEAD 时为 null */
+  currentBranch: string | null;
+  /** `branch.<currentBranch>.remote` 的值；无配置或无当前分支时为 null */
+  branchRemote: string | null;
+}
 
-    if (!inRemoteSection) continue;
+/**
+ * 规范化 git 配置值：处理引号包裹与行尾注释。
+ *
+ * git 的实际规则（全部实测）：
+ *   - 未加引号：`;` 或 `#` 之后一律视为注释，**即使前面没有空格**
+ *       `url = https://github.com/a/b.git ; note`  → https://github.com/a/b.git
+ *       `url = https://github.com/a/b.git;note`    → https://github.com/a/b.git
+ *   - 加引号：引号内的 `;` / `#` 是字面值，注释只能出现在闭合引号之后
+ *       `url = "https://user:p#ss@github.com/a/b.git"` → 保留 #
+ *       `url = "https://github.com/a/b.git" ; note`    → 剥掉引号与注释
+ *   - 引号内支持反斜杠转义
+ *
+ * 为什么必须处理：不剥注释会让 `url = https://github.com/a/b.git ; note`
+ * 解析失败（URL 尾部带注释文本），用户手写的 config 里这很常见。
+ */
+function unquoteValue(raw: string): string {
+  const v = raw.trim();
+  if (!v) return '';
 
-    const m = /^url\s*=\s*(.+)$/i.exec(line);
-    if (m) {
-      let url = m[1].trim();
-      // git 允许给值加引号并在解析时剥掉（实测 `url = "https://..."` 会得到无引号值）。
-      // 不剥离会让「同一个 url 从带引号改成不带引号」被误判成配置变更，
-      // 从而触发一次无谓的缓存作废。
-      if (url.length >= 2 && ((url.startsWith('"') && url.endsWith('"')) || (url.startsWith("'") && url.endsWith("'")))) {
-        url = url.slice(1, -1).trim();
+  // 引号形态：取引号内内容（支持 \" 转义），忽略闭合引号之后的一切
+  const q = v[0];
+  if (q === '"' || q === "'") {
+    let out = '';
+    for (let i = 1; i < v.length; i++) {
+      const ch = v[i];
+      if (ch === '\\' && i + 1 < v.length) {
+        out += v[i + 1];
+        i++;
+        continue;
       }
-      if (url && !seen.has(url)) {
-        seen.add(url);
-        urls.push(url);
+      if (ch === q) return out.trim();
+      out += ch;
+    }
+    // 引号未闭合：按未加引号处理（畸形配置，尽力而非报错）
+    return out.trim();
+  }
+
+  // 未加引号：首个 ; 或 # 起为注释
+  const cut = v.search(/[;#]/);
+  return (cut >= 0 ? v.slice(0, cut) : v).trim();
+}
+
+/**
+ * 解析 `.git/config` 与 `HEAD`，产出与 git 语义一致的远程视图。
+ *
+ * 为什么把 HEAD 一起解析：`branch.<name>.remote` 的 `<name>` 是**当前分支**，
+ * 不知道当前分支就无法按 git 的规则选出 remote，只能退化成「取第一个」——
+ * 那正是本次要修的错误。
+ *
+ * @param configText `.git/config` 全文
+ * @param headText   HEAD 文件全文。worktree 场景必须传**局部 gitdir** 下的那个，
+ *                   传共享目录的会拿到主工作树分支名（实测两者不同）。
+ */
+export function parseGitConfig(configText: string, headText?: string | null): ParsedGitConfig {
+  const remotes: ParsedRemote[] = [];
+  const allUrls: string[] = [];
+  const branchRemoteByName = new Map<string, string>();
+
+  if (typeof configText === 'string' && configText) {
+    // 当前所处 section：'remote' / 'branch' / null（其他段）
+    let section: 'remote' | 'branch' | null = null;
+    let sectionName = '';
+
+    for (const rawLine of configText.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+
+      if (line.startsWith('[')) {
+        // `[remote "origin"]` / `[remote.origin]` 两种段头都认。
+        // 前瞻断言排除 `[remote-tracking]` 这类同前缀但语义无关的段
+        // （`\b` 做不到——`-` 是非单词字符，会被判为词边界）。
+        const quoted = /^\[\s*(remote|branch)\s+"([^"]*)"\s*\]/i.exec(line);
+        const dotted = /^\[\s*(remote|branch)\.([^\s\]]+)\s*\]/i.exec(line);
+        const m = quoted || dotted;
+        if (m) {
+          section = m[1].toLowerCase() as 'remote' | 'branch';
+          sectionName = m[2];
+        } else {
+          section = null;
+          sectionName = '';
+        }
+        continue;
+      }
+
+      if (!section) continue;
+
+      if (section === 'remote') {
+        const mu = /^url\s*=\s*(.+)$/i.exec(line);
+        if (mu) {
+          const url = unquoteValue(mu[1]);
+          if (url) {
+            // 指纹收集全部 url 行（含同 remote 的第二行）
+            if (!allUrls.includes(url)) allUrls.push(url);
+            // 身份映射只保留首个：git 对同名 remote 的多 url 也只认第一个
+            if (!remotes.some((r) => r.name === sectionName)) {
+              remotes.push({ name: sectionName, url });
+            }
+          }
+          continue;
+        }
+        // upstream 段写在前面时也要能读到——这里不做任何顺序假设
+      } else if (section === 'branch') {
+        const mr = /^remote\s*=\s*(.+)$/i.exec(line);
+        if (mr) {
+          const value = unquoteValue(mr[1]);
+          if (value) branchRemoteByName.set(sectionName, value);
+        }
       }
     }
   }
 
-  return urls;
+  // HEAD 形态：`ref: refs/heads/main` → main；40 位 sha（detached）→ null
+  let currentBranch: string | null = null;
+  if (typeof headText === 'string' && headText) {
+    const mh = /^\s*ref:\s*refs\/heads\/(.+?)\s*$/m.exec(headText);
+    if (mh) currentBranch = mh[1];
+  }
+
+  const branchRemote = currentBranch ? branchRemoteByName.get(currentBranch) ?? null : null;
+
+  return { remotes, allUrls, currentBranch, branchRemote };
+}
+
+/**
+ * 按 git 的规则选出「这个工作区关联的 remote」。
+ *
+ * 优先级与 git 一致：
+ *   1. `branch.<当前分支>.remote` —— 当前分支显式跟踪的 remote
+ *   2. `origin`                  —— git 的默认远程
+ *   3. 第一个 remote              —— 兜底（保持既有行为）
+ *
+ * 特殊值 `.` 表示跟踪**本地分支**而非远程（实测可设置），跳过第 1 级——
+ * 拿 "." 去查 `[remote "."]` 必然查不到，且语义上它根本不是远程。
+ */
+export function resolveRemoteTarget(cfg: ParsedGitConfig): ParsedRemote | null {
+  const remotes = Array.isArray(cfg?.remotes) ? cfg.remotes : [];
+  if (remotes.length === 0) return null;
+
+  const branchRemote = cfg?.branchRemote;
+  if (branchRemote && branchRemote !== '.') {
+    const hit = remotes.find((r) => r.name === branchRemote);
+    if (hit) return hit;
+  }
+
+  const origin = remotes.find((r) => r.name === 'origin');
+  if (origin) return origin;
+
+  return remotes[0];
+}
+
+/**
+ * 从 remote url 中提取 GitHub 的 owner/repo。
+ *
+ * 覆盖形态（均实测于真实 clone / hand-written config）：
+ *   https://github.com/o/r.git
+ *   git@github.com:o/r.git
+ *   ssh://git@github.com/o/r.git
+ *   https://user:token@github.com/o/r.git
+ *   带尾斜杠 / 不带 .git
+ *
+ * 非 github.com 的 host 一律返回 null（GHE 不在支持范围）。
+ * 为什么绝不"猜一个"：错误身份比没有身份更有害——面板会显示一个
+ * 用户根本不认识的仓库，且所有后续判断都建立在错误前提上。
+ * 正则两端锚定，杜绝 `github.com.evil.com` 这类子串误匹配。
+ */
+export function parseGithubUrl(url: string): { owner: string; repo: string } | null {
+  if (typeof url !== 'string' || !url) return null;
+  const m = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^@/\s]+@)?github\.com[:/]+([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i.exec(
+    url.trim()
+  );
+  if (!m) return null;
+  const owner = m[1];
+  const repo = m[2];
+  // 排除 `.` / `..` 这类目录穿越形态被当成仓库名
+  if (!owner || !repo || repo === '.' || repo === '..') return null;
+  return { owner, repo };
 }
 
 
