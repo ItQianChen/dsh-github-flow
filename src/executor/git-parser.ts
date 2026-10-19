@@ -495,4 +495,75 @@ export function parseGithubUrl(url: string): { owner: string; repo: string } | n
   return { owner, repo };
 }
 
+/**
+ * 从 remote url 中提取 host（小写）。
+ *
+ * 覆盖：https://host/o/r、git@host:o/r、ssh://git@host:2222/o/r、带 token 的 https。
+ * 无法解析返回 null。
+ *
+ * 为什么不直接复用 parseGithubUrl：本函数要处理**任意 host**（GHE / GitLab），
+ * 用于判断「这个 remote 是不是 GitHub」，而不是「这个 remote 属于哪个 GitHub 仓库」。
+ */
+export function parseRemoteHost(url: string): string | null {
+  if (typeof url !== 'string' || !url) return null;
+  const raw = url.trim();
+  // 本地路径形态不是"远程 host"，必须显式排除：
+  //   file:///c/Users/me/repo   → 否则会解析出 host "file"
+  //   C:\local\repo             → 否则会解析出 host "c"（盘符）
+  // 这两类的误判虽不影响 classifyRepoLayout（它只比对 'github.com'），
+  // 但违反本函数「无法解析返回 null」的契约，会误导后续调用方。
+  if (/^file:/i.test(raw)) return null;
+  if (/^[a-zA-Z]:[\\/]/.test(raw)) return null;
+
+  const m = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^@/\s]+@)?([^/:\s]+)[:/]/i.exec(raw);
+  if (!m) return null;
+  const host = m[1].toLowerCase();
+  // 单字母多半是盘符残留；含空格不可能出现在 host 位置
+  if (host.length < 2 || host === '.' || host.includes(' ')) return null;
+  return host;
+}
+
+/**
+ * 判断工作区处于哪种远程布局。
+ *
+ * 为什么需要分类而不是顺序盲扫：S2 的兜底逻辑按 `.git/config` 的书写顺序
+ * 挑第一个能解析出 GitHub 身份的 remote，而用户执行 `git remote rename` /
+ * `git remote add` 的先后会改变这个顺序——同一个工作区在两次配置操作后
+ * 可能解析出不同仓库。分类后每种布局的处置规则固定，与顺序无关。
+ *
+ * 分类只看 host 与 git 选中的 remote，不看 URL 的仓库名——后者是身份层的事。
+ */
+export function classifyRepoLayout(cfg: ParsedGitConfig): 'github-only' | 'github-mixed' | 'no-github' | 'no-remote' {
+  const remotes = Array.isArray(cfg?.remotes) ? cfg.remotes : [];
+  if (remotes.length === 0) return 'no-remote';
+
+  const isGithub = (u: string) => parseRemoteHost(u) === 'github.com';
+  const githubRemotes = remotes.filter((r) => isGithub(r.url));
+  if (githubRemotes.length === 0) return 'no-github';
+  if (githubRemotes.length === remotes.length) return 'github-only';
+  return 'github-mixed';
+}
+
+/**
+ * 在混合布局中确定性地选出一个 GitHub remote。
+ *
+ * 规则（与书写顺序无关）：
+ *   1. 名字为 `origin` 的优先
+ *   2. 否则按 remote 名字字典序最小的
+ *
+ * 为什么用字典序而不是「第一个出现的」：后者让同一个工作区的解析结果
+ * 依赖用户执行 git remote 命令的先后，属于不可复现的行为。
+ * 字典序是可复现、可断言的确定性规则。
+ */
+export function pickGithubRemote(cfg: ParsedGitConfig): ParsedRemote | null {
+  const remotes = Array.isArray(cfg?.remotes) ? cfg.remotes : [];
+  const github = remotes.filter((r) => parseRemoteHost(r.url) === 'github.com');
+  if (github.length === 0) return null;
+
+  const origin = github.find((r) => r.name === 'origin');
+  if (origin) return origin;
+
+  return [...github].sort((a, b) => a.name.localeCompare(b.name))[0];
+}
+
 

@@ -133,3 +133,36 @@ export declare function parseGithubUrl(url: string): {
     owner: string;
     repo: string;
 } | null;
+/**
+ * 从 remote url 中提取 host（小写）。
+ *
+ * 覆盖：https://host/o/r、git@host:o/r、ssh://git@host:2222/o/r、带 token 的 https。
+ * 无法解析返回 null。
+ *
+ * 为什么不直接复用 parseGithubUrl：本函数要处理**任意 host**（GHE / GitLab），
+ * 用于判断「这个 remote 是不是 GitHub」，而不是「这个 remote 属于哪个 GitHub 仓库」。
+ */
+export declare function parseRemoteHost(url: string): string | null;
+/**
+ * 判断工作区处于哪种远程布局。
+ *
+ * 为什么需要分类而不是顺序盲扫：S2 的兜底逻辑按 `.git/config` 的书写顺序
+ * 挑第一个能解析出 GitHub 身份的 remote，而用户执行 `git remote rename` /
+ * `git remote add` 的先后会改变这个顺序——同一个工作区在两次配置操作后
+ * 可能解析出不同仓库。分类后每种布局的处置规则固定，与顺序无关。
+ *
+ * 分类只看 host 与 git 选中的 remote，不看 URL 的仓库名——后者是身份层的事。
+ */
+export declare function classifyRepoLayout(cfg: ParsedGitConfig): 'github-only' | 'github-mixed' | 'no-github' | 'no-remote';
+/**
+ * 在混合布局中确定性地选出一个 GitHub remote。
+ *
+ * 规则（与书写顺序无关）：
+ *   1. 名字为 `origin` 的优先
+ *   2. 否则按 remote 名字字典序最小的
+ *
+ * 为什么用字典序而不是「第一个出现的」：后者让同一个工作区的解析结果
+ * 依赖用户执行 git remote 命令的先后，属于不可复现的行为。
+ * 字典序是可复现、可断言的确定性规则。
+ */
+export declare function pickGithubRemote(cfg: ParsedGitConfig): ParsedRemote | null;

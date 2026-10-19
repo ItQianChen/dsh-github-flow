@@ -2,11 +2,11 @@ import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConf
 import type { ProxyManager } from './proxy.js';
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
-import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl } from './executor/git-parser.js';
+import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, parseRemoteHost, classifyRepoLayout, pickGithubRemote } from './executor/git-parser.js';
 import type { ParsedGitConfig, ParsedRemote } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
 import { classifyGhError, describeDeterministicError, isRetryableError, type GhErrorKind } from './executor/error-classifier.js';
-export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, getPlatformInstallGuide, getGhUpgradeHint, classifyGhError, describeDeterministicError, isRetryableError, };
+export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, parseRemoteHost, classifyRepoLayout, pickGithubRemote, getPlatformInstallGuide, getGhUpgradeHint, classifyGhError, describeDeterministicError, isRetryableError, };
 export type { GhErrorKind, ParsedGitConfig, ParsedRemote };
 export declare class GhExecutor {
     ghPath: string;
@@ -204,7 +204,19 @@ export declare class GhExecutor {
      */
     private probeAuth;
     /**
-     * 解析工作区真实 git 目录的**两个**路径：局部目录与共享仓库目录。
+     * 从 `refs/remotes/<remote>/HEAD` 符号引用中读取仓库默认分支。
+     *
+     * 为什么只认这一个来源（其余全部实测排除）：
+     *   - `packed-refs` 只存具体 sha，不含 symbolic ref —— 读不到；
+     *   - 当前 HEAD 指向的是**用户 checkout 的分支**，不是仓库默认分支，语义错误；
+     *   - 猜 main/master —— 无依据，宁可回落固定值也不猜。
+     *
+     * @returns 分支名；文件不存在（未 fetch 过）或内容不是符号引用时返回 null，
+     *          由调用方回落到既有默认值（保持原有行为，不引入新错误）
+     */
+    readDefaultBranchFromRef(remoteName: string, cwd?: string): string | null;
+    /**
+     * 解析工作区真实的 git 目录的**两个**路径：局部目录与共享仓库目录。
      *
      * 为什么必须分开：worktree 的 `HEAD` 在局部目录（`.git/worktrees/<name>/HEAD`），
      * 而 `config` 在共享目录（`commondir` 指向处）。只解析其中一个必然读错：

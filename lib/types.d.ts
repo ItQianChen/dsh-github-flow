@@ -115,6 +115,28 @@ export interface AuthStatus {
     /** 本地是否已检测到持久化凭据（如 hosts.yml 或 Keyring） */
     hasLocalToken?: boolean;
 }
+/**
+ * 当前账号对仓库的权限档位（gh `viewerPermission` 字段的取值域）。
+ * 只读（READ / TRIAGE）意味着任何写操作都会被 GitHub 拒绝，
+ * UI 应据此在操作前给出提示，而不是让用户点了才吃 403。
+ */
+export type ViewerPermission = 'ADMIN' | 'MAINTAIN' | 'WRITE' | 'TRIAGE' | 'READ';
+/**
+ * 工作区的远程布局分类（离线解析得出，用于确定「该用哪个 remote 的身份」）。
+ *
+ * 为什么要分类：混合布局下若按 `.git/config` 的书写顺序选 remote，
+ * 同一个工作区在两次 `git remote` 操作后可能解析出不同仓库。
+ * 分类后每种布局的处置规则固定，与书写顺序无关。
+ */
+export type RepoLayoutKind = 
+/** 全部 remote 都是 github.com */
+'github-only'
+/** 含 GitHub remote，但 git 选中的那个不是 GitHub */
+ | 'github-mixed'
+/** 无任何 GitHub remote（全 GHE 或其他 host） */
+ | 'no-github'
+/** 无 remote */
+ | 'no-remote';
 export interface RepoMetadata {
     nameWithOwner: string;
     name: string;
@@ -126,6 +148,24 @@ export interface RepoMetadata {
     url?: string;
     stargazerCount?: number;
     forkCount?: number;
+    /** 是否为 fork（影响 star 取谁、是否提示可查看上游） */
+    isFork?: boolean;
+    /**
+     * fork 的上游。
+     * gh 的 `parent` 只返回骨架（id/name/owner.login），nameWithOwner 需自行拼接；
+     * 上游 star 数拿不到（`--json` 不支持嵌套子字段），故此处不含热度字段。
+     */
+    parent?: {
+        nameWithOwner: string;
+        url?: string;
+    };
+    /**
+     * 当前账号对该仓库的权限。
+     * 离线解析时为 undefined——**不猜测**：猜错会导致 UI 给出错误的操作许可。
+     */
+    viewerPermission?: ViewerPermission;
+    /** 远程布局分类（仅离线解析产生，供 UI 与诊断区分场景） */
+    layout?: RepoLayoutKind;
 }
 /** Git 分支详情项（供分支切换器下拉列表消费） */
 export interface GitBranchItem {
