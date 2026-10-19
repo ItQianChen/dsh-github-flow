@@ -123,6 +123,8 @@ async function runComprehensiveAudit() {
     '/api/github/proxy',
     '/api/github/proxy/probe',
     '/api/github/update-settings',
+    '/api/github/commit-detail',
+    '/api/github/git-log',
   ];
 
   for (const path of expectedPaths) {

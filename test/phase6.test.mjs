@@ -1,5 +1,7 @@
 // test/phase6.test.mjs - 升级链路修复验证：profile 感知命令生成 / PATH 自愈 / 预检 / 日志透传
-import { readFileSync } from 'node:fs';
+import fs, { readFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 let pass = 0, total = 0;
 const fails = [];
@@ -114,26 +116,52 @@ console.log('\n--- 3b. update source settings ---');
 console.log('\n--- 3. dsh CLI PATH self-healing ---');
 const { buildCrossPlatformEnv, probeDshCliAvailable } = await import('../lib/upgrade-manager.js');
 {
-  const env = buildCrossPlatformEnv();
-  const paths = env.PATH.split(';');
-  // 本机实测 dsh 在 D:\dsh-zm\resources\runtime\cli\bin；DSH_PROFILE_DIR 上溯应覆盖
-  const hasDshBin = paths.some((p) => /runtime.cli.bin$/i.test(p.trim()));
-  assert(hasDshBin, `PATH 已注入 dsh CLI 目录（runtime/cli/bin）`);
-  // 探测在自愈 PATH 下应可达；沙箱拦截嵌套 spawn（EPERM）时降级为 PATH 字符串级验证
-  //（探测逻辑本身由第 4 组的失败分支反向覆盖：坏 PATH → 明确 hint）
-  try {
-    const probe = await probeDshCliAvailable(env);
-    if (probe.ok) {
-      assert(true, '自愈 PATH 下 where dsh 可达');
-    } else if (probe.hint && probe.hint.includes('EPERM')) {
-      console.log('⚠️ SKIP: 嵌套 spawn 被沙箱拦截，PATH 注入已由字符串断言覆盖');
-      assert(true, '自愈 PATH（沙箱降级验证）');
+  let tmpDshBin = null;
+  const initialEnv = buildCrossPlatformEnv();
+  const initialPaths = initialEnv.PATH.split(';');
+  let hasDshBin = initialPaths.some((p) => /runtime.cli.bin$/i.test(p.trim()));
+  if (!hasDshBin) {
+    // 本机未预装 DSH 桌面版时，创建受控的 mock 临时目录以验证 PATH 自愈与 probe 检测契约
+    tmpDshBin = path.join(os.tmpdir(), `test-dsh-bin-${Date.now()}`, 'resources', 'runtime', 'cli', 'bin');
+    fs.mkdirSync(tmpDshBin, { recursive: true });
+    if (process.platform === 'win32') {
+      fs.writeFileSync(path.join(tmpDshBin, 'dsh.cmd'), '@echo off\r\n');
     } else {
-      assert(false, `探测不可达且非沙箱原因: ${probe.hint}`);
+      fs.writeFileSync(path.join(tmpDshBin, 'dsh'), '#!/bin/sh\n');
+      try { fs.chmodSync(path.join(tmpDshBin, 'dsh'), 0o755); } catch {}
     }
-  } catch (e) {
-    console.log(`⚠️ SKIP: spawn 异常 (${e.code || e.message})`);
-    assert(true, '自愈 PATH（沙箱降级验证）');
+    process.env.DSH_CLI_BIN = tmpDshBin;
+  }
+
+  try {
+    const env = buildCrossPlatformEnv();
+    const paths = env.PATH.split(';');
+    hasDshBin = paths.some((p) => /runtime.cli.bin$/i.test(p.trim()));
+    assert(hasDshBin, `PATH 已注入 dsh CLI 目录（runtime/cli/bin）`);
+    // 探测在自愈 PATH 下应可达；沙箱拦截嵌套 spawn（EPERM）时降级为 PATH 字符串级验证
+    //（探测逻辑本身由第 4 组的失败分支反向覆盖：坏 PATH → 明确 hint）
+    try {
+      const probe = await probeDshCliAvailable(env);
+      if (probe.ok) {
+        assert(true, '自愈 PATH 下 where dsh 可达');
+      } else if (probe.hint && probe.hint.includes('EPERM')) {
+        console.log('⚠️ SKIP: 嵌套 spawn 被沙箱拦截，PATH 注入已由字符串断言覆盖');
+        assert(true, '自愈 PATH（沙箱降级验证）');
+      } else {
+        assert(false, `探测不可达且非沙箱原因: ${probe.hint}`);
+      }
+    } catch (e) {
+      console.log(`⚠️ SKIP: spawn 异常 (${e.code || e.message})`);
+      assert(true, '自愈 PATH（沙箱降级验证）');
+    }
+  } finally {
+    if (tmpDshBin) {
+      delete process.env.DSH_CLI_BIN;
+      try {
+        const root = path.dirname(path.dirname(path.dirname(path.dirname(tmpDshBin))));
+        fs.rmSync(root, { recursive: true, force: true });
+      } catch {}
+    }
   }
 }
 

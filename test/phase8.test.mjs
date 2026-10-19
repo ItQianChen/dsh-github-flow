@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import nodeFs from 'node:fs';
 import nodePath from 'node:path';
+import nodeOs from 'node:os';
 
 let pass = 0, total = 0;
 const fails = [];
@@ -288,6 +289,66 @@ console.log('\n--- 7. image_urls targeting ---');
     };
     const v = await (await import('../lib/tools/issue.js')).createIssueTool(mockC).execute({ action: 'view', issue_number: 1, repo: 'o/r' }, {});
     assert(v.images.length === 2 && v.images.some((u) => u.includes('c9')), 'issue view 清单含评论图片');
+  }
+
+  // 7.8 LRU 淘汰机制：历史旧文件自动淘汰，消除永久死锁
+  {
+    const { evictLruImages, downloadImages, imageStoreDir } = await import('../lib/tools/image-utils.js');
+    const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000050001', 'hex');
+
+    // 7.8.1 evictLruImages 单元级：按 mtime 淘汰最旧文件，保护当前批次文件
+    const tmpLruDir = nodePath.join(nodeOs.tmpdir(), `dsh-test-lru-${Date.now()}`);
+    nodeFs.mkdirSync(tmpLruDir, { recursive: true });
+    try {
+      const f1 = nodePath.join(tmpLruDir, 'oldest.png');
+      const f2 = nodePath.join(tmpLruDir, 'middle.png');
+      const f3 = nodePath.join(tmpLruDir, 'newest.png');
+      nodeFs.writeFileSync(f1, Buffer.alloc(3 * 1024 * 1024)); // 3MB
+      nodeFs.writeFileSync(f2, Buffer.alloc(4 * 1024 * 1024)); // 4MB
+      nodeFs.writeFileSync(f3, Buffer.alloc(5 * 1024 * 1024)); // 5MB
+      const now = Date.now();
+      nodeFs.utimesSync(f1, new Date(now - 30000), new Date(now - 30000));
+      nodeFs.utimesSync(f2, new Date(now - 20000), new Date(now - 20000));
+      nodeFs.utimesSync(f3, new Date(now - 10000), new Date(now - 10000));
+
+      // 当前目录总量 12MB。假设需要写入 4MB，上限 15MB，低水位 10MB。
+      // 12MB + 4MB = 16MB > 15MB，需要淘汰。
+      // 最旧的 f1 (3MB) 淘汰后剩余 9MB，9MB <= 10MB (低水位) 且 9MB + 4MB = 13MB <= 15MB，停止。
+      const evictRes = evictLruImages(tmpLruDir, 4 * 1024 * 1024, new Set([f3]), 15 * 1024 * 1024, 10 * 1024 * 1024);
+      assert(evictRes.evictedCount === 1, 'LRU 淘汰数量为 1');
+      assert(!nodeFs.existsSync(f1), '最旧的文件已被清理');
+      assert(nodeFs.existsSync(f2) && nodeFs.existsSync(f3), '较新文件与保护文件完好');
+
+      // 保护项测试：如果 f2 被保护，应跳过 f2 淘汰其他
+      const evictProtected = evictLruImages(tmpLruDir, 3 * 1024 * 1024, new Set([f2]), 10 * 1024 * 1024, 5 * 1024 * 1024);
+      assert(evictProtected.evictedFiles.includes(f3), '保护列表生效，淘汰未保护的文件');
+      assert(nodeFs.existsSync(f2), '保护列表中的文件未被淘汰');
+    } finally {
+      nodeFs.rmSync(tmpLruDir, { recursive: true, force: true });
+    }
+
+    // 7.8.2 downloadImages 集成级：存在历史文件达到目录上限时，新下载自动触发 LRU 淘汰并成功落盘
+    const targetDir = imageStoreDir();
+    nodeFs.mkdirSync(targetDir, { recursive: true });
+    const dummyHistorical = nodePath.join(targetDir, 'historical_dummy.png');
+    try {
+      // 写入 13MB 历史数据（模拟过往会话遗留）
+      nodeFs.writeFileSync(dummyHistorical, Buffer.alloc(13 * 1024 * 1024));
+      nodeFs.utimesSync(dummyHistorical, new Date(Date.now() - 60000), new Date(Date.now() - 60000));
+
+      // 尝试下载一张新图片（3MB）
+      const newImgBuf = Buffer.concat([png, Buffer.alloc(3 * 1024 * 1024)]);
+      const urlNew = 'https://github.com/user-attachments/assets/new-img-test';
+      const rLru = await downloadImages([urlNew], async () => ({ ok: true, data: newImgBuf }));
+
+      assert(rLru.images.length === 1 && !rLru.remaining, '历史文件超限时，自动触发 LRU 淘汰成功下载新图');
+      assert(!nodeFs.existsSync(dummyHistorical), '历史陈旧大文件已被自动淘汰释放空间');
+      assert(nodeFs.existsSync(rLru.images[0].file), '新下载图片正常落盘');
+      // 清理新图片
+      if (rLru.images[0]) nodeFs.rmSync(rLru.images[0].file, { force: true });
+    } finally {
+      if (nodeFs.existsSync(dummyHistorical)) nodeFs.rmSync(dummyHistorical, { force: true });
+    }
   }
 }
 
