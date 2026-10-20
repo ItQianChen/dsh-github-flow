@@ -512,12 +512,26 @@ export interface GlobalOverviewData {
   myPrs: Array<{
     number: number;
     title: string;
+    /**
+     * PR 状态。为什么必须下发：主面板默认展示「全部」而非仅 open
+     * （实测账号可能零 open PR，只查 open 会恒为空白），
+     * 前端要靠这个字段做状态胶囊筛选与徽章标注。
+     */
+    state?: 'OPEN' | 'CLOSED' | 'MERGED';
     repository: { nameWithOwner: string };
     url: string;
     updatedAt: string;
+    isDraft?: boolean;
   }>;
   myIssues: GlobalIssueItem[];
   issueStats?: IssueStats;
+  /**
+   * PR 检索是否触及上限（仅触顶时下发）。
+   * 为什么必须透出：去掉 open 过滤后按 updatedAt 降序返回最近 N 条，
+   * 若账号历史 PR 超过上限，界面会静默少显示，用户无法区分
+   * 「列表到此为止」与「数据没取到」。
+   */
+  prsTruncated?: boolean;
   lastUpdated: string;
   error?: string;
   /** 网络是否发生异常（超时、连接拒绝、代理阻断等） */

@@ -169,7 +169,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **28 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1361 项全量自动化测试断言**：
+项目配备了 **29 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1461 项全量自动化测试断言**：
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
 - `phase3`：Release 资产交付、Secret 密文管道与 Skills 检索；
@@ -197,4 +197,5 @@
 - `phase25`：右侧栏仓库徽章可视化（resolveRepoBadges 纯函数：fork 徽章与血缘行、READ/TRIAGE 只读徽章、可写与未知权限零徽章、parent.url 协议白名单防 javascript:/data: 注入）、bundle 内联断言与「零新增网络往返」静态约束；
 - `phase26`：写操作权限自愈（GraphQL 权限错误补入确定性分类、permissionRemedy 按 Triage/Write/Admin 三档给出可操作指引并拼入 error 供模型自愈、限流 403 不误判、非权限错误零噪音、前端快捷按钮保持可用的防回退断言）；
 - `phase27`：关联仓库自由切换（getAssociatedRepos 双 remote / Fork+Parent 纯本地多仓推导、RepoSelectorDropdown 下拉组件、setDefaultRepo 官方 set-default 对齐与防注入白名单、Fork 血缘行一键双向快捷切换）；
-- `phase28`：PR 在线审阅工作台与主面板标签页解耦（splitUnifiedDiff 按文件切片索引、core.quotePath 八进制转义还原、含 ` b/` 路径的等值分割判定、删除文件路径回退、getPrDetail 参数白名单与 diff 阈值放宽不被截断、响应体不回传 fullDiff 防膨胀、**行级审查评论独立 API 通道 + original_line 回退 + 失败降级**、/api/github/pr-detail 路由真实调用与 405/400/500 错误路径、**action/branch-switch 请求体 256KB 上限与 413 行为验证**、主面板 mywork 拆为 prs/issues 四标签页、React Hooks 顺序静态防回退）。
+- `phase28`：PR 在线审阅工作台与主面板标签页解耦（splitUnifiedDiff 按文件切片索引、core.quotePath 八进制转义还原、含 ` b/` 路径的等值分割判定、删除文件路径回退、getPrDetail 参数白名单与 diff 阈值放宽不被截断、响应体不回传 fullDiff 防膨胀、**行级审查评论独立 API 通道 + original_line 回退 + 失败降级**、/api/github/pr-detail 路由真实调用与 405/400/500 错误路径、**action/branch-switch 请求体 256KB 上限与 413 行为验证**、主面板 mywork 拆为 prs/issues 四标签页、React Hooks 顺序静态防回退）；
+- `phase29`：数据可见性与 PR 弹窗交互（PR/Issue 查询移除 `--state=open` 硬过滤并补齐 state 字段、clampFilePaneWidth 纯函数边界与容器极窄保下限、文件区布局偏好 localStorage 往返与脏数据回退、分隔条拖拽 document 级监听与卸载兜底清理、折叠双恢复入口、**PR 标题行与 GitHub 跳转按钮同行（min-width:0 + flex-shrink:0 防长标题挤出）**、空态区分「筛选为空」与「账号无记录」）。

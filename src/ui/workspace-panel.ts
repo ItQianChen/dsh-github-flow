@@ -38,6 +38,10 @@ export function GithubWorkspacePanel() {
   var [activeTab, setActiveTab] = React.useState("workspaces");
   var [searchQuery, setSearchQuery] = React.useState("");
   var [issueFilter, setIssueFilter] = React.useState("all");
+  // PR 状态筛选：默认「全部」而不是「Open」。
+  // 实测账号可能零 open PR（当前账号 7 个 PR 全为 merged/closed），
+  // 默认 Open 会让列表恒为空白，等于没修「看不到数据」这个原始问题。
+  var [prStateFilter, setPrStateFilter] = React.useState("all");
   var [toastMsg, setToastMsg] = React.useState(null as string | null);
   // PR 在线审阅弹窗状态：{ number, repo } 二元组；为 null 时弹窗不渲染
   var [activePrModal, setActivePrModal] = React.useState(null as { number: number; repo: string } | null);
@@ -590,24 +594,70 @@ export function GithubWorkspacePanel() {
     // ---- PR 独立标签页：完整大屏空间，点击卡片在线唤起审阅工作台 ----
     if (!auth?.loggedIn) {
       contentEl = h("div", { className: "dsh-github-empty" }, "当前尚未认证登录 GitHub 账号，无法读取个人 PR 列表。请先完成上方的安装或登录指引。");
-    } else if (myPrs.length === 0) {
-      contentEl = h("div", { className: "dsh-github-empty" }, "暂无开放中的 PR");
     } else {
+      // 状态分组统计（供胶囊计数与空态判断）
+      var prByState = { open: 0, merged: 0, closed: 0 } as Record<string, number>;
+      myPrs.forEach(function (pr: any) {
+        var s = String(pr.state || '').toLowerCase();
+        if (s === 'open' || s === 'merged' || s === 'closed') prByState[s]++;
+      });
+      var filteredPrs = myPrs.filter(function (pr: any) {
+        if (prStateFilter === 'all') return true;
+        return String(pr.state || '').toLowerCase() === prStateFilter;
+      });
+
+      var prPillsEl = h(
+        "div",
+        { className: "dsh-github-pills" },
+        h("button", { className: `dsh-github-pill-btn ${prStateFilter === 'all' ? 'active' : ''}`, onClick: () => setPrStateFilter('all') }, `全部 (${myPrs.length})`),
+        h("button", { className: `dsh-github-pill-btn ${prStateFilter === 'open' ? 'active' : ''}`, onClick: () => setPrStateFilter('open') }, `🟢 Open (${prByState.open})`),
+        h("button", { className: `dsh-github-pill-btn ${prStateFilter === 'merged' ? 'active' : ''}`, onClick: () => setPrStateFilter('merged') }, `🟣 Merged (${prByState.merged})`),
+        h("button", { className: `dsh-github-pill-btn ${prStateFilter === 'closed' ? 'active' : ''}`, onClick: () => setPrStateFilter('closed') }, `⚪ Closed (${prByState.closed})`)
+      );
+
+      // 空态必须区分「账号确实没有」与「当前筛选下没有」——否则用户会把筛空当成数据丢失
+      var prEmptyEl = myPrs.length === 0
+        ? h("div", { className: "dsh-github-empty" }, "该账号下暂无任何 Pull Request 记录")
+        : h("div", { className: "dsh-github-empty" }, `当前筛选「${prStateFilter}」下无结果，共 ${myPrs.length} 条记录（切换到「全部」查看）`);
+
       contentEl = h(
         "div",
         null,
-        h("h3", { className: "dsh-github-subheading" }, `🔀 我发起与待跟进的 Pull Requests (${myPrs.length})`),
-        h(
+        h("h3", { className: "dsh-github-subheading" }, `🔀 我发起与参与的 Pull Requests (${filteredPrs.length} / ${myPrs.length})`),
+        prPillsEl,
+        // 触顶提示：让用户知道列表被截断了，而不是以为历史 PR 凭空消失
+        data && data.prsTruncated
+          ? h("div", {
+              style: {
+                margin: "8px 0",
+                padding: "6px 12px",
+                borderRadius: "6px",
+                fontSize: "11px",
+                lineHeight: 1.5,
+                background: "rgba(210, 153, 34, 0.12)",
+                border: "1px solid rgba(210, 153, 34, 0.35)",
+                color: "var(--dsw-alias-state-attention-primary, #9a6700)",
+              },
+            }, `⚠️ 仅显示最近 ${myPrs.length} 条 PR（已触及检索上限）。更早的记录请到 GitHub 查看。`)
+          : null,
+        filteredPrs.length === 0 ? prEmptyEl : h(
           "div",
           { className: "dsh-github-list" },
-          myPrs.map((pr: any) => {
-            // 点击卡片主体 → 在线审阅弹窗；右侧 ↗ 保留浏览器直达（stopPropagation 防冒泡）
+          filteredPrs.map((pr: any) => {
+            // 点击卡片主体 → 在线审阅弹窗
             return h(
               "div",
               {
                 key: pr.number,
                 className: "dsh-github-item",
-                style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", cursor: "pointer" },
+                /*
+                 * 只加 cursor，绝不覆盖 display/alignItems/flexWrap。
+                 * 这里的 inline style 曾写成 display:flex + alignItems:center + flexWrap:wrap，
+                 * 直接把 .dsh-github-item 的 flex-direction:column 顶掉，
+                 * 导致标题、状态徽章、时间全部横向挤成一行并整体居中——
+                 * 卡片布局就是被这一行内联样式毁掉的。
+                 */
+                style: { cursor: "pointer" },
                 title: "点击在线审阅该 PR（描述 / 评论 / 文件 Diff）",
                 onClick: () => {
                   setActivePrModal({
@@ -616,27 +666,42 @@ export function GithubWorkspacePanel() {
                   });
                 },
               },
+              // 标题行：标题 → 状态徽章 → GitHub 跳转按钮，全部同一行
               h(
-                "span",
-                { className: "dsh-github-item-title", style: { cursor: "pointer" } },
-                `${pr.isDraft ? "⚪ " : ""}[${pr.repository?.nameWithOwner || 'Repo'}] #${pr.number} ${pr.title}`
+                "div",
+                { className: "dsh-github-pr-title-row" },
+                h(
+                  "span",
+                  { className: "dsh-github-item-title", style: { cursor: "pointer" } },
+                  `${pr.isDraft ? "⚪ " : ""}[${pr.repository?.nameWithOwner || 'Repo'}] #${pr.number} ${pr.title}`
+                ),
+                pr.isDraft ? h("span", { className: "dsh-github-badge dsh-badge-yellow", style: { flexShrink: 0 } }, "DRAFT") : null,
+                // 状态徽章：列表含 merged/closed，必须标明才能一眼区分
+                (() => {
+                  var s = String(pr.state || '').toUpperCase();
+                  if (s === 'MERGED') return h("span", { className: "dsh-github-badge dsh-badge-purple", style: { flexShrink: 0 } }, "MERGED");
+                  if (s === 'CLOSED') return h("span", { className: "dsh-github-badge dsh-badge-red", style: { flexShrink: 0 } }, "CLOSED");
+                  if (s === 'OPEN') return h("span", { className: "dsh-github-badge dsh-badge-green", style: { flexShrink: 0 } }, "OPEN");
+                  return null;
+                })(),
+                h(
+                  "a",
+                  {
+                    className: "dsh-github-pr-gh-btn",
+                    href: pr.url,
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    onClick: (e: any) => e.stopPropagation(),
+                    title: "在浏览器打开该 PR（不进入在线审阅）",
+                  },
+                  "GitHub ↗"
+                )
               ),
-              pr.isDraft ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "DRAFT") : null,
+              // 第二行只保留时间，避免与标题行的徽章重复
               formatRelativeTime(pr.updatedAt)
-                ? h("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", whiteSpace: "nowrap" } }, formatRelativeTime(pr.updatedAt))
-                : null,
-              h(
-                "a",
-                {
-                  href: pr.url,
-                  target: "_blank",
-                  rel: "noopener noreferrer",
-                  onClick: (e: any) => e.stopPropagation(),
-                  style: { fontSize: "12px", color: "var(--dsw-alias-link, #0969da)", textDecoration: "none", flexShrink: 0 },
-                  title: "在浏览器打开该 PR",
-                },
-                "↗"
-              )
+                ? h("div", { className: "dsh-github-item-meta" },
+                    h("span", { style: { whiteSpace: "nowrap" } }, formatRelativeTime(pr.updatedAt)))
+                : null
             );
           })
         )
@@ -699,9 +764,13 @@ export function GithubWorkspacePanel() {
       contentEl = h(
         "div",
         null,
-        h("h3", { className: "dsh-github-subheading" }, `📝 任务与待办 Issues (${filteredIssues.length})`),
+        h("h3", { className: "dsh-github-subheading" }, `📝 我发起与参与的 Issues (${filteredIssues.length} / ${myIssues.length})`),
         issuePillsEl,
-        filteredIssues.length === 0 ? h("div", { className: "dsh-github-empty" }, "当前分类下暂无开放中的 Issue") : h(
+        filteredIssues.length === 0
+          ? (myIssues.length === 0
+              ? h("div", { className: "dsh-github-empty" }, "该账号下暂无任何 Issue 记录")
+              : h("div", { className: "dsh-github-empty" }, `当前分类「${issueFilter}」下无结果，共 ${myIssues.length} 条记录（切换到「全部」查看）`))
+          : h(
           "div",
           { className: "dsh-github-list" },
           filteredIssues.map((is: any) => {

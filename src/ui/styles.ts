@@ -1867,6 +1867,157 @@ body[data-ds-dark-theme] .dsh-github-pr-file-list {
   background: var(--dsw-alias-bg-layer-1, #16161a);
 }
 
+/*
+ * 拖拽分隔条。宽度 6px 而非常见的 1px：细条几乎点不中，
+ * 是分栏拖拽最常见的可用性缺陷。
+ */
+.dsh-github-pr-splitter {
+  position: relative;
+  flex-shrink: 0;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--dsw-alias-border-l2, #e1e4e8);
+  transition: background 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dsh-github-pr-splitter:hover {
+  background: var(--dsw-alias-link, #0969da);
+}
+body[data-ds-dark-theme] .dsh-github-pr-splitter {
+  background: var(--dsw-alias-border-l1, #30363d);
+}
+body[data-ds-dark-theme] .dsh-github-pr-splitter:hover {
+  background: #58a6ff;
+}
+
+/* 折叠按钮贴在分隔条中部，始终可见——折叠后这是唯一的视觉恢复提示 */
+.dsh-github-pr-splitter-toggle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  color: var(--dsw-alias-label-secondary, #656d76);
+  font-size: 8px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+.dsh-github-pr-splitter-toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+body[data-ds-dark-theme] .dsh-github-pr-splitter-toggle {
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+  color: var(--dsw-alias-label-secondary, #8b949e);
+}
+body[data-ds-dark-theme] .dsh-github-pr-splitter-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f0f6fc;
+}
+
+/*
+ * PR 卡片标题行：标题在左、跳转按钮钉在最右，且严格保持同一行。
+ *
+ * 为什么需要这个容器：.dsh-github-item 本身是 flex-direction: column，
+ * 若把按钮直接放进去，它会独占一整行、只剩一个孤零零的 ↗ 字符，
+ * 既丑也让用户看不出这是可点的入口。包进横向 flex 行即可解决。
+ */
+.dsh-github-pr-title-row {
+  display: flex;
+  align-items: center; /* 标题已强制单行，居中对齐即「同一行」 */
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+.dsh-github-pr-title-row .dsh-github-item-title {
+  /*
+   * flex: 0 1 auto —— 标题按自身内容宽度占据，可收缩（shrink 1）但不撑满（grow 0）。
+   *
+   * 为什么不是 flex: 1 1 0%：
+   * 标题行里现在还有状态徽章（MERGED/CLOSED）跟在标题右侧。
+   * 若标题 grow 撑满全部剩余空间，徽章会被顶到最右边紧贴「GitHub ↗」按钮，
+   * 看起来像两个右边控件挤在一起，而不是「标题 → 状态 → 按钮」的阅读顺序。
+   * 改成不撑满后，徽章自然紧跟在标题文字之后；
+   * 「按钮贴最右」由按钮自身的 margin-left: auto 保证，与此处无关。
+   */
+  flex: 0 1 auto;
+  /*
+   * min-width: 0 是关键。flex 子项默认 min-width: auto，
+   * PR 标题经常很长，会撑破容器把右侧徽章与按钮顶出可视区——
+   * 没有这一行，text-overflow: ellipsis 根本不会生效。
+   */
+  min-width: 0;
+  /*
+   * white-space: nowrap + ellipsis：标题只占一行。
+   * 若允许换行，标题变成两三行后徽章与按钮会浮在首行右侧，
+   * 视觉上与文字末行错位——用户看到的就是「按钮跑到上面去了」。
+   * 完整标题通过 title 属性悬浮查看，这也是 GitHub 自身的做法。
+   */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* 标题与按钮之间靠 flex 分配留白，不额外加 margin */
+  text-decoration: none;
+}
+
+/*
+ * 「GitHub ↗」跳转按钮。
+ *
+ * 视觉规格按截图反馈重做：原先是 font-size 11px / padding 2px 8px，
+ * 在深色背景上又矮又小、与 13px 标题不匹配，看起来像贴在文字上的标签。
+ * 现在放大到与标题同一视觉量级，并给出明确的悬浮反馈。
+ */
+.dsh-github-pr-gh-btn {
+  flex-shrink: 0; /* 永不压缩，宁可让标题省略 */
+  /*
+   * margin-left: auto 是双保险：即使标题因某种原因没吃满 flex 空间
+   * （如父容器宽度异常、flex-basis 被覆盖），按钮仍会被推到最右侧，
+   * 而不是紧贴在标题文字屁股后面。
+   */
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  background: var(--dsw-alias-bg-module-platform, #f6f8fa);
+  color: var(--dsw-alias-label-secondary, #57606a);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.dsh-github-pr-gh-btn:hover {
+  color: var(--dsw-alias-link, #0969da);
+  border-color: var(--dsw-alias-link, #0969da);
+  background: var(--dsw-alias-interactive-bg-hover, #eaeef2);
+}
+body[data-ds-dark-theme] .dsh-github-pr-gh-btn {
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+  color: var(--dsw-alias-label-secondary, #8b949e);
+}
+body[data-ds-dark-theme] .dsh-github-pr-gh-btn:hover {
+  color: #58a6ff;
+  border-color: #58a6ff;
+  background: rgba(56, 139, 253, 0.15);
+}
+
 .dsh-github-pr-file-item {
   display: flex;
   align-items: center;

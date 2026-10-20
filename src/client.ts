@@ -1104,17 +1104,37 @@ window.__ModuleLoader__.load({
                         }
                       : undefined,
                   },
-                  h("a", {
-                    className: "dsh-github-item-title",
-                    href: pr.url,
-                    target: "_blank",
-                    onClick: (e: any) => e.stopPropagation(),
-                    title: relTime ? `更新于 ${pr.updatedAt}（点击在浏览器打开）` : "在浏览器打开该 PR",
-                  }, `${pr.isDraft ? "⚪ " : ""}#${pr.number} ${pr.title}`),
+                  // 标题与跳转按钮必须同行：.dsh-github-item 本身是竖排 flex，
+                  // 直接放按钮会让它独占一行、只剩一个裸 ↗ 字符（曾经的丑样）。
+                  h(
+                    "div",
+                    { className: "dsh-github-pr-title-row" },
+                    h("span", {
+                      className: "dsh-github-item-title",
+                      title: relTime ? `更新于 ${pr.updatedAt}（点击在线审阅）` : "点击在线审阅该 PR",
+                    }, `${pr.isDraft ? "⚪ " : ""}#${pr.number} ${pr.title}`),
+                    // 独立的浏览器直达入口：文字标签 + 边框，明确表达「外部跳转」
+                    h("a", {
+                      className: "dsh-github-pr-gh-btn",
+                      href: pr.url,
+                      target: "_blank",
+                      rel: "noopener noreferrer",
+                      onClick: (e: any) => e.stopPropagation(),
+                      title: "在浏览器打开该 PR（不进入在线审阅）",
+                    }, "GitHub ↗")
+                  ),
                   h(
                     "div",
                     { className: "dsh-github-item-meta" },
                     h("span", null, `${pr.headRefName} → ${pr.baseRefName}`),
+                    // 状态徽章：与主面板保持一致，否则同一 PR 在两处显示不同信息
+                    (() => {
+                      var s = String(pr.state || "").toUpperCase();
+                      if (s === "MERGED") return h("span", { className: "dsh-github-badge dsh-badge-purple" }, "MERGED");
+                      if (s === "CLOSED") return h("span", { className: "dsh-github-badge dsh-badge-red" }, "CLOSED");
+                      if (s === "OPEN") return h("span", { className: "dsh-github-badge dsh-badge-green" }, "OPEN");
+                      return null;
+                    })(),
                     pr.mergeable === "CONFLICTING"
                       ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "代码冲突")
                       : h("span", { className: "dsh-github-badge dsh-badge-green" }, "可合并"),

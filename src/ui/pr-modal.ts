@@ -1,6 +1,10 @@
 declare const React: any;
 declare function renderOctocat(size?: number, color?: string): any;
 declare function formatRelativeTime(iso: any): string;
+// storage.js 在 leadingModules 中先于本模块内联，因此可直接作为闭包内全局函数使用
+declare function getPrFilePanePrefs(): { width: number; hidden: boolean };
+declare function savePrFilePanePrefs(prefs: { width: number; hidden: boolean }): void;
+declare function clampFilePaneWidth(next: number, containerWidth: number): number;
 
 export interface PrDetailModalProps {
   prNumber: number;
@@ -37,8 +41,35 @@ export function PrDetailModal(props: PrDetailModalProps) {
   var [selectedFilePath, setSelectedFilePath] = React.useState(null as string | null);
   var [copied, setCopied] = React.useState(false);
 
+  // 文件区布局：宽度可拖拽、可整块折叠。初值从 localStorage 偏好恢复。
+  // 同样必须无条件在顶层执行（与上面几个 Hook 一并满足调用顺序铁律）。
+  var initialPanePrefs = getPrFilePanePrefs();
+  var [filePaneWidth, setFilePaneWidth] = React.useState(initialPanePrefs.width);
+  var [filePaneHidden, setFilePaneHidden] = React.useState(initialPanePrefs.hidden);
+  var paneContainerRef = React.useRef(null as any);
+  // 宽度镜像 ref：供异步回调（如 setState updater）读取最新值，
+  // 避免闭包捕获渲染期快照导致的偏好回跳。
+  var widthRef = React.useRef(initialPanePrefs.width);
+  widthRef.current = filePaneWidth;
+  // 拖拽起点存 ref 而非 state：mousemove 每秒触发几十次，
+  // 把起点塞进 state 会引发无意义的重渲染风暴。
+  var dragStateRef = React.useRef(null as { startX: number; startWidth: number } | null);
+  // 拖拽进行中的清理函数：组件卸载（如拖到一半按 Esc）时必须兜底解绑，
+  // 否则 document 上的 mousemove 与 body 的 col-resize 光标会永久残留。
+  var cleanupDragRef = React.useRef(null as (() => void) | null);
+
   // Hooks 执行完毕后再做空值短路
   if (!prNumber) return null;
+
+  // 卸载兜底：拖拽中途关闭弹窗（Esc / 点遮罩）时清理 document 监听与 body 光标
+  React.useEffect(() => {
+    return () => {
+      if (cleanupDragRef.current) {
+        cleanupDragRef.current();
+        cleanupDragRef.current = null;
+      }
+    };
+  }, []);
 
   // Esc 键监听关闭
   React.useEffect(() => {
@@ -93,6 +124,78 @@ export function PrDetailModal(props: PrDetailModalProps) {
   }, [prNumber, repoNameWithOwner, cwd]);
 
   var h = React.createElement;
+
+  /**
+   * 开始拖拽分隔条。
+   *
+   * 为什么把监听挂到 document 而不是分隔条自身：鼠标移动速度快于元素跟随速度时，
+   * 指针会脱离分隔条，挂在元素上的 mousemove 立刻丢失，拖拽表现为"卡住"。
+   * 这也是必须成对解绑（mouseup 里 removeEventListener）的原因，否则监听泄漏。
+   */
+  var beginResize = (e: any) => {
+    if (filePaneHidden) return;
+    e.preventDefault();
+    dragStateRef.current = { startX: e.clientX, startWidth: filePaneWidth };
+
+    var onMove = (ev: any) => {
+      var drag = dragStateRef.current;
+      if (!drag) return;
+      var container = paneContainerRef.current;
+      var containerWidth = container ? container.getBoundingClientRect().width : 0;
+      // 宽度收敛统一走纯函数，避免在事件回调里散落边界判断
+      setFilePaneWidth(clampFilePaneWidth(drag.startWidth + (ev.clientX - drag.startX), containerWidth));
+    };
+
+    var onUp = () => {
+      dragStateRef.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      // 拖拽真正的清理函数置空，避免卸载时重复清理
+      cleanupDragRef.current = null;
+      // 只在松手时落盘一次：拖拽过程中每像素写一次 localStorage 既慢又无意义
+      setFilePaneWidth((current: number) => {
+        savePrFilePanePrefs({ width: current, hidden: false });
+        return current;
+      });
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    // 拖拽期间禁用文本选择并统一光标，否则会意外选中 diff 文本、光标闪烁
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    // 登记清理函数供组件卸载时兜底调用。
+    // 为什么必须有：拖拽过程中按下 Esc 会直接卸载整个弹窗，此时 mouseup 永远不会触发，
+    // 挂在 document 上的 mousemove 与 body 上的 col-resize 光标会永久残留——
+    // 表现为「弹窗关了，但整个页面鼠标仍是拖拽光标、选中文本失效」。
+    cleanupDragRef.current = () => {
+      dragStateRef.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  };
+
+  /**
+   * 折叠/展开文件区，并立即持久化（这是低频操作，无需等松手）。
+   *
+   * 为什么宽度要从 ref 读而不是直接闭包捕获 filePaneWidth：
+   * setFilePaneHidden 的回调执行时机由 React 调度，此时闭包里的 filePaneWidth
+   * 是**渲染时的快照**。若用户刚拖完宽度、紧接着点折叠，
+   * 落盘的会是拖动前的旧宽度，下次打开弹窗宽度回跳。
+   * ref 始终指向最新值，避免这类「看起来偶发」的偏好丢失。
+   */
+  var toggleFilePane = () => {
+    setFilePaneHidden((prev: boolean) => {
+      var next = !prev;
+      savePrFilePanePrefs({ width: widthRef.current, hidden: next });
+      return next;
+    });
+  };
 
   var copyText = (text: string, label: string) => {
     if (navigator?.clipboard?.writeText) {
@@ -436,11 +539,16 @@ export function PrDetailModal(props: PrDetailModalProps) {
             activeTab === "files"
               ? h(
                   "div",
-                  { className: "dsh-github-pr-files-pane" },
-                  // 左/上侧：变动文件列表
-                  h(
+                  { className: "dsh-github-pr-files-pane", ref: paneContainerRef },
+                  // 左/上侧：变动文件列表（可拖拽调宽、可整块折叠）
+                  filePaneHidden
+                    ? null
+                    : h(
                     "div",
-                    { className: "dsh-github-pr-file-list" },
+                    {
+                      className: "dsh-github-pr-file-list",
+                      style: { width: filePaneWidth + "px", flexShrink: 0 },
+                    },
                     data.files && data.files.length > 0
                       ? data.files.map(function (f: any) {
                           var isSelected = f.path === selectedFilePath;
@@ -464,6 +572,29 @@ export function PrDetailModal(props: PrDetailModalProps) {
                       : h("div", { style: { padding: "16px", opacity: 0.6 } }, "暂无变动文件记录")
                   ),
 
+                  // 拖拽分隔条：仅文件区展开时出现。折叠按钮常驻于此，
+                  // 保证「折叠后一定找得到恢复入口」——否则一旦折叠就再也点不回来。
+                  h(
+                    "div",
+                    {
+                      className: "dsh-github-pr-splitter",
+                      onMouseDown: beginResize,
+                      title: filePaneHidden ? "点击展开文件列表" : "拖动调整文件列表宽度（双击可折叠）",
+                      onDoubleClick: toggleFilePane,
+                    },
+                    h(
+                      "button",
+                      {
+                        type: "button",
+                        className: "dsh-github-pr-splitter-toggle",
+                        onMouseDown: (e: any) => e.stopPropagation(),
+                        onClick: (e: any) => { e.stopPropagation(); toggleFilePane(); },
+                        title: filePaneHidden ? "展开文件列表" : "折叠文件列表",
+                      },
+                      filePaneHidden ? "▶" : "◀"
+                    )
+                  ),
+
                   // 右/下侧：当前选中文件的代码 Diff 视图
                   h(
                     "div",
@@ -475,6 +606,20 @@ export function PrDetailModal(props: PrDetailModalProps) {
                           h(
                             "div",
                             { className: "dsh-github-pr-diff-toolbar" },
+                            // 文件区折叠后，这里是恢复入口的第一触点（分隔条上的
+                            // ◀/▶ 按钮是第二触点）。两个入口都保留，避免用户找不到。
+                            filePaneHidden
+                              ? h(
+                                  "button",
+                                  {
+                                    className: "dsh-github-btn-sm",
+                                    onClick: toggleFilePane,
+                                    style: { padding: "2px 8px", fontSize: "10px", flexShrink: 0 },
+                                    title: "展开左侧文件列表",
+                                  },
+                                  `📁 文件列表 (${(data.files && data.files.length) || 0})`
+                                )
+                              : null,
                             h("span", { style: { fontFamily: "monospace", fontWeight: 600, fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, selectedFilePath),
                             data.fileDiffs && data.fileDiffs[selectedFilePath]
                               ? h(

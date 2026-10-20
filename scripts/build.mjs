@@ -23,17 +23,73 @@ function assertVersionConsistency() {
 }
 
 /**
- * 轻量 CSS 压缩：去除多行注释与冗余换行，保留关键样式选择器。
+ * 轻量 CSS 压缩：去除注释与冗余空行，保留所有样式规则。
+ *
+ * 历史 Bug（务必不要退回按行过滤的写法）：
+ * 旧实现是 `.filter(l => !l.startsWith('/*'))`，只能丢掉「以 /* 开头」的行。
+ * CSS 多行注释的中间行形如 `* 说明文字`，不以 /* 开头，于是被原样保留，
+ * 而首行 `/*` 与末行 `*\/` 被丢弃——结果在 CSS 里留下一段
+ * `* margin-left: auto 是双保险…` 的非法文本。
+ * 浏览器解析到它就判定该规则无效并整条丢弃，
+ * 表现为「写了按钮样式却渲染成裸链接」「标题行 flex 完全不生效」，
+ * 排查时极易误判为选择器优先级问题。
+ *
+ * 正确做法：用正则整体剥除注释块（跨行匹配），而不是逐行判断。
  */
 function compressCss(code) {
   return code.replace(/const GITHUB_PANEL_CSS = `([\s\S]*?)`;/, (_, css) => {
     const minified = css
+      // 整体剥除跨行注释：/* 到 */ 之间的任意内容
+      .replace(/\/\*[\s\S]*?\*\//g, '')
       .split('\n')
       .map((l) => l.trim())
-      .filter((l) => l.length > 0 && !l.startsWith('/*'))
+      .filter((l) => l.length > 0)
       .join('\n');
     return `const GITHUB_PANEL_CSS = \`\n${minified}\n\`;`;
   });
+}
+
+/**
+ * 构建期 CSS 完整性校验：压缩后的 CSS 必须语法自洽，否则直接失败。
+ *
+ * 为什么必须有这道校验：上面那个「注释中间行残留」的 Bug 之所以能流到用户界面
+ * 并连续误导三轮排查，根本原因就是**压缩坏了但构建仍然成功**。
+ * 浏览器遇到非法 CSS 只会静默丢弃整条规则，不报错、不警告，
+ * 表现成「样式没生效」，排查时极易误判为选择器优先级或 flex 属性问题。
+ *
+ * 检查项都是「一旦违反必然导致规则被丢弃」的硬性条件：
+ *   1. 不能残留任何注释片段（/* 或 *\/）
+ *   2. 不能有「行首 *」的悬空注释中间行
+ *   3. 花括号必须配平（决定后续所有规则是否被正确切分）
+ */
+function assertCssIntegrity(compressedCode) {
+  const m = compressedCode.match(/const GITHUB_PANEL_CSS = `([\s\S]*?)`;/);
+  if (!m) {
+    console.error('[build] ❌ CSS 完整性校验失败：未能从 styles.js 中定位 GITHUB_PANEL_CSS 模板字符串');
+    process.exit(1);
+  }
+  const css = m[1];
+
+  const problems = [];
+  if (css.includes('/*') || css.includes('*/')) {
+    problems.push('残留注释定界符（/* 或 */）——说明注释未被整块剥离');
+  }
+  if (/^\*/m.test(css)) {
+    problems.push('存在「行首 *」的悬空注释行——浏览器会因此丢弃整条规则');
+  }
+  const open = (css.match(/\{/g) || []).length;
+  const close = (css.match(/\}/g) || []).length;
+  if (open !== close) {
+    problems.push(`花括号不配平（{ ${open} 个 / } ${close} 个）`);
+  }
+
+  if (problems.length > 0) {
+    console.error('[build] ❌ CSS 完整性校验失败：');
+    for (const p of problems) console.error(`[build]    · ${p}`);
+    console.error('[build]    非法 CSS 会被浏览器静默丢弃整条规则，表现为「样式不生效」却不报错。');
+    process.exit(1);
+  }
+  console.log(`[build] ✅ CSS 完整性校验通过（${open} 条规则块，零注释残留）`);
 }
 
 /**
@@ -82,6 +138,8 @@ function bundleClient() {
       let code = fs.readFileSync(modPath, 'utf8');
       if (mod === 'styles.js') {
         code = compressCss(code);
+        // 压缩后立即校验：非法 CSS 会被浏览器静默丢弃，必须在构建期拦住
+        assertCssIntegrity(code);
       }
       code = code.replace(/^\s*import\s+[^;]+;\s*$/gm, '');
       code = code.replace(/\bexport\s+(async\s+)?(function|const|var|let|class)\b/g, '$1$2');

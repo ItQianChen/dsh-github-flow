@@ -102,8 +102,15 @@ async function runTests() {
   console.log('\n--- 4. endpoint contracts ---');
   {
     // search prs 字段集含 isDraft（源码断言——端点在 routes-overview.ts）
+    // 断言意图而非整条命令字面量：这条用例真正要守的是「字段集别把 isDraft 弄丢」。
+    // 早先写死含 --state=open / --limit 10 的完整串，导致放宽查询（账号零 open PR
+    // 时列表恒空）就被误判为回归——实现细节变了，意图没变。
     const routeSrc = readFileSync(new URL('../src/api/routes-overview.ts', import.meta.url), 'utf8');
-    assert(routeSrc.includes("'search', 'prs', '--author=@me', '--state=open', '--limit', '10', '--json', 'number,title,repository,url,updatedAt,isDraft'"), 'global myPrs field set includes isDraft');
+    const prSearchLine = routeSrc.split('\n').find((l) => l.includes("'search', 'prs'")) || '';
+    assert(prSearchLine.length > 0, 'global myPrs search prs command exists');
+    assert(prSearchLine.includes('isDraft'), 'global myPrs field set includes isDraft');
+    assert(prSearchLine.includes('state'), 'global myPrs field set includes state (前端状态筛选依赖)');
+    assert(!prSearchLine.includes('--state=open'), 'global myPrs 不再硬过滤 open（零 open 账号会恒空）');
     assert(routeSrc.includes("['release', 'view', '--json', 'tagName,isPrerelease,isDraft,publishedAt,url'"), 'release view 5-field conservative set');
     assert(routeSrc.includes("['pr', 'status', '-c', '--json', 'number,title,state,url,isDraft'"), 'pr status -c 5-field set');
     // 实测键集钉死：createdBy/needsReview（臆断的 currentBranch 不存在——e2e 抓到）
