@@ -115,8 +115,8 @@
 
 ### 2.3 上下文 Token 保护与防御性输出包装 (Token Budget Guard)
 - 所有的 `gh` 查询原生采用 `--json <fields>` 结构化投影；
-- 对长文本输出（如大型 PR 的完整 `diff`、CI 失败步骤日志）设置安全截断阈值（默认 24KB），采用码点安全切割与二分查找字节截断（`src/executor/process-utils.ts`），保留头尾关键上下文并添加显式截断标记，杜绝撑爆模型上下文；
-- 列表与详情输出经独立 Markdown 渲染引擎（`src/renderers/` 7 大领域模块）转化为高密度表格与卡片（带状态徽章、可点击超链接与竖线转义防护），实测 20 条 PR 列表输出压缩 70%+ Token；
+- 对长文本输出（如大型 PR 的完整 `diff`、CI 失败步骤日志）设置安全截断阈值（默认 24KB），采用码点安全切割与二分查找字节截断（`src/executor/process-utils.ts`），保留头尾关键上下文并添加显式截断标记，杜绝撑爆模型上下文；**程序化消费的大载荷可按调用点显式放宽**（PR diff 与 Issue 详情放宽至 2MB 字符 / 8MB 字节），因为这两类数据只在服务端切片后渲染，不进入模型上下文；**且一旦真的被截断必须显式失败**——截断会让 `JSON.parse` 被跳过、`data` 变 `undefined`，静默降级会渲染出「元数据全空 + 零评论」的假详情；
+- 列表与详情输出经独立 Markdown 渲染引擎（`src/renderers/` 15 大领域模块 + `common.ts` + `markdown.ts` 门面）转化为高密度表格与卡片（带状态徽章、可点击超链接与竖线转义防护），实测 20 条 PR 列表输出压缩 70%+ Token；
 - 所有 Agent 工具的输出统一经过归一化，列表自动打包为 `{ items, count }`，标量打包为 `{ result }`，100% 严丝合缝契合 DSH 工具网关模式约束；
 - **gh 版本守卫降级链（runGuarded）**：preview 命令与新特性按 `minVersion` 门槛路由——版本达标直通主命令、不足走 `fallback` 降级链路（结果携带 `degraded/degradedReason` 结构化标注，**降级不是静默的**，渲染层对 degraded 结果显式追加链路说明）、无降级时报错附平台升级指引；版本探测自身失败 fail-open 直通（守卫是路由优化不是安全边界）。版本比较采用数值分段（`src/executor/version-utils.ts`，杜绝 `'2.96.0' > '2.100.0'` 字典序陷阱），探测结果 30s TTL 缓存且只缓存成功值；
 - **AI_AGENT 识别信号注入**：每次 gh 子进程启动注入 `AI_AGENT=dsh`（gh detect.go 最高优先级通用信号）——gh ≥2.99 自动切换 text-only spinner、≥2.100 命令误用时打印完整 help（模型可据此自我纠正）、telemetry 归因到 dsh；旧版 gh 忽略该变量零副作用。经 `agentEnvInjection` 配置开关（默认开启）可恢复 gh 原生行为。
@@ -155,16 +155,18 @@
 
 ### 3.4 前端客户端解耦与自包含 Bundle 机制 (`src/ui/` + `src/client.ts`)
 - **源码物理剥离**：
-  - [src/client.ts](../src/client.ts)（由 5,290 行直降至 **1,263 行，瘦身 76%**）：仅保留右侧栏核心协同 `renderGithubRepoView` 与 `GithubRightbarBody` 及插件入口；
-  - 12 个独立子模块下沉至 [src/ui/](../src/ui/) 目录（样式 1,295 行、全景大面板 732 行、设置弹窗 561 行、业务卡片 60~290 行）；
+  - [src/client.ts](../src/client.ts)（当前约 2,400 行）：保留右侧栏核心协同 `renderGithubRepoView` 与 `GithubRightbarBody` 及插件入口；新增 UI 优先下沉到 `src/ui/`，不在入口文件里堆叠；
+  - **18 个独立子模块**下沉至 [src/ui/](../src/ui/) 目录：样式 2,506 行、全景大面板 932 行、PR 审阅弹窗 817 行、Issue 查看弹窗 565 行、设置弹窗 552 行、使用指南 408 行，其余卡片类组件 60~300 行；
 - **命名空间防护**：
   - 严禁在与 `package.json` 的 `exports["./client"]` 同级创建名为 `client/` 的目录，统一命名为 `src/ui/` 与编译产物 `lib/ui/`，彻底杜绝模块解析器产生“同名文件 vs 目录”的歧义报错；
 - **自包含 Bundle 聚合器 (`scripts/build.mjs`)**：
   - 构建脚本按严格拓扑顺序将 `lib/ui/` 子模块内联注入 `lib/client.js` 的 `window.__ModuleLoader__.load` 闭包中，移除 `export` 关键字；
-  - 保证 `GithubRightbarBody` 位于 `GithubWorkspacePanel` 之前（满足切片测试断言）；
-  - 对嵌入的 1,290 行纯 CSS 实施紧凑压缩，消除空行与多余注释，使编译产物从 5,282 行减至 4,008 行；
+  - **顺序即依赖**：`markdown-lite → pr-modal → issue-modal → …` 不可随意重排（`issue-modal` 复用了 `pr-modal` 的 `CollapsibleBody`）；`workspace-panel` 置于后置列表，保证 `GithubRightbarBody` 位于 `GithubWorkspacePanel` 之前；
+  - 对嵌入的约 2,500 行纯 CSS 实施紧凑压缩；压缩后强制校验「无注释定界符残留 / 无行首 `*` 悬空段 / 花括号配平」，任一项不过直接构建失败——非法 CSS 会被浏览器**静默丢弃整条规则**，只表现为「样式莫名不生效」，极难排查；
 - **React Hook 时序安全防线**：
-  - 组件内引用的 `useRef`（如 `containerRef`）必须在组件声明最前列初始化，严禁跨行下置引发变量提升 `undefined`；所有的 Ref 访问点必须配备 `containerRef && containerRef.current` 守卫，杜绝运行时渲染崩溃。
+  - 全部 Hook（含 `useEffect`）必须位于任何 early return 之前，否则「参数由空变有值」时两次渲染的 Hook 数量不一致，触发 `Rendered fewer hooks than expected` 崩溃；
+  - `renderGithubRepoView` 这类每次渲染都重新执行的普通函数内**禁止**调用 Hook，状态必须住在有 Hook 的组件体内再传参；
+  - 组件内引用的 `useRef`（如 `containerRef`）必须在组件声明最前列初始化，严禁跨行下置引发变量提升 `undefined`；所有的 Ref 访问点必须配备 `containerRef && containerRef.current` 守卫。
 
 ---
 

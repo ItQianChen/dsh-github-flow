@@ -378,7 +378,9 @@ Click the **Octocat icon** in DSH's left navigation bar to open the full-screen 
 * **Account-Wide Overview**: Live view of all cloud repositories, default branches, and star counts;
 * **Local Workspace Matrix**: Automatically detects open projects and bridges local directories with remote repos;
 * **3D Issue Governance Matrix**: Categorizes issues into *"📥 User Reported"*, *"🎯 Assigned to Me"*, and *"✍️ Created by Me"* with responsive pill filters;
-* **Update Notification Banner**: Smoothly glides down when an update is available with one-click automated upgrade.
+* **Update Notification Banner**: Smoothly glides down when an update is available with one-click automated upgrade;
+* **🔀 PR Review Workbench**: Click any PR to review author, branch flow, CI/review status, Markdown description, comment timeline, and the changed-file list with high-fidelity unified diffs — all without leaving DSH (diffs are sliced per file in memory, so switching files is instant);
+* **📝 Issue Online Viewer**: Click any Issue to read the full discussion — body and comments rendered as Markdown, long content collapsed, GitHub-hidden (SPAM) comments explicitly flagged, with label chips, assignees, milestone, sub-issue progress, and linked PRs.
 
 <p align="center">
   <img src="./docs/images/1.png" alt="GitHub Global Cockpit" width="100%" />
@@ -402,8 +404,8 @@ Located in the right drawer of every chat workspace, seamlessly bridging your lo
     * Latest Release badge (`🏷️ v0.4.0`) anchored in the top right with hover details and direct release link;
     * **Commit Detail Modal**: Click any commit row to open a clean modal dialog centered within the right sidebar, featuring smooth vertical scrolling, full 40-char SHA, author email, date, multi-line commit message body, and file diff stat table (`--stat`), pure local 0ms instant display;
   * **Uncommitted Changes (`📁 Uncommitted (N)`)**: Full-width list of uncommitted files with color-coded status codes (`??` untracked, `M` modified, `D` deleted, `R` renamed) and change counts;
-  * **Pull Requests (`🔀 PR (N)`)**: Open PR inspection with 3-state CI check rollup (`✅ CI Passed` / `❌ CI Failed` / `⏳ CI Pending`), merge conflict detection, review decisions (`✔ Approved` / `✋ Changes Requested` / `👀 Review Required`), Draft pills, and humanized relative timestamps;
-  * **Workspace Issues (`📋 Issues (N)`)**: Direct issue task review with assignees, labels, and category pills;
+  * **Pull Requests (`🔀 PR (N)`)**: Shows **all** PRs (merged/closed included, default "All"), with status pills `All / 🟢 Open / 🟣 Merged / ⚪ Closed` showing per-state counts; 3-state CI rollup (`✅ CI Passed` / `❌ CI Failed` / `⏳ CI Pending`), merge conflict detection, review decisions (`✔ Approved` / `✋ Changes Requested` / `👀 Review Required`), Draft pills, and humanized timestamps; **click a card to open the in-app PR review workbench**, while `GitHub ↗` still jumps to the browser;
+  * **Workspace Issues (`📋 Issues (N)`)**: Shows **all** issues (closed included, default "All"), with status pills `All / 🟢 Open / ⚪ Closed`; **click a card to open the in-app Issue viewer** (Markdown body / comment timeline / labels & milestone, Esc to close), while `GitHub ↗` still jumps to the browser;
   * **Actions Pipeline (`⚡ Actions (N)`)**: Real-time CI workflow status tracking with trigger event badges (`push`/`schedule`/`manual`/`PR`), relative time, and self-healing diagnostic notes for failed runs (embedding `run_id` for Agent one-click log inspection);
 * **⚙️ Full Settings Access**: Dedicated settings button reusing the same settings modal as the cockpit (all four sections: Sync / Proxy / Update Source / About) — no need to switch back to the main page.
 
@@ -411,7 +413,17 @@ Located in the right drawer of every chat workspace, seamlessly bridging your lo
   <img src="./docs/images/2.png" alt="Session Right Sidebar Panel" width="100%" />
 </p>
 
-### 3. Settings Center (Settings Modal)
+### 3. Help & Playbook Modal
+Click **`[📖 Help]`** in the top right of the Cockpit (or the ❓ button in the right sidebar) to open the 920px immersive manual; press Esc or click the backdrop to close. Five sections:
+* **🚀 3-Minute Quickstart**: login check → workspace binding → first Agent instruction, plus a capability overview (18 tools / 103 business actions / 2 workbenches);
+* **🤖 Agent Prompt Playbook**: 7 high-frequency scenarios (open a PR, CI triage, daily standup, diff review, screenshot triage, bulk label governance, RFC discussion), each with one-click prompt copy;
+* **🖥️ UI Walkthrough**: per-tab documentation for the 4-tab Cockpit and the 5-tab right sidebar, plus shared modal interaction habits;
+* **🧰 18-Tool Reference**: all tools and actions grouped into daily development / delivery & config / ecosystem & collaboration / escape hatches, with a `/gh` command cheat sheet;
+* **🔑 Troubleshooting**: login, missing scopes, the 24h supply-chain protection window, proxy flapping, empty lists, and why a DSH restart is needed.
+
+> The same knowledge is exposed to Agents via the `github_help` tool — both sides are asserted against the source tree by phase33, so docs drifting from code fails the test suite.
+
+### 4. Settings Center (Settings Modal)
 Click **`[⚙️ Settings]`** in the top right of the Cockpit (or the ⚙️ button in the right sidebar) to open the sectioned settings modal:
 
 **🔄 Data Sync Section** — tune data fetching rhythm and perception sensitivity:
