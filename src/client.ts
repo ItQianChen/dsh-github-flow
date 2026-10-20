@@ -27,6 +27,7 @@ import {
   HEADER_CARDS_STORAGE_KEY,
 } from './ui/storage.js';
 import { BranchSelectorDropdown } from './ui/branch-selector.js';
+import { RepoSelectorDropdown } from './ui/repo-selector.js';
 import { AuthGuideCard } from './ui/auth-guide-card.js';
 import { UpgradeNotificationCard } from './ui/upgrade-card.js';
 import { NetworkAlertBanner, RepoNoticeBar } from './ui/network-banner.js';
@@ -62,6 +63,7 @@ export {
   saveStoredHeaderCardsVisible,
   HEADER_CARDS_STORAGE_KEY,
   BranchSelectorDropdown,
+  RepoSelectorDropdown,
   AuthGuideCard,
   UpgradeNotificationCard,
   NetworkAlertBanner,
@@ -536,6 +538,7 @@ window.__ModuleLoader__.load({
       // 徽章推导交给纯函数（src/ui/repo-badges.ts）：
       // 判定规则需要可断言，而写在 JSX 里只能靠「bundle 里有没有这个词」检查。
       var repoPresentation = resolveRepoBadges(repo);
+      var forkLine = repoPresentation.forkLine;
       var toneClass = function (tone: string) {
         return tone === "yellow" ? "dsh-badge-readonly" : "dsh-badge-" + tone;
       };
@@ -554,7 +557,56 @@ window.__ModuleLoader__.load({
           })
         : null;
 
-      var repoCardEl = h(
+      var associatedRepos = repo && Array.isArray(repo.associatedRepos) ? repo.associatedRepos : [];
+      var myForkCandidate = associatedRepos.find(function (r: any) {
+        return !r.isCurrent && r.role === 'fork';
+      });
+      var quickSwitchForkEl = myForkCandidate
+        ? h(
+            "div",
+            { className: "dsh-github-fork-line", style: { color: "var(--dsw-alias-link, #0969da)" } },
+            "⑂ 本地复刻仓库: ",
+            h("strong", { style: { color: "inherit" } }, myForkCandidate.nameWithOwner),
+            h(
+              "a",
+              {
+                href: "#",
+                className: "dsh-github-switch-quicklink",
+                title: `切换默认基准仓库为 ${myForkCandidate.nameWithOwner}`,
+                onClick: function (e: any) {
+                  e.preventDefault();
+                  fetch("/api/github/action", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      action: "set_default_repo",
+                      cwd,
+                      repo: myForkCandidate.nameWithOwner,
+                      remote: myForkCandidate.remoteName,
+                    }),
+                  })
+                    .then(function (r) { return r.json(); })
+                    .then(function (j) {
+                      if (j && j.ok) {
+                        if (typeof onShowToast === "function") onShowToast(`✅ 已切换为我的复刻: ${myForkCandidate.nameWithOwner}`);
+                        onRefresh();
+                      } else {
+                        if (typeof onShowToast === "function") onShowToast(`❌ 切换失败: ${j.error || j.message || "未知错误"}`);
+                      }
+                    })
+                    .catch(function (err) {
+                      if (typeof onShowToast === "function") onShowToast(`❌ 切换请求异常: ${err?.message || err}`);
+                    });
+                },
+              },
+              "⇄ 设为当前基准仓库"
+            )
+          )
+        : null;
+
+      var repoCardEl = (function () {
+        const activeForkLine = forkLine;
+        return h(
         "div",
         { className: "dsh-github-card" },
         h(
@@ -593,6 +645,15 @@ window.__ModuleLoader__.load({
             : h("span", { style: { color: "var(--dsw-alias-state-error-primary, #cf222e)" } }, "未检测到关联的 GitHub 仓库"),
           repoBadgesEl,
           repo
+            ? h(RepoSelectorDropdown, {
+                associatedRepos: repo.associatedRepos,
+                currentRepo: repo.nameWithOwner,
+                cwd,
+                onRepoSwitched: () => onRefresh(),
+                showToast: onShowToast || (() => {}),
+              })
+            : null,
+          repo
             ? h(BranchSelectorDropdown, {
                 currentBranch: gitSt?.branch || repo.defaultBranch || "main",
                 cwd,
@@ -602,8 +663,10 @@ window.__ModuleLoader__.load({
               })
             : null
         ),
+        // 快捷切换行：针对“当前展示源仓库但本地检测到个人复刻”的一键切换交互
+        quickSwitchForkEl,
         // fork 血缘行：告诉用户「这个 fork 的上游是谁」，上游名可点击
-        repoPresentation.forkLine
+        activeForkLine
           ? h(
               "div",
               { className: "dsh-github-fork-line" },
@@ -611,13 +674,49 @@ window.__ModuleLoader__.load({
               h(
                 "a",
                 {
-                  href: repoPresentation.forkLine.parentUrl,
+                  href: activeForkLine.parentUrl,
                   target: "_blank",
                   rel: "noopener noreferrer",
-                  title: `打开上游仓库 ${repoPresentation.forkLine.parentNameWithOwner}`,
+                  title: `打开上游仓库 ${activeForkLine.parentNameWithOwner}`,
                 },
-                repoPresentation.forkLine.parentNameWithOwner
-              )
+                activeForkLine.parentNameWithOwner
+              ),
+              associatedRepos.some((r: any) => !r.isCurrent && r.nameWithOwner.toLowerCase() === activeForkLine.parentNameWithOwner.toLowerCase())
+                ? h(
+                    "a",
+                    {
+                      href: "#",
+                      className: "dsh-github-switch-quicklink",
+                      title: `切换为上游基准仓库 ${activeForkLine.parentNameWithOwner}`,
+                      onClick: function (e: any) {
+                        e.preventDefault();
+                        fetch("/api/github/action", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            action: "set_default_repo",
+                            cwd,
+                            repo: activeForkLine.parentNameWithOwner,
+                            remote: "upstream",
+                          }),
+                        })
+                          .then(function (r) { return r.json(); })
+                          .then(function (j) {
+                            if (j && j.ok) {
+                              if (typeof onShowToast === "function") onShowToast(`✅ 已切为上游视角: ${activeForkLine.parentNameWithOwner}`);
+                              onRefresh();
+                            } else {
+                              if (typeof onShowToast === "function") onShowToast(`❌ 切换失败: ${j.error || j.message || "未知错误"}`);
+                            }
+                          })
+                          .catch(function (err) {
+                            if (typeof onShowToast === "function") onShowToast(`❌ 切换请求异常: ${err?.message || err}`);
+                          });
+                      },
+                    },
+                    "⇄ 切为基准"
+                  )
+                : null
             )
           : null,
         repo && repo.description
@@ -630,6 +729,7 @@ window.__ModuleLoader__.load({
           ? h("div", { className: "dsh-github-card-subtext" }, "若本地已有 git 仓库，请运行 `git remote add github <url>` 或 `git remote add origin <url>` 关联远程仓库。")
           : null
       );
+      })();
 
       var commitLog = data && data.commitLog;
       var renderCommitRow = function (c: any, tone: string) {

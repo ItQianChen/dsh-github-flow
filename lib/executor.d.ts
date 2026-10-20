@@ -1,4 +1,4 @@
-import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry, GitBranchesResult } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry, GitBranchesResult, AssociatedRepoItem } from './types.js';
 import type { ProxyManager } from './proxy.js';
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
@@ -183,6 +183,28 @@ export declare class GhExecutor {
     switchGitBranch(cwd: string | undefined, branchName: string): Promise<{
         ok: boolean;
         currentBranch?: string;
+        error?: string;
+    }>;
+    /**
+     * 推导当前工作区可供用户切换的全部关联 GitHub 仓库列表。
+     *
+     * 数据来源（纯本地+拓扑合成，零新增网络开销）：
+     * 1. 扫描本地 .git/config 的所有 GitHub remote（如 origin, upstream 等）；
+     * 2. 若当前仓库为 Fork 且存在 parent（上游），合并上游仓库（支持本地未配 upstream 的情形）；
+     * 3. 标识当前基准 (isCurrent) 及角色 (fork, upstream, origin, parent)。
+     */
+    getAssociatedRepos(cwd?: string, currentRepo?: RepoMetadata | null, currentUser?: string | null): AssociatedRepoItem[];
+    /**
+     * 设置当前工作区的默认基准 GitHub 仓库（调用官方 `gh repo set-default` 并在本地 git config 持久化）。
+     *
+     * 为什么调用 gh repo set-default：
+     * 1. 它会在 .git/config 写入 `remote.<name>.gh-resolved = base`，这是官方的持久化事实源；
+     * 2. 执行后，不仅本插件的 Web 驾驶舱，外部系统终端中运行的 gh pr, gh issue, gh run 也将 100% 对齐；
+     * 3. 严格做参数格式校验，仅允许合法的 owner/repo 或合法 remote 别名，杜绝命令注入。
+     */
+    setDefaultRepo(cwd: string | undefined, targetRepoOrRemote: string): Promise<{
+        ok: boolean;
+        target?: string;
         error?: string;
     }>;
     /** 生成当前操作系统平台的推荐安装引导与命令 */

@@ -80,6 +80,11 @@ export function registerOverviewRoutes(
 
         const auth = await executor.checkAuth(cwd);
         const repo = isGitRepo ? await executor.getRepoMetadata(cwd) : null;
+        if (repo) {
+          // 推导当前工作区可用的关联仓库（如 origin/Fork 与 upstream/Parent），
+          // 仅在存在多个关联仓库或 Fork 场景下供 UI 渲染手动切换控件。
+          repo.associatedRepos = executor.getAssociatedRepos(cwd, repo, auth?.user);
+        }
 
         // 若当前工作区未关联 Git 仓库，直接返回纯净空状态，坚决不拉取远端数据
         if (!isGitRepo || !repo) {

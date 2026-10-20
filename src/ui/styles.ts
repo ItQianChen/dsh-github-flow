@@ -1570,6 +1570,149 @@ body[data-ds-dark-theme] .dsh-github-btn-sm.active {
   color: #f0b72f !important;
   border-color: #d29922 !important;
 }
+
+/* 19. 关联仓库切换器 (RepoSelectorDropdown) */
+.dsh-github-repo-switch-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 12px;
+  border: 1px solid rgba(130, 80, 223, 0.35);
+  background: rgba(130, 80, 223, 0.1);
+  color: #8250df;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  line-height: 16px;
+}
+.dsh-github-repo-switch-trigger:hover {
+  background: rgba(130, 80, 223, 0.2);
+  border-color: rgba(130, 80, 223, 0.6);
+}
+body[data-ds-dark-theme] .dsh-github-repo-switch-trigger {
+  border-color: rgba(163, 113, 247, 0.4);
+  background: rgba(163, 113, 247, 0.15);
+  color: #a371f7;
+}
+body[data-ds-dark-theme] .dsh-github-repo-switch-trigger:hover {
+  background: rgba(163, 113, 247, 0.25);
+  border-color: #a371f7;
+}
+
+.dsh-github-repo-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 5px;
+  width: 320px;
+  max-height: 380px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body[data-ds-dark-theme] .dsh-github-repo-dropdown {
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+.dsh-github-repo-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--dsw-alias-bg-layer-1, #f6f8fa);
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+  color: var(--dsw-alias-label-secondary, #57606a);
+}
+body[data-ds-dark-theme] .dsh-github-repo-dropdown-header {
+  background: var(--dsw-alias-bg-layer-1, #16161a);
+  border-bottom-color: var(--dsw-alias-border-l1, #30363d);
+  color: var(--dsw-alias-label-secondary, #8b949e);
+}
+
+.dsh-github-repo-dropdown-list {
+  overflow-y: auto;
+  max-height: 260px;
+  padding: 4px 0;
+}
+
+.dsh-github-repo-item {
+  padding: 7px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+.dsh-github-repo-item:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.05));
+}
+body[data-ds-dark-theme] .dsh-github-repo-item {
+  color: var(--dsw-alias-label-primary, #f0f6fc);
+}
+body[data-ds-dark-theme] .dsh-github-repo-item:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.06));
+}
+.dsh-github-repo-item.selected {
+  background: rgba(9, 105, 218, 0.08);
+}
+body[data-ds-dark-theme] .dsh-github-repo-item.selected {
+  background: rgba(56, 139, 253, 0.15);
+}
+
+.dsh-github-repo-dropdown-footer {
+  padding: 6px 10px;
+  font-size: 10px;
+  background: var(--dsw-alias-bg-layer-1, #f6f8fa);
+  border-top: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+  color: var(--dsw-alias-label-tertiary, #656d76);
+  line-height: 1.4;
+}
+body[data-ds-dark-theme] .dsh-github-repo-dropdown-footer {
+  background: var(--dsw-alias-bg-layer-1, #16161a);
+  border-top-color: var(--dsw-alias-border-l1, #30363d);
+  color: var(--dsw-alias-label-tertiary, #8b949e);
+}
+
+.dsh-github-switch-quicklink {
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--dsw-alias-link, #0969da);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(9, 105, 218, 0.08);
+  border: 1px solid rgba(9, 105, 218, 0.2);
+}
+.dsh-github-switch-quicklink:hover {
+  text-decoration: none;
+  background: rgba(9, 105, 218, 0.16);
+  border-color: rgba(9, 105, 218, 0.4);
+}
+body[data-ds-dark-theme] .dsh-github-switch-quicklink {
+  color: #58a6ff;
+  background: rgba(56, 139, 253, 0.15);
+  border-color: rgba(56, 139, 253, 0.3);
+}
+body[data-ds-dark-theme] .dsh-github-switch-quicklink:hover {
+  background: rgba(56, 139, 253, 0.25);
+  border-color: rgba(56, 139, 253, 0.5);
+}
 `;
 
 export function injectStyles() {

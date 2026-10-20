@@ -255,6 +255,28 @@ export function registerActionRoutes(
               sendJson(res, 200, { ok: true, currentBranch: r.currentBranch, message: `已成功切换到分支 ${r.currentBranch}` });
               break;
             }
+            case 'set_default_repo':
+            case 'set_active_repo': {
+              const target = typeof payload.repo === 'string' ? payload.repo.trim() : (typeof payload.remote === 'string' ? payload.remote.trim() : '');
+              if (!target) {
+                sendJson(res, 400, { ok: false, error: '缺少目标仓库全名或 remote 别名' });
+                return;
+              }
+              const r = await executor.setDefaultRepo(cwd, target);
+              if (!r.ok) {
+                sendJson(res, 400, { ok: false, error: r.error });
+                return;
+              }
+              // 彻底重置缓存（包含容灾快照），使下一次概览请求立即以新基准重新发起探测
+              cacheMap.clear({ keepFallback: false });
+              globalCache.clear({ keepFallback: false });
+              sendJson(res, 200, {
+                ok: true,
+                target: r.target,
+                message: `已成功将基准仓库切换为 ${r.target}`,
+              });
+              break;
+            }
             case 'file_diff':
             case 'get_file_diff': {
               const fileTarget = typeof payload.file === 'string' ? payload.file.trim() : (typeof payload.filePath === 'string' ? payload.filePath.trim() : '');

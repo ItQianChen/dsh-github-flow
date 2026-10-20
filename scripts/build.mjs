@@ -63,6 +63,7 @@ function bundleClient() {
     'icons.js',
     'storage.js',
     'branch-selector.js',
+    'repo-selector.js',
     'auth-guide-card.js',
     'upgrade-card.js',
     'network-banner.js',

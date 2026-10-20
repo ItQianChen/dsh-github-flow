@@ -145,6 +145,25 @@ export type RepoLayoutKind =
  | 'no-github'
 /** 无 remote */
  | 'no-remote';
+/**
+ * 关联仓库角色标识：
+ * - fork: 属于当前登录用户的个人复刻仓库
+ * - upstream: 社区上游主干仓库（名为 upstream 或作为 parent）
+ * - origin: 默认 origin 远程仓库
+ * - parent: 上游源仓库（在线识别自 repo.parent，本地尚未添加 remote）
+ * - remote: 其他自定义名称的远程仓库
+ */
+export type AssociatedRepoRole = 'origin' | 'upstream' | 'fork' | 'parent' | 'remote';
+/**
+ * 当前工作区可切换的关联 GitHub 仓库项（供仓库切换器下拉菜单消费）。
+ */
+export interface AssociatedRepoItem {
+    nameWithOwner: string;
+    remoteName?: string;
+    url: string;
+    isCurrent: boolean;
+    role: AssociatedRepoRole;
+}
 export interface RepoMetadata {
     nameWithOwner: string;
     name: string;
@@ -174,6 +193,12 @@ export interface RepoMetadata {
     viewerPermission?: ViewerPermission;
     /** 远程布局分类（仅离线解析产生，供 UI 与诊断区分场景） */
     layout?: RepoLayoutKind;
+    /**
+     * 当前工作区可供用户手动切换的关联仓库列表。
+     * 包含：本地 Git 配置的全部 GitHub remote (origin, upstream 等) 及在线 parent。
+     * 仅当数量 > 1 时 UI 渲染切换控件，单仓库场景保持零噪音。
+     */
+    associatedRepos?: AssociatedRepoItem[];
 }
 /** Git 分支详情项（供分支切换器下拉列表消费） */
 export interface GitBranchItem {
