@@ -122,8 +122,18 @@ export const IMG_MAX_BYTES = 5 * 1024 * 1024;      // 单图 5MB
 export const IMG_DIR_MAX_BYTES = 15 * 1024 * 1024;  // 图片缓存目录总量 15MB
 export const IMG_DIR_LOW_WATERMARK = 10 * 1024 * 1024; // LRU 淘汰低水位目标 10MB
 
-/** 图片落盘目录（按内容寻址命名，重复下载天然去重） */
+/**
+ * 图片落盘目录（按内容寻址命名，重复下载天然去重）。
+ *
+ * 为什么支持 DSH_IMAGE_DIR 覆盖：目录里有 LRU 淘汰，按 mtime 删最旧文件。
+ * 若测试把 13MB 假数据写进真实用户目录，淘汰就会优先命中用户更早下载的
+ * 真图（用户图 mtime 更老，排序更靠前），造成静默数据丢失。
+ * 测试必须能把目录重定向到临时区——这与 upgrade-manager 的 DSH_CLI_BIN /
+ * DSH_PROFILE_DIR 覆盖是同一套思路。
+ */
 export function imageStoreDir(): string {
+  const override = (process.env.DSH_IMAGE_DIR || '').trim();
+  if (override) return path.resolve(override);
   return path.join(os.homedir(), '.dsh', 'data', 'dsh-github-flow', 'images');
 }
 

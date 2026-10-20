@@ -38,7 +38,15 @@ export declare function sniffImageMime(buf: Buffer): string | null;
 export declare const IMG_MAX_BYTES: number;
 export declare const IMG_DIR_MAX_BYTES: number;
 export declare const IMG_DIR_LOW_WATERMARK: number;
-/** 图片落盘目录（按内容寻址命名，重复下载天然去重） */
+/**
+ * 图片落盘目录（按内容寻址命名，重复下载天然去重）。
+ *
+ * 为什么支持 DSH_IMAGE_DIR 覆盖：目录里有 LRU 淘汰，按 mtime 删最旧文件。
+ * 若测试把 13MB 假数据写进真实用户目录，淘汰就会优先命中用户更早下载的
+ * 真图（用户图 mtime 更老，排序更靠前），造成静默数据丢失。
+ * 测试必须能把目录重定向到临时区——这与 upgrade-manager 的 DSH_CLI_BIN /
+ * DSH_PROFILE_DIR 覆盖是同一套思路。
+ */
 export declare function imageStoreDir(): string;
 /** 粗略统计图片目录现有总量（遍历一次，文件数有护栏上限不会失控） */
 export declare function imageDirSize(dir: string): number;

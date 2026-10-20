@@ -328,10 +328,18 @@ console.log('\n--- 7. image_urls targeting ---');
     }
 
     // 7.8.2 downloadImages 集成级：存在历史文件达到目录上限时，新下载自动触发 LRU 淘汰并成功落盘
-    const targetDir = imageStoreDir();
+    //
+    // 必须整目录重定向到临时区（DSH_IMAGE_DIR），绝不能写真实用户缓存：
+    // LRU 按 mtime 升序淘汰，而用户真实图片的 mtime 通常比测试刚写的假数据更老，
+    // 一旦落到真实目录，被淘汰的首选就是用户自己下载的图片——测试即数据丢失。
+    const targetDir = nodePath.join(nodeOs.tmpdir(), `dsh-test-lru-store-${Date.now()}`);
     nodeFs.mkdirSync(targetDir, { recursive: true });
+    const prevImageDir = process.env.DSH_IMAGE_DIR;
+    process.env.DSH_IMAGE_DIR = targetDir;
     const dummyHistorical = nodePath.join(targetDir, 'historical_dummy.png');
     try {
+      assert(imageStoreDir() === nodePath.resolve(targetDir), 'DSH_IMAGE_DIR 覆盖生效（测试不触碰真实用户缓存）');
+
       // 写入 13MB 历史数据（模拟过往会话遗留）
       nodeFs.writeFileSync(dummyHistorical, Buffer.alloc(13 * 1024 * 1024));
       nodeFs.utimesSync(dummyHistorical, new Date(Date.now() - 60000), new Date(Date.now() - 60000));
@@ -344,11 +352,47 @@ console.log('\n--- 7. image_urls targeting ---');
       assert(rLru.images.length === 1 && !rLru.remaining, '历史文件超限时，自动触发 LRU 淘汰成功下载新图');
       assert(!nodeFs.existsSync(dummyHistorical), '历史陈旧大文件已被自动淘汰释放空间');
       assert(nodeFs.existsSync(rLru.images[0].file), '新下载图片正常落盘');
-      // 清理新图片
-      if (rLru.images[0]) nodeFs.rmSync(rLru.images[0].file, { force: true });
+      assert(rLru.images[0].file.startsWith(nodePath.resolve(targetDir)), '新图落在临时目录而非真实缓存');
     } finally {
-      if (nodeFs.existsSync(dummyHistorical)) nodeFs.rmSync(dummyHistorical, { force: true });
+      if (prevImageDir === undefined) delete process.env.DSH_IMAGE_DIR;
+      else process.env.DSH_IMAGE_DIR = prevImageDir;
+      nodeFs.rmSync(targetDir, { recursive: true, force: true });
     }
+
+    /*
+     * 防回退：这条测试自身不得再出现「直接把 imageStoreDir() 当写入目标」。
+     * 上一版本就是这么写的——把 13MB 假数据写进用户真实缓存，LRU 一跑就按 mtime
+     * 删掉用户更早下载的真图。用断言锁死写法，避免将来被"简化"回去。
+     */
+    const selfSrc = readFileSync(new URL('./phase8.test.mjs', import.meta.url), 'utf8');
+    assert(
+      !/const\s+targetDir\s*=\s*imageStoreDir\(\)/.test(selfSrc),
+      'LRU 集成测试不得直接把 imageStoreDir() 作为写入目标（会污染并删除用户真实图片）'
+    );
+    assert(
+      /process\.env\.DSH_IMAGE_DIR\s*=\s*targetDir/.test(selfSrc),
+      'LRU 集成测试必须显式重定向 DSH_IMAGE_DIR 到临时目录'
+    );
+  }
+}
+
+console.log('\n--- 8. imageStoreDir 覆盖语义 ---');
+{
+  const { imageStoreDir } = await import('../lib/tools/image-utils.js');
+  const prev = process.env.DSH_IMAGE_DIR;
+  try {
+    delete process.env.DSH_IMAGE_DIR;
+    const def = imageStoreDir();
+    assert(def.includes('.dsh') && def.endsWith('images'), '未设覆盖时落到 ~/.dsh 默认缓存目录');
+
+    process.env.DSH_IMAGE_DIR = 'relative/tmp/dir';
+    assert(nodePath.isAbsolute(imageStoreDir()), '相对路径覆盖被解析为绝对路径（避免随 cwd 漂移）');
+
+    process.env.DSH_IMAGE_DIR = '   ';
+    assert(imageStoreDir() === def, '空白覆盖值被忽略，回落默认目录（不产生 cwd 下的垃圾目录）');
+  } finally {
+    if (prev === undefined) delete process.env.DSH_IMAGE_DIR;
+    else process.env.DSH_IMAGE_DIR = prev;
   }
 }
 
