@@ -34,6 +34,7 @@ import { NetworkAlertBanner, RepoNoticeBar } from './ui/network-banner.js';
 import { resolveRepoBadges } from './ui/repo-badges.js';
 import { SyncStatusBadge } from './ui/sync-status-badge.js';
 import { CommitDetailModal } from './ui/commit-modal.js';
+import { PrDetailModal } from './ui/pr-modal.js';
 import { GlobalSyncSettingsModal } from './ui/sync-settings-modal.js';
 import { GithubHelpModal } from './ui/help-modal.js';
 import { GithubWorkspacePanel } from './ui/workspace-panel.js';
@@ -71,6 +72,7 @@ export {
   resolveRepoBadges,
   SyncStatusBadge,
   CommitDetailModal,
+  PrDetailModal,
   GlobalSyncSettingsModal,
   GithubHelpModal,
   GithubWorkspacePanel,
@@ -434,7 +436,8 @@ window.__ModuleLoader__.load({
       onCloseDiff: (() => void) | null = null,
       onOpenInDsh: ((filePath: string) => void) | null = null,
       headerCardsVisible: boolean = true,
-      onToggleHeaderCards: (() => void) | null = null
+      onToggleHeaderCards: (() => void) | null = null,
+      onSelectPr: ((target: { number: number; repo: string }) => void) | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -1087,14 +1090,26 @@ window.__ModuleLoader__.load({
                 var ci = rollupCiStatus(pr.statusCheckRollup);
                 var rv = reviewDecisionBadge(pr.reviewDecision);
                 var relTime = formatRelativeTime(pr.updatedAt);
+                // 点击卡片 → 在线审阅弹窗；标题旁 ↗ 保留浏览器直达（stopPropagation 防冒泡）
                 return h(
                   "div",
-                  { key: pr.number, className: "dsh-github-item" },
+                  {
+                    key: pr.number,
+                    className: "dsh-github-item",
+                    style: onSelectPr ? { cursor: "pointer" } : undefined,
+                    title: onSelectPr ? "点击在线审阅该 PR（描述 / 评论 / 文件 Diff）" : undefined,
+                    onClick: onSelectPr
+                      ? function () {
+                          onSelectPr({ number: Number(pr.number), repo: repo?.nameWithOwner || "" });
+                        }
+                      : undefined,
+                  },
                   h("a", {
                     className: "dsh-github-item-title",
                     href: pr.url,
                     target: "_blank",
-                    title: relTime ? `更新于 ${pr.updatedAt}` : undefined,
+                    onClick: (e: any) => e.stopPropagation(),
+                    title: relTime ? `更新于 ${pr.updatedAt}（点击在浏览器打开）` : "在浏览器打开该 PR",
                   }, `${pr.isDraft ? "⚪ " : ""}#${pr.number} ${pr.title}`),
                   h(
                     "div",
@@ -1671,6 +1686,8 @@ window.__ModuleLoader__.load({
       var [rightbarModalSection, setRightbarModalSection] = React.useState("sync");
       var [helpModalOpen, setHelpModalOpen] = React.useState(false);
       var [selectedCommit, setSelectedCommit] = React.useState(null as any);
+      // PR 在线审阅弹窗状态：{ number, repo }；为 null 时不挂载弹窗（零常驻开销）
+      var [activePr, setActivePr] = React.useState(null as { number: number; repo: string } | null);
       var [extraCommits, setExtraCommits] = React.useState([] as any[]);
       var [loadingMore, setLoadingMore] = React.useState(false);
       var [hasMoreCommits, setHasMoreCommits] = React.useState(true);
@@ -1974,7 +1991,8 @@ window.__ModuleLoader__.load({
           () => setActiveDiffFile(null),
           openFileInDsh,
           headerCardsVisible,
-          toggleHeaderCards
+          toggleHeaderCards,
+          (target: { number: number; repo: string }) => setActivePr(target)
         ),
         h(GlobalSyncSettingsModal, {
           isOpen: aboutModalOpen,
@@ -2005,6 +2023,15 @@ window.__ModuleLoader__.load({
               commit: selectedCommit,
               onClose: function () { setSelectedCommit(null); },
               cwd: cwd,
+            })
+          : null,
+        activePr
+          ? h(PrDetailModal, {
+              prNumber: activePr.number,
+              repoNameWithOwner: activePr.repo,
+              cwd: cwd,
+              onClose: function () { setActivePr(null); },
+              showToast: showToast,
             })
           : null
       );

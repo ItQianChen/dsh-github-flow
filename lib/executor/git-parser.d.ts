@@ -166,3 +166,16 @@ export declare function classifyRepoLayout(cfg: ParsedGitConfig): 'github-only' 
  * 字典序是可复现、可断言的确定性规则。
  */
 export declare function pickGithubRemote(cfg: ParsedGitConfig): ParsedRemote | null;
+/**
+ * 将整段 Git Unified Diff 纯文本按变动文件切分为字典映射。
+ *
+ * 为什么需要按文件切片：PR 可能会修改数十个文件，前端需要支持「点击某个文件即刻查看该文件改动」。
+ * 在内存做切片索引后，切换文件无需发起网络请求（0ms 响应），体验极致流畅。
+ *
+ * 键必须与 `gh pr view --json files` 返回的 `files[].path` **逐字一致**，
+ * 否则点击文件查不到 diff。因此需要处理 core.quotePath 的八进制转义。
+ *
+ * @param rawDiff gh pr diff 或 git diff 输出的原始文本
+ * @returns 映射字典：{ [filePath: string]: string (该文件的完整 diff 文本段) }
+ */
+export declare function splitUnifiedDiff(rawDiff: string): Record<string, string>;

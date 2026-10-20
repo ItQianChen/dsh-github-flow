@@ -70,6 +70,7 @@ function bundleClient() {
     'repo-badges.js',
     'sync-status-badge.js',
     'commit-modal.js',
+    'pr-modal.js',
     'sync-settings-modal.js',
     'help-modal.js',
   ];

@@ -169,7 +169,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **27 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1260 项全量自动化测试断言**：
+项目配备了 **28 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1361 项全量自动化测试断言**：
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
 - `phase3`：Release 资产交付、Secret 密文管道与 Skills 检索；
@@ -196,4 +196,5 @@
 - `phase24`：仓库拓扑与权限字段（isFork / parent 拼接 / viewerPermission 五档白名单）、远程布局四分类（github-only / mixed / no-github / no-remote）与混合布局的顺序免疫选择、默认分支从 refs/remotes/<remote>/HEAD 符号引用动态推断；
 - `phase25`：右侧栏仓库徽章可视化（resolveRepoBadges 纯函数：fork 徽章与血缘行、READ/TRIAGE 只读徽章、可写与未知权限零徽章、parent.url 协议白名单防 javascript:/data: 注入）、bundle 内联断言与「零新增网络往返」静态约束；
 - `phase26`：写操作权限自愈（GraphQL 权限错误补入确定性分类、permissionRemedy 按 Triage/Write/Admin 三档给出可操作指引并拼入 error 供模型自愈、限流 403 不误判、非权限错误零噪音、前端快捷按钮保持可用的防回退断言）；
-- `phase27`：关联仓库自由切换（getAssociatedRepos 双 remote / Fork+Parent 纯本地多仓推导、RepoSelectorDropdown 下拉组件、setDefaultRepo 官方 set-default 对齐与防注入白名单、Fork 血缘行一键双向快捷切换）。
+- `phase27`：关联仓库自由切换（getAssociatedRepos 双 remote / Fork+Parent 纯本地多仓推导、RepoSelectorDropdown 下拉组件、setDefaultRepo 官方 set-default 对齐与防注入白名单、Fork 血缘行一键双向快捷切换）；
+- `phase28`：PR 在线审阅工作台与主面板标签页解耦（splitUnifiedDiff 按文件切片索引、core.quotePath 八进制转义还原、含 ` b/` 路径的等值分割判定、删除文件路径回退、getPrDetail 参数白名单与 diff 阈值放宽不被截断、响应体不回传 fullDiff 防膨胀、**行级审查评论独立 API 通道 + original_line 回退 + 失败降级**、/api/github/pr-detail 路由真实调用与 405/400/500 错误路径、**action/branch-switch 请求体 256KB 上限与 413 行为验证**、主面板 mywork 拆为 prs/issues 四标签页、React Hooks 顺序静态防回退）。

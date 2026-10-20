@@ -17,6 +17,8 @@ import type {
   GitBranchesResult,
   AssociatedRepoItem,
   AssociatedRepoRole,
+  PrDetailData,
+  PrLineCommentItem,
 } from './types.js';
 import type { ProxyManager } from './proxy.js';
 
@@ -36,6 +38,7 @@ import {
   parseRemoteHost,
   classifyRepoLayout,
   pickGithubRemote,
+  splitUnifiedDiff,
 } from './executor/git-parser.js';
 import type { ParsedGitConfig, ParsedRemote } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
@@ -60,6 +63,7 @@ export {
   parseRemoteHost,
   classifyRepoLayout,
   pickGithubRemote,
+  splitUnifiedDiff,
   getPlatformInstallGuide,
   getGhUpgradeHint,
   classifyGhError,
@@ -296,7 +300,11 @@ export class GhExecutor {
         rawOutput = errText.trim();
       }
 
-      const outcome = truncateOutput(rawOutput, this.maxOutputChars, this.maxOutputBytes);
+      const outcome = truncateOutput(
+        rawOutput,
+        options.maxOutputChars ?? this.maxOutputChars,
+        options.maxOutputBytes ?? this.maxOutputBytes
+      );
       rawOutput = outcome.text;
       const truncated = outcome.truncated;
 
@@ -960,6 +968,164 @@ export class GhExecutor {
     }
 
     return { ok: true, target: clean };
+  }
+
+  /**
+   * 获取 Pull Request 完整详情与变更 Diff 数据（用于 PR 在线审阅与代码比对）。
+   *
+   * 架构设计：
+   * 1. 严格参数白名单校验（PR 编号必须为正整数，repo 必须为合法 owner/repo 格式）；
+   * 2. 并行拉取元数据 (gh pr view) 与 Unified Diff (gh pr diff)；
+   * 3. 在内存通过 splitUnifiedDiff 对 Diff 原文按修改文件切片索引，
+   *    前端点击任一文件即可 0ms 呈现代码行级增删对比，绝无二次网络往返。
+   */
+  async getPrDetail(
+    cwd?: string,
+    prNumber?: number | string,
+    repo?: string
+  ): Promise<{ ok: boolean; data?: PrDetailData; error?: string }> {
+    const targetCwd = this.resolveWorkspaceCwd(cwd);
+    const num = Number(prNumber);
+    if (!num || isNaN(num) || num <= 0) {
+      return { ok: false, error: '缺少有效 PR 编号（必须为正整数）' };
+    }
+
+    const cleanRepo = typeof repo === 'string' ? repo.trim() : '';
+    if (cleanRepo && !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(cleanRepo)) {
+      return { ok: false, error: '非法仓库全名参数（仅允许 owner/repo 格式）' };
+    }
+
+    const viewArgs = [
+      'pr',
+      'view',
+      String(num),
+      '--json',
+      'number,title,state,isDraft,url,createdAt,updatedAt,author,baseRefName,headRefName,body,reviewDecision,statusCheckRollup,comments,reviews,files,additions,deletions',
+    ];
+    if (cleanRepo) viewArgs.push('-R', cleanRepo);
+
+    const diffArgs = ['pr', 'diff', String(num)];
+    if (cleanRepo) diffArgs.push('-R', cleanRepo);
+
+    /**
+     * 行级审查评论的抓取通道。
+     *
+     * 为什么单独走 API：`gh pr view --json comments` 只返回对话区（issue-level），
+     * 挂在代码行上的 review comment 一条都拿不到。实测 cli/cli#14752 有 10 条
+     * 行级评论而 `--json comments` 为零。
+     */
+    const fetchLineComments = async (fullName: string): Promise<PrLineCommentItem[]> => {
+      if (!fullName) return [];
+      const r = await this.run<any[]>(
+        [`api`, `repos/${fullName}/pulls/${num}/comments?per_page=100`],
+        { cwd: targetCwd, timeoutMs: 12_000 }
+      );
+      if (!r.ok || !Array.isArray(r.data)) return [];
+      return r.data
+        .filter((c: any) => c && typeof c.path === 'string')
+        .map((c: any) => ({
+          id: String(c.id ?? ''),
+          path: String(c.path),
+          line: typeof c.line === 'number' ? c.line : (typeof c.original_line === 'number' ? c.original_line : null),
+          side: c.side ? String(c.side) : undefined,
+          author: { login: String(c.user?.login || 'unknown') },
+          body: String(c.body || ''),
+          createdAt: String(c.created_at || ''),
+        }));
+    };
+
+    // 本地可推导出仓库全名时就三路并发（UI 通常已传入 repo），
+    // 推导不出则先用空结果占位，待 view 返回后从权威 url 补拉。
+    const repoGuess = cleanRepo || (this.getRepoIdentityFromLocal(targetCwd)?.nameWithOwner || '');
+
+    const [rView, rDiff, guessedLineComments] = await Promise.all([
+      this.run<any>(viewArgs, { cwd: targetCwd, timeoutMs: 15_000 }),
+      // PR diff 走程序化消费通道（按文件切片，一次只渲染一个文件），
+      // 不进入模型上下文，因此显式放宽 24KB 默认阈值——实测普通 PR 的
+      // diff 已达 39KB，沿用默认会被静默截断，导致后半数文件点开皆空。
+      this.run<string>(diffArgs, {
+        cwd: targetCwd,
+        timeoutMs: 25_000,
+        rawText: true,
+        maxOutputChars: 2_000_000,
+        maxOutputBytes: 8 * 1024 * 1024,
+      }),
+      // 第三路：行级审查评论。本地能推导仓库名时与上面两路并发，不增加串行等待。
+      repoGuess ? fetchLineComments(repoGuess) : Promise.resolve([] as PrLineCommentItem[]),
+    ]);
+
+    if (!rView.ok || !rView.data) {
+      return { ok: false, error: rView.error || `获取 PR #${num} 详情失败` };
+    }
+
+    const raw = rView.data;
+
+    // 本地推不出仓库名（无 repo 参数且非 Git 目录）时，用 view 返回的权威 URL
+    // 补拉一次行级评论。这是少见路径，多一次往返换来评论不丢，值得。
+    let lineComments = guessedLineComments;
+    if (!repoGuess) {
+      const m = /github\.com\/([^/]+)\/([^/]+)\/pull\//i.exec(String(raw.url || ''));
+      if (m) lineComments = await fetchLineComments(`${m[1]}/${m[2]}`);
+    }
+
+    const fullDiff = rDiff.ok ? (typeof rDiff.data === 'string' ? rDiff.data : rDiff.rawOutput || '') : '';
+    const fileDiffs = splitUnifiedDiff(fullDiff);
+    const prDetail: PrDetailData = {
+      number: Number(raw.number) || num,
+      title: String(raw.title || ''),
+      state: (raw.state || 'OPEN').toUpperCase() as any,
+      isDraft: Boolean(raw.isDraft),
+      url: String(raw.url || ''),
+      createdAt: String(raw.createdAt || ''),
+      updatedAt: String(raw.updatedAt || ''),
+      author: {
+        login: String(raw.author?.login || 'ghost'),
+        avatarUrl: raw.author?.avatarUrl ? String(raw.author.avatarUrl) : undefined,
+      },
+      headRefName: String(raw.headRefName || ''),
+      baseRefName: String(raw.baseRefName || ''),
+      headRepoOwner: raw.headRepositoryOwner?.login ? String(raw.headRepositoryOwner.login) : undefined,
+      body: String(raw.body || ''),
+      reviewDecision: raw.reviewDecision ? String(raw.reviewDecision) : undefined,
+      statusCheckRollup: raw.statusCheckRollup,
+      additions: Number(raw.additions) || 0,
+      deletions: Number(raw.deletions) || 0,
+      files: Array.isArray(raw.files)
+        ? raw.files.map((f: any) => ({
+            path: String(f.path || ''),
+            additions: Number(f.additions) || 0,
+            deletions: Number(f.deletions) || 0,
+            changeType: String(f.changeType || 'MODIFIED'),
+          }))
+        : [],
+      comments: Array.isArray(raw.comments)
+        ? raw.comments.map((c: any) => ({
+            id: String(c.id || ''),
+            author: {
+              login: String(c.author?.login || 'unknown'),
+              avatarUrl: c.author?.avatarUrl ? String(c.author.avatarUrl) : undefined,
+            },
+            authorAssociation: c.authorAssociation ? String(c.authorAssociation) : undefined,
+            body: String(c.body || ''),
+            createdAt: String(c.createdAt || ''),
+            url: String(c.url || ''),
+          }))
+        : [],
+      reviews: Array.isArray(raw.reviews)
+        ? raw.reviews.map((rv: any) => ({
+            id: String(rv.id || ''),
+            author: { login: String(rv.author?.login || 'unknown') },
+            state: String(rv.state || ''),
+            body: String(rv.body || ''),
+            submittedAt: String(rv.submittedAt || ''),
+          }))
+        : [],
+      fileDiffs,
+      lineComments,
+      ...(rDiff.truncated ? { diffTruncated: true } : {}),
+    };
+
+    return { ok: true, data: prDetail };
   }
 
   /** 生成当前操作系统平台的推荐安装引导与命令 */

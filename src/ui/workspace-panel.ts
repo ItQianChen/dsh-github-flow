@@ -15,6 +15,7 @@ declare function AuthGuideCard(props: any): any;
 declare function GlobalSyncSettingsModal(props: any): any;
 declare function GithubHelpModal(props: any): any;
 declare function fetchWithRetry(url: string, options?: any, config?: any): Promise<any>;
+declare function PrDetailModal(props: any): any;
 
 /**
  * 全局工作区仪表盘主面板组件 (Dashboard View)
@@ -38,6 +39,8 @@ export function GithubWorkspacePanel() {
   var [searchQuery, setSearchQuery] = React.useState("");
   var [issueFilter, setIssueFilter] = React.useState("all");
   var [toastMsg, setToastMsg] = React.useState(null as string | null);
+  // PR 在线审阅弹窗状态：{ number, repo } 二元组；为 null 时弹窗不渲染
+  var [activePrModal, setActivePrModal] = React.useState(null as { number: number; repo: string } | null);
   var cloudTimerRef = React.useRef(null as any);
   var dataRef = React.useRef(data);
   dataRef.current = data;
@@ -477,7 +480,8 @@ export function GithubWorkspacePanel() {
     { className: "dsh-github-tabs" },
     h("button", { className: `dsh-github-tab-btn ${activeTab === 'workspaces' ? 'active' : ''}`, onClick: () => setActiveTab('workspaces') }, `📂 本地工作区矩阵 (${workspaceMatrix.length})`),
     h("button", { className: `dsh-github-tab-btn ${activeTab === 'repos' ? 'active' : ''}`, onClick: () => setActiveTab('repos') }, `☁️ 我的 GitHub 仓库 (${userRepos.length})`),
-    h("button", { className: `dsh-github-tab-btn ${activeTab === 'mywork' ? 'active' : ''}`, onClick: () => setActiveTab('mywork') }, `📋 任务与待办 (PR: ${myPrs.length} · Issue: ${myIssues.length})`)
+    h("button", { className: `dsh-github-tab-btn ${activeTab === 'prs' ? 'active' : ''}`, onClick: () => setActiveTab('prs') }, `🔀 Pull Requests (${myPrs.length})`),
+    h("button", { className: `dsh-github-tab-btn ${activeTab === 'issues' ? 'active' : ''}`, onClick: () => setActiveTab('issues') }, `📝 任务与待办 Issues (${myIssues.length})`)
   );
 
   var contentEl = null;
@@ -582,6 +586,62 @@ export function GithubWorkspacePanel() {
         )
       );
     }
+  } else if (activeTab === 'prs') {
+    // ---- PR 独立标签页：完整大屏空间，点击卡片在线唤起审阅工作台 ----
+    if (!auth?.loggedIn) {
+      contentEl = h("div", { className: "dsh-github-empty" }, "当前尚未认证登录 GitHub 账号，无法读取个人 PR 列表。请先完成上方的安装或登录指引。");
+    } else if (myPrs.length === 0) {
+      contentEl = h("div", { className: "dsh-github-empty" }, "暂无开放中的 PR");
+    } else {
+      contentEl = h(
+        "div",
+        null,
+        h("h3", { className: "dsh-github-subheading" }, `🔀 我发起与待跟进的 Pull Requests (${myPrs.length})`),
+        h(
+          "div",
+          { className: "dsh-github-list" },
+          myPrs.map((pr: any) => {
+            // 点击卡片主体 → 在线审阅弹窗；右侧 ↗ 保留浏览器直达（stopPropagation 防冒泡）
+            return h(
+              "div",
+              {
+                key: pr.number,
+                className: "dsh-github-item",
+                style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", cursor: "pointer" },
+                title: "点击在线审阅该 PR（描述 / 评论 / 文件 Diff）",
+                onClick: () => {
+                  setActivePrModal({
+                    number: Number(pr.number),
+                    repo: pr.repository?.nameWithOwner || '',
+                  });
+                },
+              },
+              h(
+                "span",
+                { className: "dsh-github-item-title", style: { cursor: "pointer" } },
+                `${pr.isDraft ? "⚪ " : ""}[${pr.repository?.nameWithOwner || 'Repo'}] #${pr.number} ${pr.title}`
+              ),
+              pr.isDraft ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "DRAFT") : null,
+              formatRelativeTime(pr.updatedAt)
+                ? h("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", whiteSpace: "nowrap" } }, formatRelativeTime(pr.updatedAt))
+                : null,
+              h(
+                "a",
+                {
+                  href: pr.url,
+                  target: "_blank",
+                  rel: "noopener noreferrer",
+                  onClick: (e: any) => e.stopPropagation(),
+                  style: { fontSize: "12px", color: "var(--dsw-alias-link, #0969da)", textDecoration: "none", flexShrink: 0 },
+                  title: "在浏览器打开该 PR",
+                },
+                "↗"
+              )
+            );
+          })
+        )
+      );
+    }
   } else {
     if (!auth?.loggedIn) {
       contentEl = h("div", { className: "dsh-github-empty" }, "当前尚未认证登录 GitHub 账号，无法读取个人待办 PR 与 Issues。请先完成上方的安装或登录指引。");
@@ -639,25 +699,6 @@ export function GithubWorkspacePanel() {
       contentEl = h(
         "div",
         null,
-        h("h3", { className: "dsh-github-subheading" }, `🔀 我发起的 PR (${myPrs.length})`),
-        myPrs.length === 0 ? h("div", { className: "dsh-github-empty", style: { marginBottom: "16px" } }, "暂无开放中的 PR") : h(
-          "div",
-          { className: "dsh-github-list", style: { marginBottom: "16px" } },
-          myPrs.map((pr: any) => h(
-            "div",
-            { key: pr.number, className: "dsh-github-item", style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
-            h("a", {
-              className: "dsh-github-item-title",
-              href: pr.url,
-              target: "_blank",
-              title: pr.updatedAt ? `更新于 ${pr.updatedAt}` : undefined,
-            }, `${pr.isDraft ? "⚪ " : ""}[${pr.repository?.nameWithOwner || 'Repo'}] #${pr.number} ${pr.title}`),
-            pr.isDraft ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "DRAFT") : null,
-            formatRelativeTime(pr.updatedAt)
-              ? h("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", whiteSpace: "nowrap" } }, formatRelativeTime(pr.updatedAt))
-              : null
-          ))
-        ),
         h("h3", { className: "dsh-github-subheading" }, `📝 任务与待办 Issues (${filteredIssues.length})`),
         issuePillsEl,
         filteredIssues.length === 0 ? h("div", { className: "dsh-github-empty" }, "当前分类下暂无开放中的 Issue") : h(
@@ -760,6 +801,15 @@ export function GithubWorkspacePanel() {
     h(GithubHelpModal, {
       isOpen: isHelpModalOpen,
       onClose: () => setIsHelpModalOpen(false),
-    })
+    }),
+    // PR 在线审阅工作台：仅在用户点击某个 PR 时挂载，关闭即卸载（零常驻开销）
+    activePrModal
+      ? h(PrDetailModal, {
+          prNumber: activePrModal.number,
+          repoNameWithOwner: activePrModal.repo,
+          onClose: () => setActivePrModal(null),
+          showToast: showToast,
+        })
+      : null
   );
 }

@@ -1,12 +1,12 @@
-import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry, GitBranchesResult, AssociatedRepoItem } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry, GitBranchesResult, AssociatedRepoItem, PrDetailData } from './types.js';
 import type { ProxyManager } from './proxy.js';
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
-import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, parseRemoteHost, classifyRepoLayout, pickGithubRemote } from './executor/git-parser.js';
+import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, parseRemoteHost, classifyRepoLayout, pickGithubRemote, splitUnifiedDiff } from './executor/git-parser.js';
 import type { ParsedGitConfig, ParsedRemote } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
 import { classifyGhError, describeDeterministicError, isRetryableError, permissionRemedy, isPermissionError, type GhErrorKind } from './executor/error-classifier.js';
-export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, parseRemoteHost, classifyRepoLayout, pickGithubRemote, getPlatformInstallGuide, getGhUpgradeHint, classifyGhError, describeDeterministicError, isRetryableError, permissionRemedy, isPermissionError, };
+export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, parseRemoteHost, classifyRepoLayout, pickGithubRemote, splitUnifiedDiff, getPlatformInstallGuide, getGhUpgradeHint, classifyGhError, describeDeterministicError, isRetryableError, permissionRemedy, isPermissionError, };
 export type { GhErrorKind, ParsedGitConfig, ParsedRemote };
 export declare class GhExecutor {
     ghPath: string;
@@ -205,6 +205,20 @@ export declare class GhExecutor {
     setDefaultRepo(cwd: string | undefined, targetRepoOrRemote: string): Promise<{
         ok: boolean;
         target?: string;
+        error?: string;
+    }>;
+    /**
+     * 获取 Pull Request 完整详情与变更 Diff 数据（用于 PR 在线审阅与代码比对）。
+     *
+     * 架构设计：
+     * 1. 严格参数白名单校验（PR 编号必须为正整数，repo 必须为合法 owner/repo 格式）；
+     * 2. 并行拉取元数据 (gh pr view) 与 Unified Diff (gh pr diff)；
+     * 3. 在内存通过 splitUnifiedDiff 对 Diff 原文按修改文件切片索引，
+     *    前端点击任一文件即可 0ms 呈现代码行级增删对比，绝无二次网络往返。
+     */
+    getPrDetail(cwd?: string, prNumber?: number | string, repo?: string): Promise<{
+        ok: boolean;
+        data?: PrDetailData;
         error?: string;
     }>;
     /** 生成当前操作系统平台的推荐安装引导与命令 */

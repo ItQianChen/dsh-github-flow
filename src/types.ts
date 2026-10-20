@@ -71,6 +71,18 @@ export interface GhExecutionOptions {
    * 暴露在进程命令行（ps / 任务管理器 / 审计日志可见）的传入通道。
    */
   stdin?: string;
+  /**
+   * 单次调用的输出字符上限覆盖（默认沿用实例配置的 maxOutputChars=24000）。
+   *
+   * 为什么需要按调用覆盖：这个默认值是按「喂给模型上下文的工具输出」调校的，
+   * 目的是防 Token 爆窗。但有些输出是**程序化消费**的——例如 PR 全量 Unified Diff
+   * 会被切片成按文件索引、前端一次只渲染一个文件，永远不会整段进模型上下文。
+   * 对这类调用沿用 24KB 会静默截断真实数据（实测一个普通 PR 的 diff 已达 39KB，
+   * 被截断后后半数文件点开皆空）。消费者不同，阈值就该不同。
+   */
+  maxOutputChars?: number;
+  /** 单次调用的输出 UTF-8 字节上限覆盖，语义同 maxOutputChars */
+  maxOutputBytes?: number;
 }
 
 export interface GhResult<T = unknown> {
@@ -288,6 +300,100 @@ export interface PrItem {
   }>;
   url: string;
   updatedAt: string;
+}
+
+/** PR 变动文件详情项 */
+export interface PrFileItem {
+  path: string;
+  additions: number;
+  deletions: number;
+  changeType?: string; // 'MODIFIED' | 'ADDED' | 'DELETED' | 'RENAMED'
+}
+
+/** PR 评论项 */
+export interface PrCommentItem {
+  id: string;
+  author: { login: string; avatarUrl?: string };
+  authorAssociation?: string;
+  body: string;
+  createdAt: string;
+  url: string;
+}
+
+/** PR 审查记录项 */
+export interface PrReviewItem {
+  id: string;
+  author: { login: string };
+  state: string; // 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING'
+  body: string;
+  submittedAt: string;
+}
+
+/**
+ * PR 行级审查评论项（代码行上的评论，区别于 Issue 级讨论）。
+ *
+ * 为什么必须单列：`gh pr view --json comments` 只返回**对话区**的 issue-level 评论，
+ * 完全不包含挂在具体代码行上的 review comment。实测 cli/cli#14752 有 10 条行级评论，
+ * 而 `--json comments` 一条都拿不到——必须走
+ * `GET /repos/{owner}/{repo}/pulls/{number}/comments` 独立通道。
+ *
+ * 不做的部分：不把评论按行号精确嵌进 diff 的 hunk 中间（需反查 hunk 偏移，
+ * 多行/折叠上下文下极易错位）。改为在文件级 diff 下方按行号列出，信息完整且确定。
+ */
+export interface PrLineCommentItem {
+  id: string;
+  /** 所属文件路径，与 fileDiffs 的键一致 */
+  path: string;
+  /** 评论锚定的行号（新文件侧）；纯删除行可能为 null */
+  line: number | null;
+  side?: string;
+  author: { login: string };
+  body: string;
+  createdAt: string;
+}
+
+/** PR 完整详情与差异数据契约（供 PrDetailModal 在线审阅消费） */
+export interface PrDetailData {
+  number: number;
+  title: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  isDraft: boolean;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  author: { login: string; avatarUrl?: string };
+  headRefName: string;
+  baseRefName: string;
+  headRepoOwner?: string;
+  body: string;
+  reviewDecision?: string;
+  statusCheckRollup?: any;
+  additions: number;
+  deletions: number;
+  files: PrFileItem[];
+  comments: PrCommentItem[];
+  reviews: PrReviewItem[];
+  /**
+   * 行级审查评论（挂在具体代码行上的 review comment）。
+   * 与 comments 是**两套独立数据源**：comments 来自对话区，lineComments 来自
+   * /pulls/{n}/comments。拉取失败时降级为空数组，不阻塞主详情。
+   */
+  lineComments?: PrLineCommentItem[];
+  /** 按文件相对路径切片索引的 Git Unified Diff 字典 */
+  fileDiffs: Record<string, string>;
+  /**
+   * 为什么不回传 fullDiff 原文：`fileDiffs` 已经是全量 diff 的等价切分
+   * （每段拼起来就是原文），再附带一份原文会让 HTTP 响应体整整翻倍。
+   * 实测一个普通 PR 的 diff 就有 39KB，2MB 上限下翻倍意味着 4MB JSON——
+   * 白占带宽、白占浏览器内存、白耗 JSON.parse 时间，且没有任何消费方。
+   * 原文仅在服务端用于切片，切片完即丢弃。
+   */
+  /**
+   * diff 是否被输出阈值截断。
+   * 为什么必须透出：超巨量 PR 仍可能触顶，此时部分文件拿不到 diff。
+   * 静默展示「该文件无差异」会让用户误以为代码没改动——必须显式提示。
+   */
+  diffTruncated?: boolean;
 }
 
 /**
