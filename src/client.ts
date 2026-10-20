@@ -35,6 +35,7 @@ import { resolveRepoBadges } from './ui/repo-badges.js';
 import { SyncStatusBadge } from './ui/sync-status-badge.js';
 import { CommitDetailModal } from './ui/commit-modal.js';
 import { PrDetailModal } from './ui/pr-modal.js';
+import { IssueDetailModal } from './ui/issue-modal.js';
 import { GlobalSyncSettingsModal } from './ui/sync-settings-modal.js';
 import { GithubHelpModal } from './ui/help-modal.js';
 import { GithubWorkspacePanel } from './ui/workspace-panel.js';
@@ -73,6 +74,7 @@ export {
   SyncStatusBadge,
   CommitDetailModal,
   PrDetailModal,
+  IssueDetailModal,
   GlobalSyncSettingsModal,
   GithubHelpModal,
   GithubWorkspacePanel,
@@ -437,7 +439,9 @@ window.__ModuleLoader__.load({
       onOpenInDsh: ((filePath: string) => void) | null = null,
       headerCardsVisible: boolean = true,
       onToggleHeaderCards: (() => void) | null = null,
-      onSelectPr: ((target: { number: number; repo: string }) => void) | null = null
+      onSelectPr: ((target: { number: number; repo: string }) => void) | null = null,
+      // 必须追加在形参末尾：该函数有 17 个位置参数，插在中间会静默错位
+      onSelectIssue: ((target: { number: number; repo: string }) => void) | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -1194,16 +1198,45 @@ window.__ModuleLoader__.load({
 
                 return h(
                   "div",
-                  { key: issue.number, className: "dsh-github-item" },
+                  {
+                    key: issue.number,
+                    className: "dsh-github-item",
+                    // 只加 cursor：内联 display:flex 会顶掉 .dsh-github-item 的 column 布局
+                    style: onSelectIssue ? { cursor: "pointer" } : undefined,
+                    title: onSelectIssue ? "点击在线查看该 Issue（正文 / 评论时间线 / 标签与里程碑）" : undefined,
+                    onClick: onSelectIssue
+                      ? function () {
+                          onSelectIssue({ number: Number(issue.number), repo: repo?.nameWithOwner || "" });
+                        }
+                      : undefined,
+                  },
+                  // 标题行：标题 → 分类徽章 → 状态徽章 → GitHub 外跳，同一行
                   h(
                     "div",
-                    { style: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" } },
+                    { className: "dsh-github-pr-title-row" },
+                    h("span", {
+                      className: "dsh-github-item-title",
+                      title: onSelectIssue ? "点击在线查看该 Issue" : undefined,
+                    }, `#${issue.number} ${issue.title}`),
+                    ...badges,
+                    (() => {
+                      var s = String(issue.state || "").toUpperCase();
+                      if (s === "CLOSED") return h("span", { className: "dsh-github-badge dsh-badge-red" }, "CLOSED");
+                      if (s === "OPEN") return h("span", { className: "dsh-github-badge dsh-badge-green" }, "OPEN");
+                      return null;
+                    })(),
                     h(
                       "a",
-                      { className: "dsh-github-item-title", href: issue.url, target: "_blank" },
-                      `#${issue.number} ${issue.title}`
-                    ),
-                    ...badges
+                      {
+                        className: "dsh-github-pr-gh-btn",
+                        href: issue.url,
+                        target: "_blank",
+                        rel: "noopener noreferrer",
+                        onClick: (e: any) => e.stopPropagation(),
+                        title: "在浏览器打开该 Issue（不进入在线查看）",
+                      },
+                      "GitHub ↗"
+                    )
                   ),
                   h(
                     "div",
@@ -1708,6 +1741,8 @@ window.__ModuleLoader__.load({
       var [selectedCommit, setSelectedCommit] = React.useState(null as any);
       // PR 在线审阅弹窗状态：{ number, repo }；为 null 时不挂载弹窗（零常驻开销）
       var [activePr, setActivePr] = React.useState(null as { number: number; repo: string } | null);
+      // Issue 在线查看弹窗状态：与 PR 同构
+      var [activeIssue, setActiveIssue] = React.useState(null as { number: number; repo: string } | null);
       var [extraCommits, setExtraCommits] = React.useState([] as any[]);
       var [loadingMore, setLoadingMore] = React.useState(false);
       var [hasMoreCommits, setHasMoreCommits] = React.useState(true);
@@ -2012,7 +2047,8 @@ window.__ModuleLoader__.load({
           openFileInDsh,
           headerCardsVisible,
           toggleHeaderCards,
-          (target: { number: number; repo: string }) => setActivePr(target)
+          (target: { number: number; repo: string }) => setActivePr(target),
+          (target: { number: number; repo: string }) => setActiveIssue(target)
         ),
         h(GlobalSyncSettingsModal, {
           isOpen: aboutModalOpen,
@@ -2051,6 +2087,15 @@ window.__ModuleLoader__.load({
               repoNameWithOwner: activePr.repo,
               cwd: cwd,
               onClose: function () { setActivePr(null); },
+              showToast: showToast,
+            })
+          : null,
+        activeIssue
+          ? h(IssueDetailModal, {
+              issueNumber: activeIssue.number,
+              repoNameWithOwner: activeIssue.repo,
+              cwd: cwd,
+              onClose: function () { setActiveIssue(null); },
               showToast: showToast,
             })
           : null

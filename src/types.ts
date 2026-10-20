@@ -404,6 +404,100 @@ export interface PrDetailData {
  */
 export type IssueCategory = 'reported' | 'assigned' | 'created';
 
+/** Issue 评论项（在线查看弹窗的讨论时间线消费） */
+export interface IssueCommentItem {
+  id: string;
+  author: { login: string; avatarUrl?: string };
+  authorAssociation?: string;
+  body: string;
+  createdAt: string;
+  url: string;
+  /**
+   * GitHub 侧被折叠/隐藏的评论（垃圾、攻击性内容等）。
+   * 为什么必须透出：实测 cli/cli#1 的评论带 `isMinimized: true, minimizedReason: "SPAM"`，
+   * 若照常渲染成普通讨论，用户会把垃圾内容当成真实技术意见。
+   */
+  isMinimized?: boolean;
+  minimizedReason?: string;
+  includesCreatedEdit?: boolean;
+}
+
+/**
+ * Issue 关联的 PR 引用。
+ *
+ * 字段集受限于 gh 的实际返回：实测 `gh issue view --json closedByPullRequestsReferences`
+ * 的节点只有 `id / number / repository / url`，**没有 title 与 state**。
+ * UI 因此只渲染 `#number` 链接，不得假设更多字段存在。
+ */
+export interface IssueLinkedPrRef {
+  number: number;
+  url: string;
+  /** `owner/repo`；跨仓关联时与 Issue 自身仓库不同 */
+  repository?: string;
+}
+
+/** Issue 里程碑（实测形态：number/title/description/dueOn，无 state） */
+export interface IssueMilestoneInfo {
+  number?: number;
+  title: string;
+  /** ISO 时间；未设置截止日时为缺省 */
+  dueOn?: string;
+}
+
+/** 子议题完成度摘要（gh `subIssuesSummary` 的直接映射） */
+export interface IssueSubIssuesSummary {
+  completed: number;
+  total: number;
+}
+
+/**
+ * Issue 完整详情数据契约（供 IssueDetailModal 在线查看消费）。
+ *
+ * 为什么不复用 `IssueItem`：列表项只需要渲染一行卡片，字段刻意精简；
+ * 详情需要正文、评论时间线、里程碑、子议题等重字段，混在一起会让
+ * 全局概览的缓存与快照体积翻数倍（每条 Issue 都拖着全部评论）。
+ */
+export interface IssueDetailData {
+  number: number;
+  title: string;
+  state: 'OPEN' | 'CLOSED';
+  /** COMPLETED / NOT_PLANNED / REOPENED / ''（实测空串形态存在） */
+  stateReason?: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  closedAt?: string;
+  author: { login: string; avatarUrl?: string };
+  body: string;
+  labels: Array<{ name: string; color?: string; description?: string }>;
+  assignees: Array<{ login: string }>;
+  milestone?: IssueMilestoneInfo;
+  isPinned?: boolean;
+  issueType?: string;
+  comments: IssueCommentItem[];
+  linkedPrs: IssueLinkedPrRef[];
+  subIssues?: IssueSubIssuesSummary;
+  /**
+   * 正文与评论中识别到的图片 URL（与 github_issue(view_images) 同源提取）。
+   *
+   * 为什么只给清单不在弹窗内联渲染：图片可能来自任意 https 外域，
+   * 在面板里直接 `<img src>` 会把宿主页面 Referer/来源暴露给第三方，
+   * 也绕过了插件的域名白名单防线。UI 只展示「附件 N 张」并给外链。
+   */
+  images: string[];
+  /**
+   * 是否发生过字段集降级。
+   * 为什么需要：老版本 gh 遇到未知 JSON 字段会整体失败（实测
+   * `Unknown JSON field: "closedAt"`），此时回退到 BASE 字段集重试；
+   * 该标记供排查「为什么没看到里程碑/关联 PR」这类差异，不弹错。
+   *
+   * 注意：不设 truncated 标记——响应被输出阈值截断时 executor 直接返回
+   * `ok:false` + 浏览器直达链接，绝不会产出「零评论」的空详情对象，
+   * 因此该失败语义不需要在数据契约里再表达一次。
+   */
+  fieldsDegraded?: boolean;
+}
+
 export interface IssueStats {
   total: number;
   reported: number;

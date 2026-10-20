@@ -325,6 +325,16 @@ export function registerActionRoutes(
               sendJson(res, r.ok ? 200 : 400, r);
               break;
             }
+            case 'issue_detail':
+            case 'get_issue_detail': {
+              // 与 pr_detail 对称的 Issue 详情通道：供 POST 调用方（Agent/脚本）复用，
+              // 与 GET /api/github/issue-detail 共用同一个 executor 方法。
+              const issueNumber = Number(payload.number || payload.issueNumber || payload.issue_number);
+              const targetRepo = typeof payload.repo === 'string' ? payload.repo.trim() : undefined;
+              const r = await executor.getIssueDetail(cwd, issueNumber, targetRepo);
+              sendJson(res, r.ok ? 200 : 400, r);
+              break;
+            }
             default:
               sendJson(res, 400, { ok: false, message: `未知的操作类型: ${payload.action}` });
           }
@@ -442,7 +452,30 @@ export function registerActionRoutes(
     },
   });
 
-  // 6. 本地 Git 元数据定向监听（专供右侧栏开启「本地 Git 改动实时感知」时长轮询）
+  // 6. Issue 在线详情（正文 / 评论时间线 / 标签 / 里程碑 / 关联 PR）
+  // 与 pr-detail 同构：GET 读语义、单次往返、参数白名单校验全部下沉到 executor。
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/issue-detail',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, message: '仅支持 GET 请求' });
+        return;
+      }
+      try {
+        const u = new URL(req.url || '', 'http://127.0.0.1');
+        const number = Number(u.searchParams.get('number') || u.searchParams.get('issueNumber'));
+        const cwd = u.searchParams.get('cwd') || undefined;
+        const repo = u.searchParams.get('repo') || undefined;
+        const r = await executor.getIssueDetail(cwd, number, repo);
+        sendJson(res, r.ok ? 200 : 400, r);
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, error: err?.message || '读取 Issue 详情异常' });
+      }
+    },
+  });
+
+  // 7. 本地 Git 元数据定向监听（专供右侧栏开启「本地 Git 改动实时感知」时长轮询）
   // 严格安全纪律：只针对 .git/index 与 .git/HEAD 实施定向非递归监听，严禁监听源码目录防句柄耗尽；
   // 800ms 防抖合并；连接断开时自动关闭 watcher 释放系统资源（委托给底层 git-watcher 服务）。
   bindRoute({
@@ -480,7 +513,7 @@ export function registerActionRoutes(
     },
   });
 
-  // 6. 纯本地 Git 状态毫秒级轻量查询（专供工作区改动时的局部定向刷新）
+  // 8. 纯本地 Git 状态毫秒级轻量查询（专供工作区改动时的局部定向刷新）
   // 严格安全与性能纪律：
   // 1. 动静解耦：仅执行本地 getLocalGitStatus、getGitCommitLog 与 getGitBranches；
   // 2. 100% 零网络调用、零远端 GitHub API 请求、零 Token 额度消耗，耗时仅 5~10ms；
@@ -530,7 +563,7 @@ export function registerActionRoutes(
     },
   });
 
-  // 7. 单个未提交文件的 Git Diff 差异查询（供右侧栏 FileDiffModal 调用）
+  // 9. 单个未提交文件的 Git Diff 差异查询（供右侧栏 FileDiffModal 调用）
   bindRoute({
     kind: 'exact',
     path: '/api/github/file-diff',
@@ -566,7 +599,7 @@ export function registerActionRoutes(
     },
   });
 
-  // 8. 本地未提交文件列表轻量流式分页查询（供右侧栏滑动加载调用）
+  // 10. 本地未提交文件列表轻量流式分页查询（供右侧栏滑动加载调用）
   bindRoute({
     kind: 'exact',
     path: '/api/github/uncommitted-files',

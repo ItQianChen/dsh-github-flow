@@ -2285,6 +2285,210 @@ body[data-ds-dark-theme] .dsh-github-md-expand-btn:hover {
   color: #58a6ff;
   border-color: #58a6ff;
 }
+
+/* 22. Issue 在线查看弹窗 (IssueDetailModal)
+ *
+ * 为什么是单列而不是 PR 那样的双栏：Issue 没有 diff 载荷，没有需要并排
+ * 对照的第二个信息源。把宽度全部让给 Markdown 正文，行宽更接近 80 字符的
+ * 可读区间，长讨论读起来比挤在左半边舒服得多。
+ */
+.dsh-github-issue-modal-dialog {
+  width: 92% !important;
+  max-width: 880px !important;
+  height: 84vh !important;
+  max-height: 84vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+.dsh-github-issue-modal-header {
+  padding: 12px 16px !important;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+  background: var(--dsw-alias-bg-layer-1, #f6f8fa);
+  flex-shrink: 0;
+}
+body[data-ds-dark-theme] .dsh-github-issue-modal-header {
+  border-bottom-color: var(--dsw-alias-border-l1, #30363d);
+  background: var(--dsw-alias-bg-layer-1, #16161a);
+}
+
+.dsh-github-issue-conversation-pane {
+  padding: 16px !important;
+  overflow-y: auto !important;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* 滚到边界不把滚动传给弹窗外层，避免整页跟着滚 */
+  overscroll-behavior: contain;
+}
+
+/* 元数据条：标签/指派人/里程碑/关联 PR 全部以胶囊呈现，一行不够自然换行 */
+.dsh-github-issue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.dsh-github-issue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  background: var(--dsw-alias-bg-module-platform, #f6f8fa);
+  color: var(--dsw-alias-label-secondary, #57606a);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 标签胶囊自身带 label 色（行内 background/borderColor 覆盖），
+ * 这里的类只用于色点与文字对其，不设背景以免行内样式失效时变成灰块 */
+.dsh-github-issue-label-chip {
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+/* 逾期里程碑：用错误色描边提示「这条已经过期了」，否则和正常 milestone 长得一样 */
+.dsh-github-issue-chip-overdue {
+  border-color: rgba(207, 34, 46, 0.5);
+  color: var(--dsw-alias-state-error-primary, #cf222e);
+}
+body[data-ds-dark-theme] .dsh-github-issue-chip-overdue {
+  border-color: rgba(248, 81, 73, 0.5);
+  color: #f85149;
+}
+.dsh-github-issue-label-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+/* 可点击的胶囊（图片清单开关、关联 PR 外链）必须有 hover 反馈，否则看不出可点 */
+.dsh-github-issue-chip-btn,
+.dsh-github-issue-chip-link {
+  cursor: pointer;
+  text-decoration: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.dsh-github-issue-chip-btn:hover,
+.dsh-github-issue-chip-link:hover {
+  color: var(--dsw-alias-link, #0969da);
+  border-color: var(--dsw-alias-link, #0969da);
+}
+body[data-ds-dark-theme] .dsh-github-issue-chip {
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+  color: var(--dsw-alias-label-secondary, #8b949e);
+}
+body[data-ds-dark-theme] .dsh-github-issue-label-chip {
+  color: var(--dsw-alias-label-primary, #f0f6fc);
+}
+body[data-ds-dark-theme] .dsh-github-issue-chip-btn:hover,
+body[data-ds-dark-theme] .dsh-github-issue-chip-link:hover {
+  color: #58a6ff;
+  border-color: #58a6ff;
+}
+
+/* 图片清单：展开后逐行列出外链，不与正文混排 */
+.dsh-github-issue-image-badge {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+}
+.dsh-github-issue-image-links {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+  background: var(--dsw-alias-bg-base, #ffffff);
+}
+body[data-ds-dark-theme] .dsh-github-issue-image-links {
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+}
+.dsh-github-issue-image-link {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+  color: var(--dsw-alias-link, #0969da);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-github-issue-image-link:hover {
+  text-decoration: underline;
+}
+
+/* 正文与评论卡片：同 PR 弹窗，flex: 0 0 auto 是滚动能否工作的前提 */
+.dsh-github-issue-body-card,
+.dsh-github-issue-comment-card {
+  border: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  overflow: hidden;
+  /* 禁止收缩：父容器是 column flex，默认 flex-shrink:1 会压缩卡片
+   * 而不是撑开父容器，导致 overflow-y:auto 永不触发（长 Issue 滚不动） */
+  flex: 0 0 auto;
+}
+.dsh-github-issue-comment-card {
+  margin-bottom: 10px;
+}
+body[data-ds-dark-theme] .dsh-github-issue-body-card,
+body[data-ds-dark-theme] .dsh-github-issue-comment-card {
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+}
+
+.dsh-github-issue-comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--dsw-alias-bg-module-platform, #f6f8fa);
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+  font-size: 11px;
+}
+body[data-ds-dark-theme] .dsh-github-issue-comment-header {
+  background: var(--dsw-alias-bg-layer-1, #16161a);
+  border-bottom-color: var(--dsw-alias-border-l1, #30363d);
+}
+
+/* 正文容器不加 padding：CollapsibleBody 内部的 .dsh-github-md-body 已有 12px，
+ * 双层叠加会让正文比评论缩进更深，视觉上误读成引用块 */
+.dsh-github-issue-body-content {
+  padding: 0;
+}
+
+.dsh-github-issue-timeline-title {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, #1f2328);
+  flex: 0 0 auto;
+}
+body[data-ds-dark-theme] .dsh-github-issue-timeline-title {
+  color: var(--dsw-alias-label-primary, #f0f6fc);
+}
+
+.dsh-github-issue-empty-timeline {
+  padding: 16px 0;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.6;
+  flex: 0 0 auto;
+}
 `;
 
 export function injectStyles() {

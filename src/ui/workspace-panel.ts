@@ -16,6 +16,7 @@ declare function GlobalSyncSettingsModal(props: any): any;
 declare function GithubHelpModal(props: any): any;
 declare function fetchWithRetry(url: string, options?: any, config?: any): Promise<any>;
 declare function PrDetailModal(props: any): any;
+declare function IssueDetailModal(props: any): any;
 
 /**
  * 全局工作区仪表盘主面板组件 (Dashboard View)
@@ -45,6 +46,8 @@ export function GithubWorkspacePanel() {
   var [toastMsg, setToastMsg] = React.useState(null as string | null);
   // PR 在线审阅弹窗状态：{ number, repo } 二元组；为 null 时弹窗不渲染
   var [activePrModal, setActivePrModal] = React.useState(null as { number: number; repo: string } | null);
+  // Issue 在线查看弹窗状态：与 PR 完全同构的 { number, repo } 二元组
+  var [activeIssueModal, setActiveIssueModal] = React.useState(null as { number: number; repo: string } | null);
   var cloudTimerRef = React.useRef(null as any);
   var dataRef = React.useRef(data);
   dataRef.current = data;
@@ -788,16 +791,52 @@ export function GithubWorkspacePanel() {
 
             return h(
               "div",
-              { key: is.url || is.number, className: "dsh-github-item" },
+              {
+                key: is.url || is.number,
+                className: "dsh-github-item",
+                /*
+                 * 只加 cursor，绝不覆盖 display/alignItems/flexWrap。
+                 * .dsh-github-item 是 flex-direction:column，任何内联 flex 布局
+                 * 都会把标题、徽章、元信息横向挤成一行（PR 卡片上踩过的坑）。
+                 */
+                style: { cursor: "pointer" },
+                title: "点击在线查看该 Issue（正文 / 评论时间线 / 标签与里程碑）",
+                onClick: () => {
+                  setActiveIssueModal({
+                    number: Number(is.number),
+                    repo: is.repository?.nameWithOwner || '',
+                  });
+                },
+              },
+              // 标题行：标题 → 分类徽章 → 状态徽章 → GitHub 外跳，全部同一行
               h(
                 "div",
-                { style: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" } },
+                { className: "dsh-github-pr-title-row" },
                 h(
-                  "a",
-                  { className: "dsh-github-item-title", href: is.url, target: "_blank" },
+                  "span",
+                  { className: "dsh-github-item-title", style: { cursor: "pointer" } },
                   `[${is.repository?.nameWithOwner || 'Repo'}] #${is.number} ${is.title}`
                 ),
-                ...badges
+                ...badges,
+                (() => {
+                  // 状态徽章：全局检索含 closed，不标注会让用户把已关闭议题当成待办
+                  var s = String(is.state || '').toUpperCase();
+                  if (s === 'CLOSED') return h("span", { className: "dsh-github-badge dsh-badge-red", style: { flexShrink: 0 } }, "CLOSED");
+                  if (s === 'OPEN') return h("span", { className: "dsh-github-badge dsh-badge-green", style: { flexShrink: 0 } }, "OPEN");
+                  return null;
+                })(),
+                h(
+                  "a",
+                  {
+                    className: "dsh-github-pr-gh-btn",
+                    href: is.url,
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    onClick: (e: any) => e.stopPropagation(),
+                    title: "在浏览器打开该 Issue（不进入在线查看）",
+                  },
+                  "GitHub ↗"
+                )
               ),
               h(
                 "div",
@@ -877,6 +916,15 @@ export function GithubWorkspacePanel() {
           prNumber: activePrModal.number,
           repoNameWithOwner: activePrModal.repo,
           onClose: () => setActivePrModal(null),
+          showToast: showToast,
+        })
+      : null,
+    // Issue 在线查看弹窗：同上，点击即挂载、关闭即卸载
+    activeIssueModal
+      ? h(IssueDetailModal, {
+          issueNumber: activeIssueModal.number,
+          repoNameWithOwner: activeIssueModal.repo,
+          onClose: () => setActiveIssueModal(null),
           showToast: showToast,
         })
       : null

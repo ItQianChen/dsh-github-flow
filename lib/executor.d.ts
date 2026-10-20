@@ -1,4 +1,4 @@
-import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry, GitBranchesResult, AssociatedRepoItem, PrDetailData } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry, GitBranchesResult, AssociatedRepoItem, PrDetailData, IssueDetailData } from './types.js';
 import type { ProxyManager } from './proxy.js';
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
@@ -219,6 +219,21 @@ export declare class GhExecutor {
     getPrDetail(cwd?: string, prNumber?: number | string, repo?: string): Promise<{
         ok: boolean;
         data?: PrDetailData;
+        error?: string;
+    }>;
+    /**
+     * 获取 Issue 完整详情（供 IssueDetailModal 在线查看消费）。
+     *
+     * 架构设计：
+     * 1. 严格参数白名单（编号必须为正整数，repo 必须为 owner/repo 形态）——与
+     *    getPrDetail 同一套规则，杜绝任何形式的命令/路径注入；
+     * 2. 单次 `gh issue view --json` 往返即可拿到正文、评论时间线、里程碑与关联 PR，
+     *    不拆成多路并发（Issue 没有 diff 这类重载荷，多开进程反而增加失败面）；
+     * 3. 老版本 gh 遇未知字段会整体失败，因此保留 BASE 字段集降级链。
+     */
+    getIssueDetail(cwd?: string, issueNumber?: number | string, repo?: string): Promise<{
+        ok: boolean;
+        data?: IssueDetailData;
         error?: string;
     }>;
     /** 生成当前操作系统平台的推荐安装引导与命令 */

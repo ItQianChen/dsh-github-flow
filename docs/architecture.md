@@ -49,13 +49,14 @@
 │  │  - ruleset(check)│                            │ - /update-settings    │  │
 │  │  - cache (治理)  │                            │ - /proxy (全局代理)   │  │
 │  │  - gist (分享)   │                            │ - /auth (轻量探针)    │  │
-│  │  - status (健康) │                            └──────────┬────────────┘  │
-│  │  - agent_task    │                                       │               │
-│  │  - discussion    │                                       ▼               │
-│  │  - project (v2)  │                        ┌───────────────────────────┐  │
-│  │  - codespace(MVP)│                        │ git-watcher (独立服务)    │  │
-│  │  - help (元指南) │                        │ - .git/HEAD & index       │  │
-│  └────────┬─────────┘                        │ - 800ms 防抖/35s 超时     │  │
+│  │  - status (健康) │                            │ - /issue-detail (Issue│  │
+│  │  - agent_task    │                            │   在线详情与评论)     │  │
+│  │  - discussion    │                            │ - /pr-detail (PR 审阅)│  │
+│  │  - project (v2)  │                            └──────────┬────────────┘  │
+│  │  - codespace(MVP)│                        ┌───────────────────────────┐  │
+│  │  - help (元指南) │                        │ git-watcher (独立服务)    │  │
+│  └────────┬─────────┘                        │ - .git/HEAD & index       │  │
+│           │                                  │ - 800ms 防抖/35s 超时     │  │
 │           │                                  └───────────────────────────┘  │
 │           ▼                                                 │               │
 │  ┌──────────────────────────────────┐                       │               │
@@ -86,7 +87,7 @@
 │   │  · icons.ts (Octocat, Git 官方菱形分支矢量组件, 插件徽标)           │   │
 │   │  · storage.ts (LocalStorage SWR 状态机与偏好存储)                   │   │
 │   │  · components/ (分支下拉/认证引导/升级通知/离线横幅/状态胶囊)       │   │
-│   │  · modals/ (Commit 详情弹窗 / 4分区全局设置弹窗)                    │   │
+│   │  · modals/ (Commit 详情弹窗 / PR 审阅工作台 / Issue 在线查看 / 全局设置弹窗)  │   │
 │   │  · panels/ (首页全景大面板 workspace-panel.ts)                      │   │
 │   │                                                                     │   │
 │   │ 核心组装入口 (src/client.ts, ~1,260 行高内聚):                      │   │
@@ -169,7 +170,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **30 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1549 项全量自动化测试断言**：
+项目配备了 **31 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1561 项全量自动化测试断言**：
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
 - `phase3`：Release 资产交付、Secret 密文管道与 Skills 检索；
@@ -200,3 +201,4 @@
 - `phase28`：PR 在线审阅工作台与主面板标签页解耦（splitUnifiedDiff 按文件切片索引、core.quotePath 八进制转义还原、含 ` b/` 路径的等值分割判定、删除文件路径回退、getPrDetail 参数白名单与 diff 阈值放宽不被截断、响应体不回传 fullDiff 防膨胀、**行级审查评论独立 API 通道 + original_line 回退 + 失败降级**、/api/github/pr-detail 路由真实调用与 405/400/500 错误路径、**action/branch-switch 请求体 256KB 上限与 413 行为验证**、主面板 mywork 拆为 prs/issues 四标签页、React Hooks 顺序静态防回退）；
 - `phase29`：数据可见性与 PR 弹窗交互（PR/Issue 查询移除 `--state=open` 硬过滤并补齐 state 字段、clampFilePaneWidth 纯函数边界与容器极窄保下限、文件区布局偏好 localStorage 往返与脏数据回退、分隔条拖拽 document 级监听与卸载兜底清理、折叠双恢复入口、**PR 标题行与 GitHub 跳转按钮同行（min-width:0 + flex-shrink:0 防长标题挤出）**、空态区分「筛选为空」与「账号无记录」）；
 - `phase30`：PR 弹窗 Markdown 渲染与滚动适配（markdown-lite 零依赖解析器：标题/粗斜体/行内码/围栏代码块/列表/引用/分隔线/任务列表；链接协议白名单拒绝 javascript:/data:/vbscript:/协议相对；HTML 标签降级为纯文本；estimateContentLines 折叠阈值估算；卡片 flex:0 0 auto 修复「长内容无法滚动」；CollapsibleBody 提升到模块顶层避免内联组件导致展开状态被重置）。
+- `phase31`：Issue 在线查看工作台（getIssueDetail 参数白名单含小数/负数拒绝、**2MB 字符阈值防长讨论被截断成假空详情**、老版本 gh `Unknown JSON field` 的 BASE 字段降级链与 fieldsDegraded 标记、非字段类失败不重试、截断与解析缺失显式失败并给出浏览器直达链接、state/author/labels/milestone/subIssuesSummary/closedByPullRequestsReferences 归一化、SPAM 隐藏评论标记保留、图片清单正文+评论合并去重、/api/github/issue-detail 路由 200/400/405/500 全路径、action 通道 issue_detail 对称可用、主面板与右侧栏 Issue 卡片改点击进弹窗 + 同行 GitHub ↗ 外跳 stopPropagation + 卡片禁内联 flex 布局、onSelectIssue 追加在形参末尾、React Hooks 顺序与 bundle 三模块拓扑顺序防回退）。

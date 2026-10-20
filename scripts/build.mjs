@@ -129,6 +129,9 @@ function bundleClient() {
     'markdown-lite.js',
     'commit-modal.js',
     'pr-modal.js',
+    // issue-modal 依赖 pr-modal 里的 CollapsibleBody（长正文/长评论折叠）与
+    // markdown-lite 的解析器，必须排在这两者之后，否则运行时引用为 undefined
+    'issue-modal.js',
     'sync-settings-modal.js',
     'help-modal.js',
   ];
