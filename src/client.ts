@@ -25,6 +25,10 @@ import {
   getStoredHeaderCardsVisible,
   saveStoredHeaderCardsVisible,
   HEADER_CARDS_STORAGE_KEY,
+  getStoredRightbarStateFilter,
+  saveStoredRightbarStateFilter,
+  PR_STATE_FILTERS,
+  ISSUE_STATE_FILTERS,
 } from './ui/storage.js';
 import { BranchSelectorDropdown } from './ui/branch-selector.js';
 import { RepoSelectorDropdown } from './ui/repo-selector.js';
@@ -64,6 +68,10 @@ export {
   getStoredHeaderCardsVisible,
   saveStoredHeaderCardsVisible,
   HEADER_CARDS_STORAGE_KEY,
+  getStoredRightbarStateFilter,
+  saveStoredRightbarStateFilter,
+  PR_STATE_FILTERS,
+  ISSUE_STATE_FILTERS,
   BranchSelectorDropdown,
   RepoSelectorDropdown,
   AuthGuideCard,
@@ -441,7 +449,17 @@ window.__ModuleLoader__.load({
       onToggleHeaderCards: (() => void) | null = null,
       onSelectPr: ((target: { number: number; repo: string }) => void) | null = null,
       // 必须追加在形参末尾：该函数有 17 个位置参数，插在中间会静默错位
-      onSelectIssue: ((target: { number: number; repo: string }) => void) | null = null
+      onSelectIssue: ((target: { number: number; repo: string }) => void) | null = null,
+      /**
+       * 状态筛选（默认 all）。
+       * 为什么由组件传入而不是在本函数内 useState：本函数是每次渲染都重新执行的
+       * 普通函数，内部调用 useState 会被 React 当成新的 Hook 序列直接抛错。
+       * 状态必须住在 GithubRightbarBody 组件体内，这里只接收值与 setter。
+       */
+      prStateFilter: string = "all",
+      issueStateFilter: string = "all",
+      onChangePrFilter: ((v: string) => void) | null = null,
+      onChangeIssueFilter: ((v: string) => void) | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -1081,16 +1099,83 @@ window.__ModuleLoader__.load({
         )
       ) : null;
 
+      /*
+       * PR 状态分组统计与筛选。
+       *
+       * 为什么计数必须在过滤之前算：胶囊上的数字要让用户知道「切过去有几条」，
+       * 用过滤后的列表长度会得到「点了 Merged 之后 Open 显示 0」这种废信息。
+       */
+      var prByState = { open: 0, merged: 0, closed: 0 } as Record<string, number>;
+      prs.forEach(function (pr: any) {
+        var s = String(pr.state || "").toLowerCase();
+        if (s === "open" || s === "merged" || s === "closed") prByState[s]++;
+      });
+      var filteredPrs = prs.filter(function (pr: any) {
+        if (prStateFilter === "all") return true;
+        // 未知状态（旧快照缺 state）只出现在「全部」里，不会被误塞进具体档
+        return String(pr.state || "").toLowerCase() === prStateFilter;
+      });
+
+      // 空态文案要给人看，不能把内部档位键（merged）直接抛给用户
+      var PR_STATE_LABEL: Record<string, string> = { all: "全部", open: "Open", merged: "Merged", closed: "Closed" };
+      var prFilterLabel = PR_STATE_LABEL[prStateFilter] || "全部";
+
+      var prPillsEl = h(
+        "div",
+        { className: "dsh-github-pills" },
+        h(
+          "button",
+          { className: `dsh-github-pill-btn ${prStateFilter === "all" ? "active" : ""}`, "aria-pressed": prStateFilter === "all" ? "true" : "false", onClick: () => onChangePrFilter && onChangePrFilter("all") },
+          `全部 (${prs.length})`
+        ),
+        h(
+          "button",
+          { className: `dsh-github-pill-btn ${prStateFilter === "open" ? "active" : ""}`, "aria-pressed": prStateFilter === "open" ? "true" : "false", onClick: () => onChangePrFilter && onChangePrFilter("open") },
+          `🟢 Open (${prByState.open})`
+        ),
+        h(
+          "button",
+          { className: `dsh-github-pill-btn ${prStateFilter === "merged" ? "active" : ""}`, "aria-pressed": prStateFilter === "merged" ? "true" : "false", onClick: () => onChangePrFilter && onChangePrFilter("merged") },
+          `🟣 Merged (${prByState.merged})`
+        ),
+        h(
+          "button",
+          { className: `dsh-github-pill-btn ${prStateFilter === "closed" ? "active" : ""}`, "aria-pressed": prStateFilter === "closed" ? "true" : "false", onClick: () => onChangePrFilter && onChangePrFilter("closed") },
+          `⚪ Closed (${prByState.closed})`
+        )
+      );
+
+      // 空态必须区分「仓库确实没有」与「当前筛选下没有」——否则用户会把筛空当成数据丢失
+      var prEmptyEl = prs.length === 0
+        ? h("div", { className: "dsh-github-empty" }, "该仓库暂无 Pull Request 记录")
+        : h("div", { className: "dsh-github-empty" }, `当前筛选「${prFilterLabel}」下无结果，共 ${prs.length} 条记录（切换到「全部」查看）`);
+
       var prSectionEl = h(
         "div",
         { className: "dsh-github-section" },
-        h("div", { className: "dsh-github-section-header" }, h("h3", null, `🔀 Pull Requests (${prs.length})`)),
-        prs.length === 0
-          ? h("div", { className: "dsh-github-empty" }, "当前无开放中的 PR")
+        h("div", { className: "dsh-github-section-header" }, h("h3", null, `🔀 Pull Requests (${filteredPrs.length}/${prs.length})`)),
+        prPillsEl,
+        // 触顶提示：让用户知道列表被截断了，而不是以为历史 PR 凭空消失
+        data && data.prsTruncated
+          ? h("div", {
+              style: {
+                margin: "0 0 10px 0",
+                padding: "6px 10px",
+                borderRadius: "6px",
+                fontSize: "11px",
+                lineHeight: 1.5,
+                background: "rgba(210, 153, 34, 0.12)",
+                border: "1px solid rgba(210, 153, 34, 0.35)",
+                color: "var(--dsw-alias-state-attention-primary, #9a6700)",
+              },
+            }, `⚠️ 仅显示最近 ${prs.length} 条 PR（已触及检索上限）。更早的记录请到 GitHub 查看。`)
+          : null,
+        filteredPrs.length === 0
+          ? prEmptyEl
           : h(
               "div",
               { className: "dsh-github-list" },
-              prs.map((pr: any) => {
+              filteredPrs.map((pr: any) => {
                 var ci = rollupCiStatus(pr.statusCheckRollup);
                 var rv = reviewDecisionBadge(pr.reviewDecision);
                 var relTime = formatRelativeTime(pr.updatedAt);
@@ -1159,13 +1244,51 @@ window.__ModuleLoader__.load({
             )
       );
 
+      // Issue 状态分组统计与筛选（与 PR 同一套口径：先统计全量再过滤）
+      var issueByState = { open: 0, closed: 0 } as Record<string, number>;
+      issues.forEach(function (issue: any) {
+        var s = String(issue.state || "").toLowerCase();
+        if (s === "open" || s === "closed") issueByState[s]++;
+      });
+      var filteredIssues = issues.filter(function (issue: any) {
+        if (issueStateFilter === "all") return true;
+        return String(issue.state || "").toLowerCase() === issueStateFilter;
+      });
+
+      var ISSUE_STATE_LABEL: Record<string, string> = { all: "全部", open: "Open", closed: "Closed" };
+      var issueFilterLabel = ISSUE_STATE_LABEL[issueStateFilter] || "全部";
+
+      var issuePillsEl = h(
+        "div",
+        { className: "dsh-github-pills" },
+        h(
+          "button",
+          { className: `dsh-github-pill-btn ${issueStateFilter === "all" ? "active" : ""}`, "aria-pressed": issueStateFilter === "all" ? "true" : "false", onClick: () => onChangeIssueFilter && onChangeIssueFilter("all") },
+          `全部 (${issues.length})`
+        ),
+        h(
+          "button",
+          { className: `dsh-github-pill-btn ${issueStateFilter === "open" ? "active" : ""}`, "aria-pressed": issueStateFilter === "open" ? "true" : "false", onClick: () => onChangeIssueFilter && onChangeIssueFilter("open") },
+          `🟢 Open (${issueByState.open})`
+        ),
+        h(
+          "button",
+          { className: `dsh-github-pill-btn ${issueStateFilter === "closed" ? "active" : ""}`, "aria-pressed": issueStateFilter === "closed" ? "true" : "false", onClick: () => onChangeIssueFilter && onChangeIssueFilter("closed") },
+          `⚪ Closed (${issueByState.closed})`
+        )
+      );
+
+      var issueEmptyEl = issues.length === 0
+        ? h("div", { className: "dsh-github-empty" }, "该仓库暂无 Issue 记录")
+        : h("div", { className: "dsh-github-empty" }, `当前筛选「${issueFilterLabel}」下无结果，共 ${issues.length} 条记录（切换到「全部」查看）`);
+
       var issueSectionEl = h(
         "div",
         { className: "dsh-github-section" },
         h(
           "div",
           { className: "dsh-github-section-header" },
-          h("h3", null, `📋 仓库 Issues (${issues.length})`),
+          h("h3", null, `📋 仓库 Issues (${filteredIssues.length}/${issues.length})`),
           repo?.url
             ? h(
                 "a",
@@ -1178,12 +1301,27 @@ window.__ModuleLoader__.load({
               )
             : null
         ),
-        issues.length === 0
-          ? h("div", { className: "dsh-github-empty" }, "当前无开放中的 Issue")
+        issuePillsEl,
+        data && data.issuesTruncated
+          ? h("div", {
+              style: {
+                margin: "0 0 10px 0",
+                padding: "6px 10px",
+                borderRadius: "6px",
+                fontSize: "11px",
+                lineHeight: 1.5,
+                background: "rgba(210, 153, 34, 0.12)",
+                border: "1px solid rgba(210, 153, 34, 0.35)",
+                color: "var(--dsw-alias-state-attention-primary, #9a6700)",
+              },
+            }, `⚠️ 仅显示最近 ${issues.length} 条 Issue（已触及检索上限）。更早的记录请到 GitHub 查看。`)
+          : null,
+        filteredIssues.length === 0
+          ? issueEmptyEl
           : h(
               "div",
               { className: "dsh-github-list" },
-              issues.map((issue: any) => {
+              filteredIssues.map((issue: any) => {
                 var cats = issue.categories || [];
                 var badges: any[] = [];
                 if (cats.includes("reported")) {
@@ -1753,6 +1891,26 @@ window.__ModuleLoader__.load({
       var [hasMoreDirty, setHasMoreDirty] = React.useState(true);
       var [activeDiffFile, setActiveDiffFile] = React.useState(null as any);
       var [headerCardsVisible, setHeaderCardsVisible] = React.useState(() => getStoredHeaderCardsVisible());
+      /*
+       * 状态筛选：默认 all（= 能看见 closed/merged）。
+       * 初值来自按 cwd 隔离的本地偏好，切仓库时在下面的 effect 里重新对齐。
+       * 放在这里而不是 renderGithubRepoView 内部：那是普通函数，
+       * 每次渲染都会重新执行，函数内 useState 会被当成新的 Hook 序列直接抛错。
+       */
+      var [prStateFilter, setPrStateFilter] = React.useState(() => getStoredRightbarStateFilter(cwd).pr);
+      var [issueStateFilter, setIssueStateFilter] = React.useState(() => getStoredRightbarStateFilter(cwd).issue);
+
+      var changePrFilter = React.useCallback(function (v: string) {
+        if (PR_STATE_FILTERS.indexOf(v) < 0) return;
+        setPrStateFilter(v);
+        saveStoredRightbarStateFilter(cwd, { pr: v });
+      }, [cwd]);
+
+      var changeIssueFilter = React.useCallback(function (v: string) {
+        if (ISSUE_STATE_FILTERS.indexOf(v) < 0) return;
+        setIssueStateFilter(v);
+        saveStoredRightbarStateFilter(cwd, { issue: v });
+      }, [cwd]);
 
       var toggleHeaderCards = React.useCallback(() => {
         setHeaderCardsVisible(function (prev: boolean) {
@@ -1770,6 +1928,18 @@ window.__ModuleLoader__.load({
         setHasMoreDirty(true);
         setActiveDiffFile(null);
       }, [cwd, data]);
+
+      /*
+       * 切仓库时把筛选对齐到该仓库自己的偏好。
+       *
+       * 只依赖 cwd：若依赖 data 会在每次数据刷新时把用户刚点的筛选重置回上次
+       * 落盘值——用户点「Merged」后恰逢后台 SWR 拉新，选择立刻跳回「全部」。
+       */
+      React.useEffect(function () {
+        var stored = getStoredRightbarStateFilter(cwd);
+        setPrStateFilter(stored.pr);
+        setIssueStateFilter(stored.issue);
+      }, [cwd]);
 
       var loadMoreCommits = function () {
         if (loadingMore || !hasMoreCommits) return;
@@ -2048,7 +2218,11 @@ window.__ModuleLoader__.load({
           headerCardsVisible,
           toggleHeaderCards,
           (target: { number: number; repo: string }) => setActivePr(target),
-          (target: { number: number; repo: string }) => setActiveIssue(target)
+          (target: { number: number; repo: string }) => setActiveIssue(target),
+          prStateFilter,
+          issueStateFilter,
+          changePrFilter,
+          changeIssueFilter
         ),
         h(GlobalSyncSettingsModal, {
           isOpen: aboutModalOpen,

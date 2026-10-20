@@ -338,7 +338,9 @@ async function runTests() {
   ok(clientSrc.includes('onSelectIssue'), '右侧栏渲染器接收 onSelectIssue 回调');
   ok(/onSelectPr[^)]*\)[\s\S]{0,200}onSelectIssue/.test(clientSrc), 'onSelectIssue 追加在形参末尾（不打乱既有位置参数）');
   ok(clientSrc.includes('setActiveIssue(target)'), '右侧栏点击接线到 activeIssue 状态');
-  const clientIssueStart = clientSrc.indexOf('issues.map((issue: any)');
+  // 锚点从 'issues.map(' 改为 'filteredIssues.map(' —— phase32 加了状态筛选，
+  // 渲染对象换成过滤后的数组。断言内容不变，仅跟随实现演进。
+  const clientIssueStart = clientSrc.indexOf('filteredIssues.map((issue: any) =>');
   const clientIssueBlock = clientIssueStart >= 0 ? clientSrc.slice(clientIssueStart, clientIssueStart + 3200) : '';
   ok(clientIssueBlock.length > 0, '成功定位右侧栏 Issue 渲染块');
   ok(clientIssueBlock.includes('dsh-github-pr-title-row'), '右侧栏：标题与徽章/按钮同行');

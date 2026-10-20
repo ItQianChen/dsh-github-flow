@@ -562,6 +562,17 @@ export interface GitHubOverviewData {
   branchPr?: { number: number; title: string; state?: string; url?: string; isDraft?: boolean } | null;
   /** 当前工作区的 Git 分支列表（供右侧栏分支选择器 0ms 秒开） */
   branches?: GitBranchesResult | null;
+  /**
+   * 单仓库 PR 列表是否触及条数上限（仅触顶时下发）。
+   *
+   * 为什么必须透出：查询已放宽为 `--state all`，列表按 number 降序取前 N 条，
+   * 历史 PR 超过上限时界面会静默少显示——用户切到「Closed」看到几条
+   * 就会误以为仓库只有这么几个已关闭 PR，无法区分「就这么多」与「被截断了」。
+   * 与全局面板的 prsTruncated 同一语义。
+   */
+  prsTruncated?: boolean;
+  /** 单仓库 Issue 列表是否触及条数上限（语义同 prsTruncated） */
+  issuesTruncated?: boolean;
 }
 
 export interface UserRepoItem {

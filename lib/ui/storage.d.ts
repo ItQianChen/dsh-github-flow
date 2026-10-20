@@ -40,6 +40,27 @@ export declare function getStoredHeaderCardsVisible(): boolean;
  * 持久化保存右侧栏上方仓库卡片与快捷操作栏的展开/折叠偏好
  */
 export declare function saveStoredHeaderCardsVisible(visible: boolean): void;
+/** 右侧栏 PR / Issue 状态筛选偏好（按 cwd 隔离，不同仓库各自记住选择） */
+export declare const RIGHTBAR_STATE_FILTER_KEY = "dsh_github_rightbar_state_filter_v1";
+/** 合法筛选值；任何非法输入一律回落 all，绝不让脏数据把列表筛成空白 */
+export declare const PR_STATE_FILTERS: string[];
+export declare const ISSUE_STATE_FILTERS: string[];
+/**
+ * 读取右侧栏 PR / Issue 的状态筛选偏好。
+ *
+ * 为什么按 cwd 分开存：同一个浏览器可能同时开着多个工作区，
+ * PR 集中在 A 仓库、Issue 集中在 B 仓库时，用户对两者的关注档位不同，
+ * 共用一个 key 会导致切仓库后筛选被另一个仓库的选择覆盖。
+ */
+export declare function getStoredRightbarStateFilter(cwd: string | null): {
+    pr: string;
+    issue: string;
+};
+/** 保存右侧栏状态筛选偏好（写入失败静默——纯 UI 偏好不值得弹错） */
+export declare function saveStoredRightbarStateFilter(cwd: string | null, next: {
+    pr?: string;
+    issue?: string;
+}): void;
 /**
  * 把期望宽度收敛到合法区间。
  *

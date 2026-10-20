@@ -14,6 +14,19 @@ import { describeDeterministicError } from '../executor/error-classifier.js';
 /** 探测单个工作区时在途的 gh 进程数上限；libuv 线程池默认 4，留出余量给其他请求 */
 const WORKSPACE_PROBE_CONCURRENCY = 3;
 
+/**
+ * 右侧栏单仓库 PR / Issue 的展示条数上限。
+ *
+ * 为什么从 10 提到 20：加上 `--state all` 后列表里混入了 closed/merged，
+ * 而 `gh pr list` 的排序依据是 **number 降序**（实测 30 条验证：14763、14752、
+ * 14751 …… 严格递减），不是 updatedAt。取 10 条时实测 cli/cli 只剩 5 条非 OPEN，
+ * 用户切到「Merged」可能只有 2-3 条，筛选体验形同虚设。
+ * 多拉 10 条的代价可忽略（同一个 gh 进程，仅 JSON 体积略增），
+ * 但绝不能改成「每个状态各查一次」——那会把 3 个 gh 子进程变成 6~9 个，
+ * 右侧栏首屏本就受 Promise.all 8 秒超时约束。
+ */
+const RIGHTBAR_LIST_LIMIT = 20;
+
 export function registerOverviewRoutes(
   deps: RouteDeps,
   executor: GhExecutor,
@@ -114,14 +127,30 @@ export function registerOverviewRoutes(
         const freshExtras: Record<string, any> = {};
 
         if (repo && auth.loggedIn) {
-          // 并发拉取当前文件夹仓库的 PRs、Issues 和 Runs
+          /*
+           * 并发拉取当前文件夹仓库的 PRs、Issues 和 Runs。
+           *
+           * 必须显式传 `--state all`：gh 的默认值是 open，不传就只剩未关闭记录。
+           * 本仓库实测 `pr list` 默认返回 []、`--state all` 才返回 [#6 CLOSED]——
+           * 右侧栏「只显示已打开」的根因就在这里，靠前端加筛选器救不回来，
+           * 因为数据在到达浏览器前就被 gh 过滤掉了。
+           * 与全局面板（gh search，phase29 已移除 --state=open）保持同一口径。
+           */
           const [prsRes, issuesRes, runsRes] = await Promise.all([
             executor.run<PrItem[]>(
-              ['pr', 'list', '--json', 'number,title,state,author,headRefName,baseRefName,isDraft,mergeable,reviewDecision,statusCheckRollup,url,updatedAt', '-L', '10'],
+              [
+                'pr', 'list', '--state', 'all',
+                '--json', 'number,title,state,author,headRefName,baseRefName,isDraft,mergeable,reviewDecision,statusCheckRollup,url,updatedAt',
+                '-L', String(RIGHTBAR_LIST_LIMIT),
+              ],
               { cwd, timeoutMs: 8_000 }
             ),
             executor.run<IssueItem[]>(
-              ['issue', 'list', '--json', 'number,title,state,author,labels,assignees,url,updatedAt', '-L', '10'],
+              [
+                'issue', 'list', '--state', 'all',
+                '--json', 'number,title,state,author,labels,assignees,url,updatedAt',
+                '-L', String(RIGHTBAR_LIST_LIMIT),
+              ],
               { cwd, timeoutMs: 8_000 }
             ),
             executor.run<WorkflowRunItem[]>(
@@ -247,6 +276,14 @@ export function registerOverviewRoutes(
 
         const issueStats = calculateIssueStats(issues);
 
+        /*
+         * 截断必须可感知：`--state all` + 固定条数上限意味着历史记录可能被截掉，
+         * 若不透出，用户切到「Closed」看到 3 条会以为仓库只有 3 个已关闭 PR。
+         * 与全局面板 prsTruncated 同一口径。
+         */
+        const prsTruncated = pullRequests.length >= RIGHTBAR_LIST_LIMIT;
+        const issuesTruncated = issues.length >= RIGHTBAR_LIST_LIMIT;
+
         const freshData: GitHubOverviewData = {
           auth,
           repo: repo || undefined,
@@ -259,6 +296,9 @@ export function registerOverviewRoutes(
           // 确定性降级说明随数据一起落缓存：它是仓库的稳定属性（Issues 关着就一直关着），
           // 每次请求重新声明没有意义，也不该让它冒泡成 networkError。
           ...(deterministicNotices.length > 0 ? { notices: deterministicNotices } : {}),
+          // 仅在真的触顶时才下发，避免给正常场景增加无意义字段
+          ...(prsTruncated ? { prsTruncated: true } : {}),
+          ...(issuesTruncated ? { issuesTruncated: true } : {}),
           ...freshExtras,
         };
 

@@ -131,8 +131,10 @@ async function runTests() {
   console.log('\n--- 5. 右侧栏 PR 标题不再直接跳转 ---');
   // ============================================================
   const clientSrc = fs.readFileSync(path.join(__dirname, '../src/client.ts'), 'utf8');
-  // 定位右侧栏 PR 渲染块
-  const prBlockStart = clientSrc.indexOf('prs.map((pr: any) =>');
+  // 定位右侧栏 PR 渲染块。
+  // 锚点从 'prs.map(' 改为 'filteredPrs.map(' —— phase32 加了状态筛选，
+  // 渲染对象换成了过滤后的数组。断言内容不变，仅跟随实现演进。
+  const prBlockStart = clientSrc.indexOf('filteredPrs.map((pr: any) =>');
   const prBlock = prBlockStart >= 0 ? clientSrc.slice(prBlockStart, prBlockStart + 2600) : '';
   ok(prBlock.length > 0, '成功定位右侧栏 PR 渲染块');
   ok(prBlock.includes('dsh-github-pr-title-row'), '右侧栏：标题与跳转按钮包进同行容器');
