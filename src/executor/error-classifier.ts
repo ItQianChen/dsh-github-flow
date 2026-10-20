@@ -47,6 +47,12 @@ const DETERMINISTIC_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   { re: /Not Found \(HTTP 404\)/i, reason: '仓库或资源不存在' },
   // 分支 / PR / Issue 单体不存在
   { re: /Branch not found/i, reason: '分支不存在' },
+  // GraphQL 通道的权限不足（实测形态）：
+  //   GraphQL: ItQianChen does not have the correct permissions to execute `AddLabelsToLabelable` (addLabelsToLabelable)
+  //   GraphQL: ItQianChen does not have the correct permissions to execute `DeleteIssue` (deleteIssue)
+  // 这类文本里没有 "HTTP 403"，若不单列会被归为 unknown，进而被当成可重试抖动——
+  // 而权限不足重试一万次也不会变。
+  { re: /does not have the correct permissions to execute/i, reason: '当前账号对该仓库的权限不足' },
 ];
 
 /** 把「仓库未开启某项功能」翻译成点名说明（比笼统的“未开启协作功能”有用） */
@@ -134,3 +140,74 @@ export function describeDeterministicError(errorText: string | undefined | null)
 export function isRetryableError(errorText: string | undefined | null): boolean {
   return classifyGhError(errorText) !== 'deterministic';
 }
+
+/**
+ * 判断一段错误是否属于「权限不足」（而非仓库配置、不存在等确定性错误）。
+ *
+ * 为什么单独判定：确定性错误里只有权限这一类有「解法路径」（提权 / 换 fork 工作流），
+ * 其余（仓库关了 Issues、分支不存在）说再多也没用。
+ */
+const PERMISSION_RE =
+  /does not have the correct permissions to execute|HTTP 403|Resource not accessible|Forbidden|must have (?:admin|push|write|triage|maintain) (?:access|permissions?)/i;
+
+export function isPermissionError(errorText: string | undefined | null): boolean {
+  const text = String(errorText || '');
+  if (!text) return false;
+  // 限流也常以 403 出现，但它不是权限问题——放行会让用户去改权限，做无用功
+  if (RATE_LIMIT_RE.test(text)) return false;
+  return PERMISSION_RE.test(text);
+}
+
+/**
+ * 已知操作 → 所需权限档位 的映射。
+ *
+ * 键取自 GitHub 的 GraphQL mutation 名与 gh 子命令动词（实测捕获）。
+ * 为什么不用完整枚举：GitHub 有上百个 mutation，穷举既不可能也没必要——
+ * 未命中的一律走默认指引，仍然是对的。
+ */
+const ACTION_PERMISSION_MAP: Array<{ re: RegExp; level: string; hint: string }> = [
+  {
+    // 同时覆盖 GraphQL mutation 名（AddLabelsToLabelable）与 CLI 参数形态
+    // （--add-label / --remove-label）——两者出现在不同层级的错误文本里。
+    re: /AddLabelsToLabelable|RemoveLabelsFromLabelable|UpdateIssue|CloseIssue|TransferIssue|add-?label|remove-?label|close-?issue|issue (?:edit|close|pin|lock|transfer)/i,
+    level: 'Triage',
+    hint: '管理他人 Issue/PR（加标签、关闭、指派）需要 Triage 及以上权限。可请仓库管理员授予，或改用评论表达意见。',
+  },
+  {
+    re: /mergePullRequest|MergePullRequest|\bmerge\b|CreateRef|createRef|\bpush\b|CreateCommitOnBranch/i,
+    level: 'Write',
+    hint: '合并 PR / 推送代码需要 Write 及以上权限。若是他人仓库，请先 fork 到自己的账号，在 fork 上提交后向上游发起 PR。',
+  },
+  {
+    re: /DeleteIssue|deleteIssue|DeleteRepository|deleteRepository|TransferRepository|\bdelete\b/i,
+    level: 'Admin',
+    hint: '物理删除与仓库级操作需要管理员权限。这类操作不可逆，请联系仓库管理员执行。',
+  },
+];
+
+/**
+ * 把「权限不足」翻译成可操作的处置指引。
+ *
+ * 为什么不能只回一句「无权限」：Agent 与用户都需要知道**下一步做什么**。
+ * GitHub 的权限错误有明确解法路径（提权到 Triage/Write、或改用 fork 工作流），
+ * 把这条路径说出来，比让用户自己搜错误文本有用得多。
+ *
+ * @param errorText gh 的 stderr
+ * @param action 可选：正在执行的动作标识（如 'merge' / 'close' / 'add_label'），
+ *               用于在错误文本特征不足时精准匹配
+ * @returns 指引文本；非权限错误返回 null（不产生噪音）
+ */
+export function permissionRemedy(errorText: string | undefined | null, action?: string): string | null {
+  if (!isPermissionError(errorText)) return null;
+
+  const haystack = `${String(errorText || '')} ${String(action || '')}`;
+  for (const { re, hint } of ACTION_PERMISSION_MAP) {
+    if (re.test(haystack)) return hint;
+  }
+
+  // 默认指引：不指定具体档位。
+  // 为什么：只知道「权限不足」时猜档位很容易猜错（我们实测就猜错过——
+  // READ 用户能建 Issue，而不是处处受限），说错比不说更糟。
+  return '当前账号对该仓库的权限不足。可运行 `gh auth status` 查看作用域，或请仓库管理员提升权限。';
+}
+

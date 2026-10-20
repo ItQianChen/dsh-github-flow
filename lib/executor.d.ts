@@ -5,8 +5,8 @@ import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './exe
 import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, parseRemoteHost, classifyRepoLayout, pickGithubRemote } from './executor/git-parser.js';
 import type { ParsedGitConfig, ParsedRemote } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
-import { classifyGhError, describeDeterministicError, isRetryableError, type GhErrorKind } from './executor/error-classifier.js';
-export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, parseRemoteHost, classifyRepoLayout, pickGithubRemote, getPlatformInstallGuide, getGhUpgradeHint, classifyGhError, describeDeterministicError, isRetryableError, };
+import { classifyGhError, describeDeterministicError, isRetryableError, permissionRemedy, isPermissionError, type GhErrorKind } from './executor/error-classifier.js';
+export { parseGhVersion, compareGhVersions, spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput, parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, parseRemoteHost, classifyRepoLayout, pickGithubRemote, getPlatformInstallGuide, getGhUpgradeHint, classifyGhError, describeDeterministicError, isRetryableError, permissionRemedy, isPermissionError, };
 export type { GhErrorKind, ParsedGitConfig, ParsedRemote };
 export declare class GhExecutor {
     ghPath: string;

@@ -90,6 +90,14 @@ export interface GhResult<T = unknown> {
    * （src/executor/error-classifier.ts）。上层据此决定「重试 / 回退快照 / 直接降级」。
    */
   errorKind?: 'transient' | 'deterministic' | 'unknown';
+  /**
+   * 权限不足时的可操作处置指引（仅 errorKind=deterministic 且命中权限特征时存在）。
+   *
+   * 为什么单独成字段而不直接拼进 error：error 是「发生了什么」，
+   * 这是「接下来怎么做」。工具层可以选择只抛 error（静默场景）
+   * 或把两者一起抛给模型（需要模型自愈的场景）。
+   */
+  permissionRemedy?: string;
 }
 
 export interface AuthInstallGuide {

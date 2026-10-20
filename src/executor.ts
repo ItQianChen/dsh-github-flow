@@ -37,7 +37,7 @@ import {
 } from './executor/git-parser.js';
 import type { ParsedGitConfig, ParsedRemote } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
-import { classifyGhError, describeDeterministicError, isRetryableError, type GhErrorKind } from './executor/error-classifier.js';
+import { classifyGhError, describeDeterministicError, isRetryableError, permissionRemedy, isPermissionError, type GhErrorKind } from './executor/error-classifier.js';
 
 export {
   parseGhVersion,
@@ -63,6 +63,8 @@ export {
   classifyGhError,
   describeDeterministicError,
   isRetryableError,
+  permissionRemedy,
+  isPermissionError,
 };
 export type { GhErrorKind, ParsedGitConfig, ParsedRemote };
 
@@ -334,13 +336,25 @@ export class GhExecutor {
         }
       }
 
+      // 权限不足时的处置指引。
+      //
+      // 为什么在 executor 层拼进 error，而不是让 97 个工具调用点各自 `throw new Error(res.error + hint)`：
+      // 全仓有 97 处 `throw new Error(res.error)`，逐一改必然遗漏；而模型只能看到 error
+      // 字符串，不拼进去等于永远看不到指引。在唯一的事实源处拼一次，所有调用点自动获益。
+      //
+      // permissionRemedy 字段仍然独立保留：程序化消费方（未来的 UI、诊断面板）
+      // 可以只取指引而不用从 error 里再解析一遍。
+      const remedy = permissionRemedy(friendlyError, args.join(' '));
+      const finalError = remedy ? `${friendlyError}\n\n${remedy}` : friendlyError;
+
       return {
         ok: false,
-        error: friendlyError,
+        error: finalError,
         rawOutput,
         // 失败语义分类：上层（概览路由 / UI 重试器）据此决定是重试、回退快照
         // 还是直接把「仓库关了 Issues」降级成空列表。分类只有这一处事实源。
         errorKind: classifyGhError(friendlyError),
+        ...(remedy ? { permissionRemedy: remedy } : {}),
       };
     }
   }

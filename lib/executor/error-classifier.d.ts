@@ -39,3 +39,17 @@ export declare function classifyGhError(errorText: string | undefined | null): G
 export declare function describeDeterministicError(errorText: string | undefined | null): string | null;
 /** 该错误是否值得重试（供 UI 层决定是否走阶梯退避） */
 export declare function isRetryableError(errorText: string | undefined | null): boolean;
+export declare function isPermissionError(errorText: string | undefined | null): boolean;
+/**
+ * 把「权限不足」翻译成可操作的处置指引。
+ *
+ * 为什么不能只回一句「无权限」：Agent 与用户都需要知道**下一步做什么**。
+ * GitHub 的权限错误有明确解法路径（提权到 Triage/Write、或改用 fork 工作流），
+ * 把这条路径说出来，比让用户自己搜错误文本有用得多。
+ *
+ * @param errorText gh 的 stderr
+ * @param action 可选：正在执行的动作标识（如 'merge' / 'close' / 'add_label'），
+ *               用于在错误文本特征不足时精准匹配
+ * @returns 指引文本；非权限错误返回 null（不产生噪音）
+ */
+export declare function permissionRemedy(errorText: string | undefined | null, action?: string): string | null;
