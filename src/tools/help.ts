@@ -14,7 +14,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_api\` | 原生 GitHub REST/GraphQL 逃生门 | 调用任意端点、获取原始文件字节 (raw)、支持自动翻页 (paginate) |
 | \`github_release\` | 版本发布与构建资产交付 | 查看发版历史、自动生成 Release Notes、上传 .tgz 等构建产物 |
 | \`github_secret\` | CI/CD 密钥与变量管理 | 查看 NPM_TOKEN 等密钥清单、经 stdin 安全写入密文、删除密钥；kind:'variable' 管理明文变量（set/get/delete） |
-| \`github_skill\` | 跨 Agent 开源 Skills 生态发现 | 检索/预览/安装 GitHub 上的 Agent Skills (gh preview 特性) |
+| \`github_skill\` | 跨 Agent 开源 Skills 生态发现与维护 | 检索/预览/安装 GitHub 上的 Agent Skills（gh preview 特性）；\`publish\` 规范自检与发布、\`update\` 检查并同步更新已安装技能 |
 | \`github_label\` | 标签体系管理与跨仓库克隆 | 查看标签列表、创建/编辑标签、从源仓库一键 clone 标签体系、删除标签（需 confirm） |
 | \`github_ruleset\` | 分支保护规则与策略诊断 | 检查分支适用的合并策略规则 (check)、查看规则集列表与详情，权威回答“PR 为何无法合并” |
 | \`github_cache\` | Actions 构建缓存盘点与安全清理 | 查看缓存列表与体积占用、按 ID/Key 删除指定缓存、全量清空缓存（需 confirm） |
@@ -27,7 +27,9 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_help\` | 路由导航、官方语法速查与故障自愈 | 遇到不确定的操作、搜索语法或接口报错时查询用法与诊断配方 |
 
 💡 **使用准则**：优先调用高层语义工具（pr / issue / run / repo / release / secret）；当高层工具无法满足特殊接口需求时，再降级使用 \`github_api\`。
+📊 **规模口径**：18 个工具 / 103 个业务 action（不含 \`github_help\` 的 21 个查询主题与 \`github_api\` 的 4 个 HTTP method——它们不是业务动作）。
 💬 **人类指令**：聊天框支持 \`/gh status\`（大盘看板）、\`/gh upgrade\`（一键升级插件）、\`/gh help\`（快捷帮助）。
+🖥️ **可视化工作台**：最左侧 Octocat 图标打开全景驾驶舱（4 标签：本地工作区 / 我的仓库 / Pull Requests / 待办 Issues）；每个会话右侧栏有 5 个 Tab（Git / 未提交 / PR / Issues / Actions）。点击任一 PR 或 Issue 卡片可在线查看详情与评论，无需跳浏览器。
 🗺️ **命令对照**：不确定某 gh 命令对应哪个工具？\`github_help(topic: 'mapping')\` 查询完整映射表（含未覆盖域的 API 引导）。`,
 
   pr: `### 🔀 github_pr 详细操作指南
@@ -50,7 +52,9 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **分支落后自愈**: \`github_pr(action: 'update_branch', pr_number: 123)\`
   - 将基准分支最新提交同步进 PR 分支，解决「分支落后需更新」的 CI 门禁失败。
 - **上传本地附件/图片**: \`github_pr(action: 'create', title: 'UI 重构', body: '对比图如下', attach_images: ['./before.png', './after.png'])\`
-  - 需 gh ≥ 2.99；支持 create/edit/comment 动作，单批上限 50 个文件，禁止网络 URL，与 view_images 对称闭环。`,
+  - 需 gh ≥ 2.99；支持 create/edit/comment 动作，单批上限 50 个文件，禁止网络 URL，与 view_images 对称闭环。
+- **追加评论与编辑**: \`github_pr(action: 'comment', pr_number: 123, body: 'LGTM'); github_pr(action: 'edit', pr_number: 123, body: '更新后的描述')\`
+  - 两者同样支持 \`attach_images\` 附件通道。`,
 
   issue: `### 🎯 github_issue 详细操作指南
 
@@ -174,7 +178,13 @@ const KNOWLEDGE_BASE: Record<string, string> = {
   - \`github_skill(action: 'publish')\` —— 默认 \`--dry-run\` 模式，对本地技能目录进行 agentskills.io 合规性检查（命名规范、目录匹配、必需 frontmatter 字段等），零副作用安全自检。
   - \`github_skill(action: 'publish', fix: true)\` —— 自动清洗并剥离残留的安装元数据（\`metadata.github-*\`），修改本地文件但不发布。
   - \`github_skill(action: 'publish', tag: 'v1.0.0', dry_run: false, confirm: true)\` —— 正式发布，强制要求指定 \`tag\` 并附带 \`confirm: true\`（防无头挂起与误发布），自动创建 GitHub Release。
-- ⚠️ 若报「unknown command」，说明宿主机 gh 版本过低，需升级到 2.9x 以上。`,
+- ⚠️ 若报「unknown command」，说明宿主机 gh 版本过低，需升级到 2.9x 以上。
+
+- **检查并同步更新已安装技能**:
+  - \`github_skill(action: 'update')\` —— **默认 dry-run**，只检查哪些技能有新版本，零副作用。
+  - \`github_skill(action: 'update', dry_run: false)\` —— 真正执行同步更新。
+  - \`github_skill(action: 'update', all: true)\` —— 更新全部已安装技能（否则只处理 \`skill_names\` 指定项）。
+  - \`github_skill(action: 'update', skill_names: ['code-review', 'devops'])\` —— 定向更新指定技能。`,
 
   label: `### 🏷️ github_label 详细操作指南
 
@@ -289,10 +299,11 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 
 #### 一、已覆盖域映射（语义化 action 精确对照）
 
-**PR（github_pr，13 action）**
+**PR（github_pr，15 action）**
 | gh 命令 | 插件调用 | 备注 |
 | :--- | :--- | :--- |
-| \`gh pr list/view/create/diff/edit/comment\` | \`github_pr(action:'list'/'view'/'create'/'diff'/'edit'/'comment')\` | 高频基础操作 |
+| \`gh pr list/view/create/diff/edit/comment\` | \`github_pr(action:'list'/'view'/'create'/'diff'/'edit'/'comment')\` | 高频基础操作；edit/comment 支持 attach_images |
+| （PR 图片查看，gh 无对应命令） | \`github_pr(action:'view_images', pr_number:n)\` | 插件独有：正文+评论图片下载并转为可读图像块 |
 | \`gh pr close\` | 暂无专用 action——用 \`github_pr(action:'edit')\` 或 \`github_api(endpoint:'repos/{o}/{r}/pulls/{n}', method:'PATCH', fields:{state:'closed'})\` | 插件侧未覆盖 |
 | \`gh pr checks\` | \`github_pr(action:'checks', pr_number:n)\` | CI 状态药丸 |
 | \`gh pr review\` | \`github_pr(action:'review', review_decision:'APPROVE'…)\` | |
@@ -307,6 +318,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | gh 命令 | 插件调用 | 备注 |
 | :--- | :--- | :--- |
 | \`gh issue list/view/create/comment/close/reopen/edit\` | \`github_issue(action:…)\` | 基础操作 |
+| （Issue 图片查看，gh 无对应命令） | \`github_issue(action:'view_images', issue_number:n)\` | 插件独有：报障截图转图像块 |
 | \`gh issue develop\` | \`github_issue(action:'develop', branch_name:…)\` | 关联开发分支 |
 | \`gh issue delete\` | \`github_issue(action:'delete', confirm:true)\` | 物理删除（非 close） |
 | \`gh issue transfer\` | \`github_issue(action:'transfer', target_repo:…, confirm:true)\` | 跨仓库迁移 |
@@ -345,8 +357,11 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`gh variable list/set/get/delete\` | \`github_secret(action:…, kind:'variable')\` | CI 明文：-b 直传、get 可回显 |
 | （gh secret get 不存在） | — | GitHub 侧加密存储，物理不可读取 |
 
-**Skill（github_skill，5 action）**
-\`gh skill search/preview/install/list/publish\` → \`github_skill(action:…)\`；install 需 confirm（写磁盘）；publish 默认 dry-run 安全自检，正式发布需 tag 与 confirm。
+**Skill（github_skill，6 action）**
+| gh 命令 | 插件调用 | 备注 |
+| :--- | :--- | :--- |
+| \`gh skill search/preview/install/list/publish\` | \`github_skill(action:…)\` | install 需 confirm（写磁盘）；publish 默认 dry-run 安全自检，正式发布需 tag 与 confirm |
+| \`gh skill update\` | \`github_skill(action:'update')\` | 默认 dry-run 检查；\`all:true\` 或 \`skill_names\` 定向；\`dry_run:false\` 才真正更新 |
 
 **Label（github_label，5 action）**
 | gh 命令 | 插件调用 | 备注 |

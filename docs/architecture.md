@@ -170,7 +170,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **32 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1664 项全量自动化测试断言**：
+项目配备了 **33 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1784 项全量自动化测试断言**：
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
 - `phase3`：Release 资产交付、Secret 密文管道与 Skills 检索；
@@ -203,3 +203,4 @@
 - `phase30`：PR 弹窗 Markdown 渲染与滚动适配（markdown-lite 零依赖解析器：标题/粗斜体/行内码/围栏代码块/列表/引用/分隔线/任务列表；链接协议白名单拒绝 javascript:/data:/vbscript:/协议相对；HTML 标签降级为纯文本；estimateContentLines 折叠阈值估算；卡片 flex:0 0 auto 修复「长内容无法滚动」；CollapsibleBody 提升到模块顶层避免内联组件导致展开状态被重置）。
 - `phase31`：Issue 在线查看工作台（getIssueDetail 参数白名单含小数/负数拒绝、**2MB 字符阈值防长讨论被截断成假空详情**、老版本 gh `Unknown JSON field` 的 BASE 字段降级链与 fieldsDegraded 标记、非字段类失败不重试、截断与解析缺失显式失败并给出浏览器直达链接、state/author/labels/milestone/subIssuesSummary/closedByPullRequestsReferences 归一化、SPAM 隐藏评论标记保留、图片清单正文+评论合并去重、/api/github/issue-detail 路由 200/400/405/500 全路径、action 通道 issue_detail 对称可用、主面板与右侧栏 Issue 卡片改点击进弹窗 + 同行 GitHub ↗ 外跳 stopPropagation + 卡片禁内联 flex 布局、onSelectIssue 追加在形参末尾、React Hooks 顺序与 bundle 三模块拓扑顺序防回退）。
 - `phase32`：右侧栏 PR/Issue 状态筛选（**单仓库查询显式 `--state all`**，修复「只显示已打开」根因——gh 默认 state 就是 open，数据在到达浏览器前已被过滤；条数上限 10→20 并抽成 RIGHTBAR_LIST_LIMIT 常量，依据 `gh pr list` 按 number 降序而非 updatedAt，取 10 条时非 OPEN 仅剩 5 条；触顶下发 prsTruncated/issuesTruncated 并渲染提示；PR 四档 all/open/merged/closed 与 Issue 三档 all/open/closed 胶囊复用既有样式类、计数先于过滤保证数字反映全量；偏好按 cwd 隔离存储、非法值与脏 JSON 归一回退、大写输入归一；空态区分「仓库无记录」与「筛选无结果」并给切换引导；Hook 位置（不可落在 renderGithubRepoView 内）、切仓库对齐只依赖 cwd、**作用域键无碰撞（/a/b 与 /a_b 不得压成同一个键）**、卡片布局纪律防回退）。
+- `phase33`：使用指南内容与代码事实对账（help-modal 从 4 Tab 扩到 5 Tab，新增「18 大工具速查」；**工具数量对 src/main.ts 的 ctx.tools.register 数量、action 总数对 src/tools 的 enum 累计、Tab 名称对 TAB_DEFS 与 workspace-panel 逐个核对**，代码演进而指南没跟上即失败；覆盖 PR/Issue 在线弹窗、状态筛选三档、Markdown 渲染、仓库切换器、提交详情、Diff 下钻、view_images 等近期能力；FAQ 扩至 6 条含「列表为空但网页有记录」与「为何需重启 DSH」；**防编造断言：指南中每条 `gh auth refresh -s <scope>` 必须能在源码找到出处**；**github_help 知识库同步对账：mapping 表声明的每组 action 数逐个对 src/tools 的 enum 长度、每个业务 action 必须在知识库有落点、规模口径统一为「18 工具 / 103 业务 action」（排除 help 的 21 查询主题与 api 的 4 HTTP method），Agent 侧知识库与 UI 侧使用指南必须同口径**）。
