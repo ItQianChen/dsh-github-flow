@@ -1793,6 +1793,8 @@ body[data-ds-dark-theme] .dsh-github-pr-tab-btn.active {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 滚到边界时不把滚动传给弹窗外层，避免整页跟着滚 */
+  overscroll-behavior: contain;
 }
 
 .dsh-github-pr-checks-bar {
@@ -1815,6 +1817,14 @@ body[data-ds-dark-theme] .dsh-github-pr-checks-bar {
   border-radius: 6px;
   background: var(--dsw-alias-bg-base, #ffffff);
   overflow: hidden;
+  /*
+   * flex: 0 0 auto 是滚动能否工作的关键。
+   * 父容器 .dsh-github-pr-conversation-pane 是 flex-direction: column，
+   * flex 子项默认 flex-shrink: 1 —— 内容变长时会被「压缩」而不是撑开父容器，
+   * 父容器的 overflow-y: auto 于是永远不触发，长内容被直接裁掉。
+   * 禁止收缩后卡片高度由内容决定，父容器才能真正滚动。
+   */
+  flex: 0 0 auto;
 }
 body[data-ds-dark-theme] .dsh-github-pr-body-card {
   border-color: var(--dsw-alias-border-l1, #30363d);
@@ -1827,6 +1837,8 @@ body[data-ds-dark-theme] .dsh-github-pr-body-card {
   background: var(--dsw-alias-bg-base, #ffffff);
   overflow: hidden;
   margin-bottom: 10px;
+  /* 同 body-card：禁止收缩，否则父容器滚不动（见上方注释） */
+  flex: 0 0 auto;
 }
 body[data-ds-dark-theme] .dsh-github-pr-comment-card {
   border-color: var(--dsw-alias-border-l1, #30363d);
@@ -2122,6 +2134,156 @@ body[data-ds-dark-theme] .dsh-github-pr-line-comment-item {
 }
 body[data-ds-dark-theme] .dsh-github-pr-line-comment-body {
   color: var(--dsw-alias-label-primary, #f0f6fc);
+}
+
+/* 21. PR 弹窗内的 Markdown 排版 (markdown-lite) */
+.dsh-github-md-body {
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  word-break: break-word;
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+body[data-ds-dark-theme] .dsh-github-md-body {
+  color: var(--dsw-alias-label-primary, #f0f6fc);
+}
+
+/* 标题：GitHub 的层级差距比浏览器默认小，避免 h3 过大撑破卡片 */
+.dsh-github-md-body .dsh-github-md-heading {
+  margin: 14px 0 8px 0;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.dsh-github-md-body h1.dsh-github-md-heading { font-size: 17px; }
+.dsh-github-md-body h2.dsh-github-md-heading { font-size: 15px; }
+.dsh-github-md-body h3.dsh-github-md-heading { font-size: 14px; }
+.dsh-github-md-body h4.dsh-github-md-heading { font-size: 13px; }
+.dsh-github-md-body h5.dsh-github-md-heading,
+.dsh-github-md-body h6.dsh-github-md-heading { font-size: 12px; opacity: 0.9; }
+.dsh-github-md-body > .dsh-github-md-heading:first-child {
+  margin-top: 0;
+}
+
+.dsh-github-md-body .dsh-github-md-p {
+  margin: 0 0 10px 0;
+}
+.dsh-github-md-body .dsh-github-md-p:last-child {
+  margin-bottom: 0;
+}
+
+/* 行内代码：用边框 + 底色与正文区分，比单纯改字体更易辨识 */
+.dsh-github-md-body .dsh-github-md-inline-code {
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-subtle, rgba(0, 0, 0, 0.06));
+  border: 1px solid var(--dsw-alias-border-subtle, rgba(0, 0, 0, 0.08));
+  word-break: break-all;
+}
+body[data-ds-dark-theme] .dsh-github-md-body .dsh-github-md-inline-code {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* 围栏代码块：横向可滚，绝不换行——换行会毁掉缩进语义 */
+.dsh-github-md-body .dsh-github-md-pre {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  max-height: 420px;
+  background: var(--dsw-alias-bg-subtle, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+}
+body[data-ds-dark-theme] .dsh-github-md-body .dsh-github-md-pre {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: var(--dsw-alias-border-l1, #30363d);
+}
+.dsh-github-md-body .dsh-github-md-pre code {
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre;
+  display: block;
+}
+
+.dsh-github-md-body .dsh-github-md-list {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+.dsh-github-md-body .dsh-github-md-list li {
+  margin: 4px 0;
+}
+.dsh-github-md-body .dsh-github-md-task {
+  list-style: none;
+  margin-left: -18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.dsh-github-md-body .dsh-github-md-checkbox {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.dsh-github-md-body .dsh-github-md-quote {
+  margin: 10px 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--dsw-alias-border-l3, #d0d7de);
+  color: var(--dsw-alias-label-secondary, #656d76);
+  background: var(--dsw-alias-bg-subtle, rgba(0, 0, 0, 0.02));
+  border-radius: 0 4px 4px 0;
+}
+
+.dsh-github-md-body .dsh-github-md-hr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+}
+body[data-ds-dark-theme] .dsh-github-md-body .dsh-github-md-hr {
+  border-top-color: var(--dsw-alias-border-l1, #30363d);
+}
+
+.dsh-github-md-body .dsh-github-md-link {
+  color: var(--dsw-alias-link, #0969da);
+  text-decoration: none;
+}
+.dsh-github-md-body .dsh-github-md-link:hover {
+  text-decoration: underline;
+}
+body[data-ds-dark-theme] .dsh-github-md-body .dsh-github-md-link {
+  color: #58a6ff;
+}
+
+/* 折叠/展开按钮：低调的文本按钮，不抢正文视觉 */
+.dsh-github-md-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 4px 12px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 5px;
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  background: var(--dsw-alias-bg-module-platform, #f6f8fa);
+  color: var(--dsw-alias-label-secondary, #57606a);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.dsh-github-md-expand-btn:hover {
+  color: var(--dsw-alias-link, #0969da);
+  border-color: var(--dsw-alias-link, #0969da);
+}
+body[data-ds-dark-theme] .dsh-github-md-expand-btn {
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  background: var(--dsw-alias-bg-layer-2, #1e1e22);
+  color: var(--dsw-alias-label-secondary, #8b949e);
+}
+body[data-ds-dark-theme] .dsh-github-md-expand-btn:hover {
+  color: #58a6ff;
+  border-color: #58a6ff;
 }
 `;
 

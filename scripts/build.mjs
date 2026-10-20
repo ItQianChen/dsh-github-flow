@@ -125,6 +125,8 @@ function bundleClient() {
     'network-banner.js',
     'repo-badges.js',
     'sync-status-badge.js',
+    // markdown-lite 必须早于 pr-modal：后者要用 renderMarkdownBlocks 渲染描述与评论
+    'markdown-lite.js',
     'commit-modal.js',
     'pr-modal.js',
     'sync-settings-modal.js',

@@ -169,7 +169,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **29 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1461 项全量自动化测试断言**：
+项目配备了 **30 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1549 项全量自动化测试断言**：
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
 - `phase3`：Release 资产交付、Secret 密文管道与 Skills 检索；
@@ -198,4 +198,5 @@
 - `phase26`：写操作权限自愈（GraphQL 权限错误补入确定性分类、permissionRemedy 按 Triage/Write/Admin 三档给出可操作指引并拼入 error 供模型自愈、限流 403 不误判、非权限错误零噪音、前端快捷按钮保持可用的防回退断言）；
 - `phase27`：关联仓库自由切换（getAssociatedRepos 双 remote / Fork+Parent 纯本地多仓推导、RepoSelectorDropdown 下拉组件、setDefaultRepo 官方 set-default 对齐与防注入白名单、Fork 血缘行一键双向快捷切换）；
 - `phase28`：PR 在线审阅工作台与主面板标签页解耦（splitUnifiedDiff 按文件切片索引、core.quotePath 八进制转义还原、含 ` b/` 路径的等值分割判定、删除文件路径回退、getPrDetail 参数白名单与 diff 阈值放宽不被截断、响应体不回传 fullDiff 防膨胀、**行级审查评论独立 API 通道 + original_line 回退 + 失败降级**、/api/github/pr-detail 路由真实调用与 405/400/500 错误路径、**action/branch-switch 请求体 256KB 上限与 413 行为验证**、主面板 mywork 拆为 prs/issues 四标签页、React Hooks 顺序静态防回退）；
-- `phase29`：数据可见性与 PR 弹窗交互（PR/Issue 查询移除 `--state=open` 硬过滤并补齐 state 字段、clampFilePaneWidth 纯函数边界与容器极窄保下限、文件区布局偏好 localStorage 往返与脏数据回退、分隔条拖拽 document 级监听与卸载兜底清理、折叠双恢复入口、**PR 标题行与 GitHub 跳转按钮同行（min-width:0 + flex-shrink:0 防长标题挤出）**、空态区分「筛选为空」与「账号无记录」）。
+- `phase29`：数据可见性与 PR 弹窗交互（PR/Issue 查询移除 `--state=open` 硬过滤并补齐 state 字段、clampFilePaneWidth 纯函数边界与容器极窄保下限、文件区布局偏好 localStorage 往返与脏数据回退、分隔条拖拽 document 级监听与卸载兜底清理、折叠双恢复入口、**PR 标题行与 GitHub 跳转按钮同行（min-width:0 + flex-shrink:0 防长标题挤出）**、空态区分「筛选为空」与「账号无记录」）；
+- `phase30`：PR 弹窗 Markdown 渲染与滚动适配（markdown-lite 零依赖解析器：标题/粗斜体/行内码/围栏代码块/列表/引用/分隔线/任务列表；链接协议白名单拒绝 javascript:/data:/vbscript:/协议相对；HTML 标签降级为纯文本；estimateContentLines 折叠阈值估算；卡片 flex:0 0 auto 修复「长内容无法滚动」；CollapsibleBody 提升到模块顶层避免内联组件导致展开状态被重置）。

@@ -5,6 +5,88 @@ declare function formatRelativeTime(iso: any): string;
 declare function getPrFilePanePrefs(): { width: number; hidden: boolean };
 declare function savePrFilePanePrefs(prefs: { width: number; hidden: boolean }): void;
 declare function clampFilePaneWidth(next: number, containerWidth: number): number;
+// markdown-lite.js 同样在 leadingModules 中先于本模块内联
+declare function parseMarkdownBlocks(src: string): any[];
+declare function renderMarkdownBlocks(h: any, blocks: any[]): any[];
+declare function estimateContentLines(src: string, charsPerLine?: number): number;
+
+/**
+ * 可折叠的 Markdown 内容块。
+ *
+ * 【为什么必须定义在模块顶层，不能写在 PrDetailModal 函数体内】
+ * 函数体内定义的组件每次父级渲染都会产生**新的函数引用**，
+ * React 按引用比较类型，会把 h(CollapsibleBody, ...) 当成**另一个组件**，
+ * 于是卸载重建、useState 的展开状态被重置。
+ * 表现就是：用户刚点开一条长评论，一拖分隔条（触发父级重渲染）评论又缩回去了。
+ * 提到模块级后引用恒定，状态才能跨父级渲染存活。
+ */
+function CollapsibleBody(props: { text: string; defaultExpanded: boolean; idPrefix: string }) {
+  var h = React.createElement;
+  var raw = typeof props.text === "string" ? props.text : "";
+  var totalLines = estimateContentLines(raw);
+  // 阈值取保守值（8 行 / 400 字符）：宁可多给一个展开按钮，
+  // 也不要让长评论把后续内容淹掉。
+  var collapsible = totalLines > 8 || raw.length > 400;
+  var st = React.useState(props.defaultExpanded);
+  var expanded = st[0];
+  var setExpanded = st[1];
+
+  var inner = null;
+  if (raw.trim()) {
+    inner = renderMarkdownBlocks(h, parseMarkdownBlocks(raw));
+  }
+  if (!inner || inner.length === 0) {
+    return h("div", { style: { padding: "10px 12px", fontSize: "12px", opacity: 0.5, fontStyle: "italic" } }, "（无正文）");
+  }
+
+  if (!collapsible) {
+    return h("div", { className: "dsh-github-md-body" }, inner);
+  }
+
+  return h(
+    "div",
+    null,
+    h(
+      "div",
+      {
+        className: "dsh-github-md-body",
+        style: {
+          maxHeight: expanded ? "none" : "132px",
+          overflow: expanded ? "visible" : "hidden",
+          position: "relative",
+        },
+      },
+      inner,
+      // 折叠时底部渐隐，暗示内容被截断而不是到此为止
+      !expanded
+        ? h("div", {
+            style: {
+              position: "absolute",
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: "24px",
+              pointerEvents: "none",
+              background: "linear-gradient(to bottom, transparent, var(--dsw-alias-bg-base, #ffffff))",
+            },
+          })
+        : null
+    ),
+    h(
+      "button",
+      {
+        type: "button",
+        className: "dsh-github-md-expand-btn",
+        onClick: function (e: any) {
+          e.stopPropagation();
+          setExpanded(!expanded);
+        },
+        title: expanded ? "收起内容" : "展开全部内容",
+      },
+      expanded ? "⌃ 收起" : "⌄ 展开全部（约 " + totalLines + " 行）"
+    )
+  );
+}
 
 export interface PrDetailModalProps {
   prNumber: number;
@@ -195,6 +277,19 @@ export function PrDetailModal(props: PrDetailModalProps) {
       savePrFilePanePrefs({ width: widthRef.current, hidden: next });
       return next;
     });
+  };
+
+  /**
+   * 渲染一段 Markdown 为 React 元素。
+   *
+   * 用 useMemo 按原文缓存：解析结果只依赖输入文本，
+   * 而弹窗内的拖拽/折叠会触发大量重渲染，不缓存等于每次都重新解析整个 PR 描述。
+   */
+  var renderMd = function (src: any) {
+    var text = typeof src === "string" ? src : "";
+    if (!text.trim()) return null;
+    var blocks = parseMarkdownBlocks(text);
+    return renderMarkdownBlocks(h, blocks);
   };
 
   var copyText = (text: string, label: string) => {
@@ -487,16 +582,10 @@ export function PrDetailModal(props: PrDetailModalProps) {
                     ),
                     h(
                       "div",
-                      {
-                        style: {
-                          padding: "12px",
-                          fontSize: "12px",
-                          lineHeight: "1.65",
-                          whiteSpace: "pre-wrap",
-                          wordBreak: "break-word",
-                        },
-                      },
-                      data.body ? data.body : h("span", { style: { opacity: 0.5, fontStyle: "italic" } }, "（该 PR 未填写描述正文）")
+                      { style: { padding: "12px" } },
+                      data.body
+                        ? h(CollapsibleBody, { text: data.body, defaultExpanded: true, idPrefix: "pr-body" })
+                        : h("span", { style: { opacity: 0.5, fontStyle: "italic" } }, "（该 PR 未填写描述正文）")
                     )
                   ),
 
@@ -522,8 +611,8 @@ export function PrDetailModal(props: PrDetailModalProps) {
                           ),
                           h(
                             "div",
-                            { style: { padding: "10px 12px", fontSize: "12px", lineHeight: "1.6", whiteSpace: "pre-wrap", wordBreak: "break-word" } },
-                            c.body
+                            { style: { padding: "10px 12px" } },
+                            h(CollapsibleBody, { text: c.body, defaultExpanded: false, idPrefix: "cmt-" + c.id })
                           )
                         );
                       })
@@ -705,7 +794,7 @@ export function PrDetailModal(props: PrDetailModalProps) {
                                     h(
                                       "div",
                                       { className: "dsh-github-pr-line-comment-body" },
-                                      c.body
+                                      h(CollapsibleBody, { text: c.body, defaultExpanded: false, idPrefix: "lc-" + c.id })
                                     )
                                   );
                                 })
