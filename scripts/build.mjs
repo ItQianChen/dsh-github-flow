@@ -55,6 +55,8 @@ function bundleClient() {
   }
 
   // 1. 前置子模块
+  // 顺序即依赖顺序：被依赖者必须排在使用者之前（client.js 的 repoCardEl 调
+  // resolveRepoBadges，故 repo-badges.js 要在其之前内联）。
   const leadingModules = [
     'styles.js',
     'utils.js',
@@ -64,6 +66,7 @@ function bundleClient() {
     'auth-guide-card.js',
     'upgrade-card.js',
     'network-banner.js',
+    'repo-badges.js',
     'sync-status-badge.js',
     'commit-modal.js',
     'sync-settings-modal.js',

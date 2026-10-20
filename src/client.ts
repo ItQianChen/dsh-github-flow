@@ -30,6 +30,7 @@ import { BranchSelectorDropdown } from './ui/branch-selector.js';
 import { AuthGuideCard } from './ui/auth-guide-card.js';
 import { UpgradeNotificationCard } from './ui/upgrade-card.js';
 import { NetworkAlertBanner, RepoNoticeBar } from './ui/network-banner.js';
+import { resolveRepoBadges } from './ui/repo-badges.js';
 import { SyncStatusBadge } from './ui/sync-status-badge.js';
 import { CommitDetailModal } from './ui/commit-modal.js';
 import { GlobalSyncSettingsModal } from './ui/sync-settings-modal.js';
@@ -65,6 +66,7 @@ export {
   UpgradeNotificationCard,
   NetworkAlertBanner,
   RepoNoticeBar,
+  resolveRepoBadges,
   SyncStatusBadge,
   CommitDetailModal,
   GlobalSyncSettingsModal,
@@ -530,6 +532,28 @@ window.__ModuleLoader__.load({
       var gitSt = data && data.gitStatus;
       var relInfo = data && data.releaseInfo;
       var branchPr = data && data.branchPr;
+
+      // 徽章推导交给纯函数（src/ui/repo-badges.ts）：
+      // 判定规则需要可断言，而写在 JSX 里只能靠「bundle 里有没有这个词」检查。
+      var repoPresentation = resolveRepoBadges(repo);
+      var toneClass = function (tone: string) {
+        return tone === "yellow" ? "dsh-badge-readonly" : "dsh-badge-" + tone;
+      };
+      var repoBadgesEl = repoPresentation.badges.length > 0
+        ? repoPresentation.badges.map(function (b: any, i: number) {
+            return h(
+              "span",
+              {
+                key: "repo-badge-" + i,
+                className: "dsh-github-badge " + toneClass(b.tone),
+                style: { fontSize: "10px", padding: "0 6px", lineHeight: "16px", flexShrink: 0 },
+                title: b.title,
+              },
+              b.text
+            );
+          })
+        : null;
+
       var repoCardEl = h(
         "div",
         { className: "dsh-github-card" },
@@ -567,6 +591,7 @@ window.__ModuleLoader__.load({
           repo
             ? h("a", { href: repo.url, target: "_blank", className: "dsh-github-repo-link" }, repo.nameWithOwner)
             : h("span", { style: { color: "var(--dsw-alias-state-error-primary, #cf222e)" } }, "未检测到关联的 GitHub 仓库"),
+          repoBadgesEl,
           repo
             ? h(BranchSelectorDropdown, {
                 currentBranch: gitSt?.branch || repo.defaultBranch || "main",
@@ -577,6 +602,24 @@ window.__ModuleLoader__.load({
               })
             : null
         ),
+        // fork 血缘行：告诉用户「这个 fork 的上游是谁」，上游名可点击
+        repoPresentation.forkLine
+          ? h(
+              "div",
+              { className: "dsh-github-fork-line" },
+              "⑂ fork 自 ",
+              h(
+                "a",
+                {
+                  href: repoPresentation.forkLine.parentUrl,
+                  target: "_blank",
+                  rel: "noopener noreferrer",
+                  title: `打开上游仓库 ${repoPresentation.forkLine.parentNameWithOwner}`,
+                },
+                repoPresentation.forkLine.parentNameWithOwner
+              )
+            )
+          : null,
         repo && repo.description
           ? h("div", { className: "dsh-github-card-desc" }, repo.description)
           : null,

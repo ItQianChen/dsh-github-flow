@@ -218,6 +218,31 @@ body[data-ds-dark-theme] .dsh-github-card-subtext {
   color: var(--dsw-alias-label-tertiary, #888);
 }
 
+/* fork 血缘行：说明「这是谁的上游」，上游名可点击 */
+.dsh-github-fork-line {
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--dsw-alias-label-secondary, #656d76);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+body[data-ds-dark-theme] .dsh-github-fork-line {
+  color: var(--dsw-alias-label-secondary, #bbb);
+}
+.dsh-github-fork-line a {
+  color: var(--dsw-alias-link, #0969da);
+  text-decoration: none;
+  font-weight: 600;
+}
+.dsh-github-fork-line a:hover {
+  text-decoration: underline;
+}
+body[data-ds-dark-theme] .dsh-github-fork-line a {
+  color: #58a6ff;
+}
+
 /* 7. 徽章（Badges） */
 .dsh-github-badge {
   display: inline-flex;
@@ -242,6 +267,22 @@ body[data-ds-dark-theme] .dsh-github-card-subtext {
   background: rgba(154, 103, 0, 0.12);
   color: #9a6700;
   border: 1px solid rgba(154, 103, 0, 0.2);
+}
+
+/*
+ * 只读徽章：与 yellow 同色系但描边更明显，因为「你改不了」是需要被看见的约束。
+ * 独立类而非复用 yellow，是为了将来调整只读语义的视觉强度时不牵动其他黄色徽章。
+ */
+.dsh-badge-readonly {
+  background: rgba(154, 103, 0, 0.12);
+  color: #9a6700;
+  border: 1px solid rgba(154, 103, 0, 0.35);
+  font-weight: 600;
+}
+body[data-ds-dark-theme] .dsh-badge-readonly {
+  background: rgba(210, 153, 34, 0.18);
+  color: #d29922;
+  border-color: rgba(210, 153, 34, 0.4);
 }
 .dsh-badge-blue {
   background: rgba(9, 105, 218, 0.12);
