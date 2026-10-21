@@ -6,6 +6,7 @@
 // 执行（与 lib 产物同源文本），组 3-5 走 lib/executor.js 正常导入。
 
 import { readFileSync } from 'node:fs';
+import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 async function runTests() {
@@ -135,13 +136,16 @@ async function runTests() {
 
     // fail-closed：读不到 git 状态 ≠ 干净。旧实现 `if (gitSt && dirtyCount>0)` 在 null 时
     // 直接放行，等于闸门失效；ensureCleanWorkspace 必须显式拒绝。
-    const guard = await exec.ensureCleanWorkspace('D:/definitely/not/a/repo');
-    // 注意：这里不能用"当前仓库是否脏"作为前提——`resolveWorkspaceCwd` 对不存在的路径
-    // 会回落到当前工作区，工作区脏时 reason 就是 'dirty' 而不是 'unknown'。
-    // 断言只锁"拒绝"这个不变量，两种 reason 都算正确拒绝。
+    //
+    // 必须用一个「存在但不是 Git 仓库」的目录来测：
+    //   - 用不存在的路径（如 D:/definitely/not/a/repo）会被 resolveWorkspaceCwd 回落成
+    //     当前工作区——工作区干净时闸门正确放行，断言就变成"看运气"；
+    //   - os.tmpdir() 一定存在、且一定不是 git 仓库 → 稳定命中 reason='unknown' 分支。
+    const notARepo = os.tmpdir();
+    const guard = await exec.ensureCleanWorkspace(notARepo);
     assert(
-      guard.ok === false && (guard.reason === 'unknown' || guard.reason === 'dirty'),
-      `ensureCleanWorkspace 对无法确认干净的工作区 fail-closed（实际 reason=${guard.reason}）`
+      guard.ok === false && guard.reason === 'unknown',
+      `ensureCleanWorkspace 对非 Git 目录 fail-closed（实际 reason=${guard.reason}）`
     );
 
     const execSrc = readFileSync(new URL('../src/executor.ts', import.meta.url), 'utf8');
