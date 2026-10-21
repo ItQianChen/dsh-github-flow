@@ -167,7 +167,12 @@ export function createSkillTool(executor: GhExecutor) {
             const resolvedPath = path.resolve(cwd, targetDir);
             // 只校验存在性是不够的：`directory: "../.."` 可以指向仓库外任意目录，
             // 配合 dry_run:false + confirm:true 就能把仓库外的内容发布成 Release。
-            if (resolvedPath !== workspaceRoot && !resolvedPath.startsWith(workspaceRoot + path.sep)) {
+            // Windows 文件系统大小写不敏感（D:/Proj/Repo 与 d:/proj/repo 是同一目录），
+            // 直接 startsWith 会把合法路径误判为越界，所以先归一再比。
+            const norm = (p: string) => (process.platform === 'win32' ? p.toLowerCase() : p);
+            const rootNorm = norm(workspaceRoot);
+            const pathNorm = norm(resolvedPath);
+            if (pathNorm !== rootNorm && !pathNorm.startsWith(rootNorm + path.sep)) {
               throw new Error(`技能目录必须位于当前工作区内（工作区: ${workspaceRoot}，解析结果: ${resolvedPath}）。`);
             }
             if (!fs.existsSync(resolvedPath)) {

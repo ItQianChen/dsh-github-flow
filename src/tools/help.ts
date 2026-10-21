@@ -17,7 +17,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_skill\` | 跨 Agent 开源 Skills 生态发现与维护 | 检索/预览/安装 GitHub 上的 Agent Skills（gh preview 特性）；\`publish\` 规范自检与发布、\`update\` 检查并同步更新已安装技能 |
 | \`github_label\` | 标签体系管理与跨仓库克隆 | 查看标签列表、创建/编辑标签、从源仓库一键 clone 标签体系、删除标签（需 confirm） |
 | \`github_ruleset\` | 分支保护规则与策略诊断 | 检查分支适用的合并策略规则 (check)、查看规则集列表与详情，权威回答“PR 为何无法合并” |
-| \`github_cache\` | Actions 构建缓存盘点与安全清理 | 查看缓存列表与体积占用、按 ID/Key 删除指定缓存、全量清空缓存（需 confirm） |
+| \`github_cache\` | Actions 构建缓存盘点与安全清理 | 查看缓存列表与体积占用、按 ID/Key 删除指定缓存、删除缓存（三态均需 confirm） |
 | \`github_gist\` | 代码片段与调试日志分享治理 | 查看 Gist 列表与代码正文、创建 Secret/Public 代码片段、编辑与物理删除（需 confirm） |
 | \`github_status\` | 跨仓库待办与动态聚合看板 | 账号维度汇总指派给我的 Issue/PR、等待评审、被 @提及 以及订阅仓库近期动态 |
 | \`github_agent_task\` | 云端智能体编码任务会话治理 | 查阅已分派任务列表、检视任务状态与会话日志、向云端 Agent 发起新编码重构任务 |
@@ -216,8 +216,8 @@ const KNOWLEDGE_BASE: Record<string, string> = {
   - 返回仓库 Actions 构建缓存清单、占用体积（自动换算为 KB/MB/GB）、关联 Git Ref 以及最后访问时间。
   - 可附加 \`key: 'npm-cache'\` 过滤特定前缀，或通过 \`ref: 'refs/heads/main'\` 限定分支。
 - **精准删除单条缓存**:
-  - 按数字 ID 删除: \`github_cache(action: 'delete', cache_id: '12345678')\`
-  - 按 Key 键名删除: \`github_cache(action: 'delete', key: 'Linux-npm-18-abcd1234')\`
+  - 按数字 ID 删除: \`github_cache(action: 'delete', cache_id: '12345678', confirm: true)\`
+  - 按 Key 键名删除: \`github_cache(action: 'delete', key: 'Linux-npm-18-abcd1234', confirm: true)\`
 - **全量清空仓库缓存**:
   \`github_cache(action: 'delete', all: true, confirm: true)\`
   - 批量破坏性操作：会导致后续流水线构建重新拉取依赖，必须显式附加 \`confirm: true\`；底层自动注入 \`--succeed-on-no-caches\` 保证幂等执行。`,
@@ -383,7 +383,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | gh 命令 | 插件调用 | 备注 |
 | :--- | :--- | :--- |
 | \`gh cache list\` | \`github_cache(action:'list')\` | 缓存盘点与过滤 |
-| \`gh cache delete\` | \`github_cache(action:'delete', cache_id:…)\` | all:true 需 confirm |
+| \`gh cache delete\` | \`github_cache(action:'delete', cache_id:…, confirm:true)\` | 三态均需 confirm |
 
 **Gist（github_gist，5 action）**
 | gh 命令 | 插件调用 | 备注 |

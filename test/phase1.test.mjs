@@ -216,13 +216,19 @@ async function runTests() {
   }
   assert(apiEmptyRejected, 'api 空 endpoint 被拒绝');
 
-  let apiShapeRejected = false;
+  // 单段端点（user / rate_limit / notifications）是合法的，不能按"必须含 /"误杀
+  // （实测 gh api user --jq .login 正常返回）。真正的注入面是以 - 开头。
+  let apiFlagLikeRejected = false;
   try {
-    await apiTool.execute({ endpoint: 'repos' });
+    await apiTool.execute({ endpoint: '-X' });
   } catch (err) {
-    apiShapeRejected = /形态不合法/.test(String(err?.message || ''));
+    apiFlagLikeRejected = /不能以 - 开头/.test(String(err?.message || ''));
   }
-  assert(apiShapeRejected, 'api endpoint 缺 / 且非 graphql 被拒绝');
+  assert(apiFlagLikeRejected, 'api endpoint 以 - 开头被拒绝（防被当作 flag）');
+
+  recorded.length = 0;
+  await apiTool.execute({ endpoint: 'user' });
+  assert(recorded[0].join(' ').includes('api user'), 'api 单段端点 user 正常透传（不误杀）');
 
   // --- 5. helpTool 测试 ---
   console.log('\n--- 5. Testing github_help ---');

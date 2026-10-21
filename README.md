@@ -276,7 +276,7 @@ dsh plugin --profile web add dsh-github-flow
 
 * **支持操作 (`action`)**：
   * `list`：盘点仓库 Actions 缓存占用，自动换算人性化体积（KB/MB/GB），支持 Key 前缀过滤、Git Ref 过滤与按大小/访问时间排序；
-  * `delete`：三态精准清理（按数字 `cache_id` 删除、按 `key` 删除、或通过 `all: true` 全量清空全部缓存；全量清空属批量破坏性操作，强制要求 `confirm: true`，底层注入 `--succeed-on-no-caches` 保证幂等执行）。
+  * `delete`：三态精准清理（按数字 `cache_id` 删除、按 `key` 删除、或通过 `all: true` 全量清空全部缓存；**三种方式均强制要求 `confirm: true`**，全量清空另注入 `--succeed-on-no-caches` 保证幂等执行）。
 
 ---
 

@@ -148,17 +148,32 @@ export function readJsonBody(req: any, maxBytes = 256 * 1024): Promise<any> {
 /**
  * 本地 HTTP 写端点的跨站门禁。
  *
- * 威胁模型：任意网页可以用 simple request（`Content-Type: text/plain`，不触发预检）
- * 向 `127.0.0.1:<port>` 发 POST，触发 `create_pr` / `switch_branch` / 一键升级这类写操作。
+ * 威胁模型（写准，别夸大）：防的是「任意网页用 simple request 打本地端口」这一类
+ * CSRF——`Content-Type: text/plain` 的跨站 POST 不触发预检，浏览器会照发。
+ * **不防 DNS rebinding**：攻击者页面若与目标同 host 名，`Origin === Host` 就成立。
+ * 真正挡住 rebinding 需要校验 Host 白名单或引入 token，属另一件事。
+ *
  * 两道门：
  *   1) `Origin` 必须为空（同源导航或非浏览器客户端）或与 `Host` 同源；
- *   2) 需要读 JSON body 的端点额外要求 `Content-Type: application/json`——它不在
- *      simple request 白名单里，浏览器会强制先发预检，跨站站点伪造不过去。
+ *   2) 需要读 JSON body 的端点额外要求 media type 恰为 `application/json`
+ *      ——它不在 simple request 白名单里，浏览器会强制先发预检。
  *
  * 为什么允许 Origin 为空：同源 fetch 在部分场景下不带 Origin，非浏览器客户端
  * （curl / 脚本）也不带。这两类不构成跨站威胁，拦掉只会误伤自家前端。
  */
 export function guardLocalWrite(req: any, res: any, opts: { requireJson?: boolean } = {}): boolean {
+  // 早退前必须把请求体排空：Node 对未被消费的请求体通常直接断连，
+  // 客户端 fetch 会拿到网络错误而不是我们刚写好的 403/415。
+  const reject = (status: number, error: string) => {
+    try {
+      req.resume?.();
+    } catch {
+      /* 排空失败不影响响应 */
+    }
+    sendJson(res, status, { ok: false, error });
+    return false;
+  };
+
   const origin = typeof req.headers?.origin === 'string' ? req.headers.origin : '';
   const host = String(req.headers?.host || '');
   if (origin) {
@@ -170,15 +185,15 @@ export function guardLocalWrite(req: any, res: any, opts: { requireJson?: boolea
       originHost = '';
     }
     if (!originHost || originHost !== host) {
-      sendJson(res, 403, { ok: false, error: '跨站请求已拒绝：Origin 与本地服务不同源' });
-      return false;
+      return reject(403, '跨站请求已拒绝：Origin 与本地服务不同源');
     }
   }
   if (opts.requireJson) {
-    const contentType = String(req.headers?.['content-type'] || '').toLowerCase();
-    if (!contentType.includes('application/json')) {
-      sendJson(res, 415, { ok: false, error: '请求必须使用 Content-Type: application/json' });
-      return false;
+    // 精确比对 media type：`text/plain; x=application/json` 这种"看起来带 json"的值
+    // 用 includes 会误判通过——那不是校验，是自我安慰。
+    const mediaType = String(req.headers?.['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (mediaType !== 'application/json') {
+      return reject(415, '请求必须使用 Content-Type: application/json');
     }
   }
   return true;

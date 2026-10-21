@@ -275,7 +275,7 @@ Consolidates scattered GitHub endpoints into **18 core domain tools (103 actions
 
 * **Supported Actions**:
   * `list`: Audit Actions caches with human-readable size formatting (KB/MB/GB), key prefix and ref filtering, and size/access sorting;
-  * `delete`: Precise 3-way cleanup (by `cache_id`, by `key`, or purge everything via `all: true`; purge is destructive and requires `confirm: true`, injects `--succeed-on-no-caches` for idempotency).
+  * `delete`: Precise 3-way cleanup (by `cache_id`, by `key`, or purge everything via `all: true`; **all three paths require `confirm: true`**; purge additionally injects `--succeed-on-no-caches` for idempotency).
 
 ---
 
