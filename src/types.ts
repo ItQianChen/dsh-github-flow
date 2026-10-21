@@ -254,6 +254,17 @@ export interface GitLocalStatus {
   dirtyFiles: Array<{ status: string; path: string }>;
 }
 
+/**
+ * 工作区干净度闸门结果（`executor.ensureCleanWorkspace`）。
+ *
+ * 为什么要有 `reason: 'unknown'`：`getLocalGitStatus()` 在 git 不可用或非仓库时返回 null。
+ * 旧实现用 `if (gitSt && gitSt.dirtyCount > 0)` 判断，null 时表达式为假 → 闸门静默放行。
+ * 安全闸门不能因为「读不到状态」而失效，所以这里把「读不到」与「干净」显式区分开。
+ */
+export type WorkspaceCleanResult =
+  | { ok: true; dirtyCount: 0; samples: string[] }
+  | { ok: false; reason: 'dirty' | 'unknown'; dirtyCount: number; samples: string[]; error: string };
+
 /** 单条提交记录（结构化解析） */
 export interface GitCommitEntry {
   sha: string;

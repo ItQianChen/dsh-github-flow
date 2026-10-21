@@ -133,6 +133,11 @@ async function runTests() {
     const r = await exec.getLocalGitStatus('D:/definitely/not/a/repo');
     assert(r === null, 'failed probe degrades to null, no throw (catch branch real-covered)');
 
+    // fail-closed：读不到 git 状态 ≠ 干净。旧实现 `if (gitSt && dirtyCount>0)` 在 null 时
+    // 直接放行，等于闸门失效；ensureCleanWorkspace 必须显式拒绝。
+    const guard = await exec.ensureCleanWorkspace('D:/definitely/not/a/repo');
+    assert(guard.ok === false && guard.reason === 'unknown', 'ensureCleanWorkspace 对读不到状态的工作区 fail-closed');
+
     const execSrc = readFileSync(new URL('../src/executor.ts', import.meta.url), 'utf8');
     const m = /execFileAsync\('git',\s*\[([^\]]+)\]/.exec(execSrc);
     assert(!!m, 'git channel uses execFileAsync with array literal');

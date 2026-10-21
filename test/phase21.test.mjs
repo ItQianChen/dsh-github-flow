@@ -100,6 +100,9 @@ index 1234567..89abcdef 100644
   // 当前仓库真实存在的文件 diff 探测
   const selfDiff = await executor.getFileDiff(process.cwd(), 'package.json');
   assert(selfDiff.ok && selfDiff.filePath === 'package.json', '探测已有文件返回结构化 diff 对象');
+  // 干净文件不得被伪造成 'M'：旧实现默认 fileStatus='M'，只在 porcelain 有输出时覆盖，
+  // 于是没改动的文件也显示"已修改但 diff 为空"。
+  assert(selfDiff.status !== 'M', `干净文件的 status 不再伪造为 M（实际: ${selfDiff.status}）`);
 
   // getUncommittedFiles 分页逻辑测试
   const pagedFiles = await executor.getUncommittedFiles(process.cwd(), 15, 0);

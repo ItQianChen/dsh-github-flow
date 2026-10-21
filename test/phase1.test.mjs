@@ -2,6 +2,9 @@
 
 async function runTests() {
   const recorded = [];
+  // 工作区干净度闸门：真实 GhExecutor 上由 ensureCleanWorkspace 统一实现，
+  // 会切分支的动作（pr checkout / issue develop）都要过它。mock 必须提供。
+  let workspaceClean = true;
   const mockExecutor = {
     async run(cmd, opts) {
       recorded.push(cmd);
@@ -9,6 +12,11 @@ async function runTests() {
     },
     async getRepoMetadata() {
       return { nameWithOwner: 'owner/test-repo' };
+    },
+    async ensureCleanWorkspace() {
+      return workspaceClean
+        ? { ok: true, dirtyCount: 0, samples: [] }
+        : { ok: false, reason: 'dirty', dirtyCount: 2, samples: [' M src/a.ts', '?? tmp.txt'], error: '工作区有 2 个未提交的文件变更。' };
     }
   };
 
@@ -65,6 +73,19 @@ async function runTests() {
   await issueTool.execute({ action: 'develop', issue_number: 42, branch_name: 'fix-login' });
   assert(recorded[0].join(' ').includes('issue develop 42 -R owner/test-repo --checkout -n fix-login'), 'issue develop creates branch');
 
+  // develop 同样会切分支，必须过工作区闸门
+  workspaceClean = false;
+  recorded.length = 0;
+  let developBlocked = false;
+  try {
+    await issueTool.execute({ action: 'develop', issue_number: 42 });
+  } catch (err) {
+    developBlocked = /未提交|工作区/.test(String(err?.message || ''));
+  }
+  assert(developBlocked, 'develop 在脏工作区被阻断');
+  assert(recorded.length === 0, 'develop 被阻断时不调用底层 CLI');
+  workspaceClean = true;
+
   // edit action
   recorded.length = 0;
   await issueTool.execute({ action: 'edit', issue_number: 42, title: 'New Title', add_labels: ['p0'] });
@@ -82,6 +103,16 @@ async function runTests() {
   await runTool.execute({ action: 'trigger', workflow: 'ci.yml', ref: 'main', inputs: { target: 'staging' } });
   assert(recorded[0].join(' ').includes('workflow run ci.yml -R owner/test-repo --ref main -f target=staging'), 'run trigger dispatches workflow with inputs');
 
+  // download 的 run_id 必须是纯数字：不校验时 "../../../../windows" 会被 path.join
+  // 归一化成沙箱外目录（越界写盘）。
+  let runIdRejected = false;
+  try {
+    await runTool.execute({ action: 'download', run_id: '../../../../windows' });
+  } catch (err) {
+    runIdRejected = /纯数字/.test(String(err?.message || ''));
+  }
+  assert(runIdRejected, 'run download 拒绝非数字 run_id（防路径穿越）');
+
   // log_failed graceful test
   const gracefulExecutor = {
     async run() { return { ok: false, error: 'no failed jobs in run 1234' }; },
@@ -93,9 +124,36 @@ async function runTests() {
 
   // --- 3. prTool 测试 ---
   console.log('\n--- 3. Testing github_pr ---');
+
+  // 3.0 checkout 闸门：脏工作区必须硬阻断，且不得调用底层 CLI
+  workspaceClean = false;
+  recorded.length = 0;
+  let checkoutBlocked = false;
+  try {
+    await prTool.execute({ action: 'checkout', pr_number: 101 });
+  } catch (err) {
+    checkoutBlocked = /未提交|工作区/.test(String(err?.message || ''));
+  }
+  assert(checkoutBlocked, 'checkout 在脏工作区被硬阻断（不再静默重置本地分支）');
+  assert(recorded.length === 0, 'checkout 被阻断时绝不调用底层 CLI');
+
+  // 3.0b force 需要 confirm 双门
+  workspaceClean = true;
+  recorded.length = 0;
+  const forceBlocked = await prTool.execute({ action: 'checkout', pr_number: 101, force: true });
+  assert(forceBlocked.status === 'AWAITING_CONFIRMATION', 'checkout force 未带 confirm 返回拦截态');
+  assert(recorded.length === 0, 'force 未确认时不调用 CLI');
+
+  recorded.length = 0;
+  await prTool.execute({ action: 'checkout', pr_number: 101, force: true, confirm: true });
+  assert(recorded[0].join(' ').includes('pr checkout 101 -R owner/test-repo -f'), 'force + confirm 才追加 -f');
+
+  // 3.1 默认 checkout：不带 -f（本地已有同名分支时让 gh 报错而不是静默重置）
   recorded.length = 0;
   await prTool.execute({ action: 'checkout', pr_number: 101 });
-  assert(recorded[0].join(' ').includes('pr checkout 101 -R owner/test-repo -f'), 'pr checkout checkouts branch');
+  const plainCheckoutArgv = recorded[0].join(' ');
+  assert(plainCheckoutArgv.includes('pr checkout 101 -R owner/test-repo'), 'pr checkout 检出分支');
+  assert(!plainCheckoutArgv.includes('-f'), '默认 checkout 不下发 -f（不重置本地分支）');
 
   recorded.length = 0;
   await prTool.execute({ action: 'status' });
@@ -147,6 +205,24 @@ async function runTests() {
   recorded.length = 0;
   await apiTool.execute({ endpoint: 'repos/test/commits', paginate: true });
   assert(recorded[0].join(' ').includes('--paginate'), 'api tool appends --paginate');
+
+  // api 空/畸形 endpoint 必须报错：gh api "" 退出码 0 并返回整个 API 索引，
+  // 模型会误以为"查到了数据"。
+  let apiEmptyRejected = false;
+  try {
+    await apiTool.execute({ endpoint: '   ' });
+  } catch (err) {
+    apiEmptyRejected = /必填/.test(String(err?.message || ''));
+  }
+  assert(apiEmptyRejected, 'api 空 endpoint 被拒绝');
+
+  let apiShapeRejected = false;
+  try {
+    await apiTool.execute({ endpoint: 'repos' });
+  } catch (err) {
+    apiShapeRejected = /形态不合法/.test(String(err?.message || ''));
+  }
+  assert(apiShapeRejected, 'api endpoint 缺 / 且非 graphql 被拒绝');
 
   // --- 5. helpTool 测试 ---
   console.log('\n--- 5. Testing github_help ---');

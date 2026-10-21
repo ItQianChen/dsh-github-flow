@@ -6,7 +6,7 @@ import type { GhExecutor } from '../executor.js';
 import type { UpdateChecker } from '../updater.js';
 import type { UpgradeManager } from '../upgrade-manager.js';
 import { loadUpdateSettings, saveUpdateSettings, isValidUpdateMode, describeUpdateMode } from '../update-settings.js';
-import { sendJson, readJsonBody, type RouteDeps } from './route-helpers.js';
+import { sendJson, readJsonBody, guardLocalWrite, type RouteDeps } from './route-helpers.js';
 
 export function registerLifecycleRoutes(
   deps: RouteDeps,
@@ -45,6 +45,9 @@ export function registerLifecycleRoutes(
         sendJson(res, 405, { ok: false, message: '仅支持 POST 请求' });
         return;
       }
+      // 跨站门禁：一键升级是最敏感的写链路（会改动用户 profile 依赖）。
+      // 本端点无请求体，因此只校验 Origin，不要求 Content-Type。
+      if (!guardLocalWrite(req, res)) return;
       try {
         // 一键升级是用户显式动作，不受 checkUpdate 配置熔断：check() 在禁用时
         // 会返回 latestVersion 缺失的兜底态，此时回退 'latest' 让 pnpm 自行解析
@@ -86,6 +89,8 @@ export function registerLifecycleRoutes(
         sendJson(res, 405, { ok: false, message: '仅支持 GET / POST 请求' });
         return;
       }
+      // 跨站门禁：更新源设置会写盘并改变后续所有版本探测的走向。
+      if (!guardLocalWrite(req, res, { requireJson: true })) return;
       try {
         const body = await readJsonBody(req);
         const mode = body?.mode;

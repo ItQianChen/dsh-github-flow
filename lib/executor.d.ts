@@ -1,4 +1,4 @@
-import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, GitCommitLog, GitCommitEntry, GitBranchesResult, AssociatedRepoItem, PrDetailData, IssueDetailData } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, WorkspaceCleanResult, GitCommitLog, GitCommitEntry, GitBranchesResult, AssociatedRepoItem, PrDetailData, IssueDetailData } from './types.js';
 import type { ProxyManager } from './proxy.js';
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
@@ -174,11 +174,24 @@ export declare class GhExecutor {
      */
     getGitBranches(cwd?: string): Promise<GitBranchesResult | null>;
     /**
+     * 工作区干净度闸门（唯一实现）。
+     *
+     * 为什么抽成公共方法：会改变工作区分支/内容的入口有三条——界面切分支（switchGitBranch）、
+     * `github_pr(checkout)`、`github_issue(develop)`。此前只有第一条有脏检查，后两条直穿，
+     * 于是「强阻断」的成文承诺只对界面成立。安全不变量必须只有一处实现。
+     *
+     * 三态语义（fail-closed）：
+     * - `null`（git 不可用 / 非仓库）→ 拒绝。读不到状态≠干净，放行等于闸门失效。
+     * - `dirtyCount > 0` → 拒绝，并带前 5 条样例便于用户判断。
+     * - 其余 → 放行。
+     */
+    ensureCleanWorkspace(cwd: string | undefined): Promise<WorkspaceCleanResult>;
+    /**
      * 安全切换当前工作区的 Git 分支。
      * 三重安全防御纪律：
      * 1. 目标工作区必须存在有效的 .git 目录；
      * 2. 分支名称严格执行字符白名单校验，防命令行参数注入；
-     * 3. 检查工作区干净度（dirtyCount），若有未提交或未保存的变更直接阻断，杜绝代码被破坏性覆盖。
+     * 3. 工作区干净度交给 ensureCleanWorkspace（唯一实现，与 checkout / develop 共用）。
      */
     switchGitBranch(cwd: string | undefined, branchName: string): Promise<{
         ok: boolean;

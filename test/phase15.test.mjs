@@ -127,19 +127,46 @@ a1b2c3d4e5f60718293a4b5c6d7e8f90\tPublic script\t1 file\tpublic\t2026-10-15 12:0
   assert(lastDelAllCmd.includes('--succeed-on-no-caches'), '附加 --succeed-on-no-caches 保证幂等执行');
   assert(lastDelAllCmd.includes('-r') && lastDelAllCmd.includes('refs/heads/dev'), '传递 -r ref');
 
-  // 3.4 cache delete 按 ID 删除
+  // 3.4 cache delete 按 ID 删除（三条分支共用同一套 confirm 语义）
   recordedCmds = [];
-  const delIdRes = await cacheTool.execute({ action: 'delete', cache_id: '101' });
+  const delIdBlocked = await cacheTool.execute({ action: 'delete', cache_id: '101' });
+  assert(delIdBlocked.status === 'AWAITING_CONFIRMATION', '按 cache_id 删除未带 confirm 返回拦截态');
+  assert(recordedCmds.length === 0, '按 cache_id 未确认时不调用 CLI');
+
+  recordedCmds = [];
+  const delIdRes = await cacheTool.execute({ action: 'delete', cache_id: '101', confirm: true });
   assert(delIdRes.success === true && delIdRes.cache_id === '101', '按 cache_id 删除成功');
   const lastDelIdCmd = recordedCmds[recordedCmds.length - 1].cmd;
   assert(lastDelIdCmd[0] === 'cache' && lastDelIdCmd[1] === 'delete' && lastDelIdCmd[2] === '101', '调用 gh cache delete <id>');
 
+  // 3.4b 形态校验：cache_id 必须是数字，否则 "--all" 会被当 flag 透传（等价清空全仓）
+  let delIdRejected = false;
+  try {
+    await cacheTool.execute({ action: 'delete', cache_id: '--all', confirm: true });
+  } catch (err) {
+    delIdRejected = /纯数字/.test(String(err?.message || ''));
+  }
+  assert(delIdRejected, 'cache_id "--all" 被格式校验拒绝');
+
   // 3.5 cache delete 按 Key 删除
   recordedCmds = [];
-  const delKeyRes = await cacheTool.execute({ action: 'delete', key: 'npm-cache-dev' });
+  const delKeyBlocked = await cacheTool.execute({ action: 'delete', key: 'npm-cache-dev' });
+  assert(delKeyBlocked.status === 'AWAITING_CONFIRMATION', '按 key 删除未带 confirm 返回拦截态');
+
+  recordedCmds = [];
+  const delKeyRes = await cacheTool.execute({ action: 'delete', key: 'npm-cache-dev', confirm: true });
   assert(delKeyRes.success === true && delKeyRes.key === 'npm-cache-dev', '按 key 删除成功');
   const lastDelKeyCmd = recordedCmds[recordedCmds.length - 1].cmd;
   assert(lastDelKeyCmd[0] === 'cache' && lastDelKeyCmd[1] === 'delete' && lastDelKeyCmd[2] === 'npm-cache-dev', '调用 gh cache delete <key>');
+
+  // 3.5b key 不得以 - 开头（防被当作命令行 flag）
+  let delKeyRejected = false;
+  try {
+    await cacheTool.execute({ action: 'delete', key: '--all', confirm: true });
+  } catch (err) {
+    delKeyRejected = /不能以 - 开头/.test(String(err?.message || ''));
+  }
+  assert(delKeyRejected, 'key "--all" 被格式校验拒绝');
 
   // 3.6 cache delete 缺少所有参数抛错
   let delMissingParam = false;

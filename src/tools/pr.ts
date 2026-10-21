@@ -70,6 +70,10 @@ export function createPrTool(executor: GhExecutor) {
           type: 'boolean',
           description: '合并后是否删除源分支（仅 merge 动作生效，默认 false）。gh pr revert 没有该 flag，传了也不会生效。删除分支不可撤销，只在确认该分支已无用后再开启。',
         },
+        force: {
+          type: 'boolean',
+          description: 'checkout 动作可选：是否强制重置已存在的本地同名分支（映射 gh pr checkout -f）。会丢弃本地未推送提交，必须同时传 confirm: true。默认 false，即本地已有同名分支时直接报错而不是重置。',
+        },
         undo: {
           type: 'boolean',
           description: 'ready 动作可选：反向操作，把 PR 转回 Draft（gh 原生 --undo）。',
@@ -306,7 +310,33 @@ export function createPrTool(executor: GhExecutor) {
 
         case 'checkout': {
           if (!args.pr_number) throw new Error('checkout 操作必须提供 pr_number');
-          const checkoutCmd = ['pr', 'checkout', String(args.pr_number), ...repoArgs, '-f'];
+
+          // 防线：检出 PR 会切本地分支，与界面切分支同源风险，必须过同一道闸门。
+          // 这里用硬阻断而不是 confirm 二次确认——没有哪个参数能让「脏工作区检出」变安全，
+          // 给个 confirm 只会变成一个绕不过去的死循环。
+          const guard = await executor.ensureCleanWorkspace(cwd);
+          if (!guard.ok) {
+            const sample = guard.samples.length
+              ? `\n涉及文件（前 ${guard.samples.length} 条）：\n${guard.samples.map((s) => '  ' + s).join('\n')}`
+              : '';
+            throw new Error(`${guard.error}${sample}\n请先提交或 stash 后再检出 PR。`);
+          }
+
+          const checkoutCmd = ['pr', 'checkout', String(args.pr_number), ...repoArgs];
+          // 默认不带 -f：本地已有同名分支时 gh 会报错，而不是静默重置。
+          // -f 的语义是 Reset the existing local branch to the latest state of the pull request，
+          // 会丢弃本地未推送提交，因此必须 force + confirm 双门。
+          if (args.force === true) {
+            if (args.confirm !== true) {
+              return {
+                status: 'AWAITING_CONFIRMATION',
+                warning: `⚠️ force 会把本地分支重置到 PR #${args.pr_number} 的最新状态，丢弃本地未推送的提交。`,
+                impact: '重置后本地分支与 PR 头一致，本地独有提交只能通过 git reflog 找回。',
+                requiredAction: '如确认重置，请附加 `force: true, confirm: true` 重新调用。',
+              };
+            }
+            checkoutCmd.push('-f');
+          }
           const res = await executor.run(checkoutCmd, runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: `已成功将 PR #${args.pr_number} 检出至本地分支`, output: res.rawOutput || 'Checked out' };

@@ -4,7 +4,7 @@
  * （工具注销重注册、面板断流），而代理是高频试错型设置，必须保存即生效。
  */
 import type { UpdateChecker } from '../updater.js';
-import { sendJson, readJsonBody, type RouteDeps } from './route-helpers.js';
+import { sendJson, readJsonBody, guardLocalWrite, type RouteDeps } from './route-helpers.js';
 
 /** ProxyManager 的路由侧最小接口：避免路由层直接依赖实现细节，测试可注入 mock */
 export interface ProxyRouteManager {
@@ -37,6 +37,8 @@ export function registerProxyRoutes(
         sendJson(res, 405, { ok: false, message: '仅支持 GET / POST 请求' });
         return;
       }
+      // 跨站门禁：代理配置写入会改变插件全部外联流量的走向。
+      if (!guardLocalWrite(req, res, { requireJson: true })) return;
       if (!proxyManager) {
         sendJson(res, 503, { ok: false, message: '当前运行环境未启用代理管理器' });
         return;
@@ -66,6 +68,9 @@ export function registerProxyRoutes(
         sendJson(res, 405, { ok: false, message: '仅支持 POST 请求' });
         return;
       }
+      // 无请求体，只校验 Origin。保持「每个 POST 端点都有跨站门禁」这条不变量，
+      // 否则下一个人加端点时又会漏。
+      if (!guardLocalWrite(req, res)) return;
       if (!proxyManager) {
         sendJson(res, 503, { ok: false, message: '当前运行环境未启用代理管理器' });
         return;

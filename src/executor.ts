@@ -12,6 +12,7 @@ import type {
   RepoMetadata,
   PluginConfig,
   GitLocalStatus,
+  WorkspaceCleanResult,
   GitCommitLog,
   GitCommitEntry,
   GitBranchesResult,
@@ -601,7 +602,9 @@ export class GhExecutor {
 
     try {
       // 1. 先用 porcelain status 获取该文件的状态码
-      let fileStatus = 'M';
+      // 默认值必须为空：旧实现默认 'M'，导致工作区干净的文件被报成「已修改」
+      // （UI 表现为"文件被改了，但 diff 是空的"）。状态只从 porcelain 结果推导。
+      let fileStatus = '';
       try {
         const { stdout: statusOut } = await execFileAsync('git', ['status', '--porcelain', '--', cleanRel], {
           cwd: targetCwd || undefined,
@@ -698,7 +701,7 @@ export class GhExecutor {
         return {
           ok: true,
           filePath: cleanRel,
-          status: fileStatus,
+          status: fileStatus || 'M',
           isBinary: true,
           diff: 'Binary files differ',
           additions: 0,
@@ -717,7 +720,8 @@ export class GhExecutor {
       return {
         ok: true,
         filePath: cleanRel,
-        status: fileStatus,
+        // porcelain 没给状态且没有 diff → 该文件其实是干净的，显式标 'clean' 而不是伪造成 'M'
+        status: fileStatus || (finalDiff ? 'M' : 'clean'),
         diff: finalDiff || '没有检测到文本差异',
         additions: diffStats.additions,
         deletions: diffStats.deletions,
@@ -854,11 +858,47 @@ export class GhExecutor {
   }
 
   /**
+   * 工作区干净度闸门（唯一实现）。
+   *
+   * 为什么抽成公共方法：会改变工作区分支/内容的入口有三条——界面切分支（switchGitBranch）、
+   * `github_pr(checkout)`、`github_issue(develop)`。此前只有第一条有脏检查，后两条直穿，
+   * 于是「强阻断」的成文承诺只对界面成立。安全不变量必须只有一处实现。
+   *
+   * 三态语义（fail-closed）：
+   * - `null`（git 不可用 / 非仓库）→ 拒绝。读不到状态≠干净，放行等于闸门失效。
+   * - `dirtyCount > 0` → 拒绝，并带前 5 条样例便于用户判断。
+   * - 其余 → 放行。
+   */
+  async ensureCleanWorkspace(cwd: string | undefined): Promise<WorkspaceCleanResult> {
+    const targetCwd = this.resolveWorkspaceCwd(cwd);
+    const gitSt = await this.getLocalGitStatus(targetCwd);
+    if (gitSt === null) {
+      return {
+        ok: false,
+        reason: 'unknown',
+        dirtyCount: 0,
+        samples: [],
+        error: '无法读取当前工作区的 Git 状态（可能不是 Git 仓库，或 git 不可用）。为避免覆盖本地改动，已拒绝执行。',
+      };
+    }
+    if (gitSt.dirtyCount > 0) {
+      return {
+        ok: false,
+        reason: 'dirty',
+        dirtyCount: gitSt.dirtyCount,
+        samples: (gitSt.dirtyFiles || []).slice(0, 5).map((f) => `${f.status} ${f.path}`),
+        error: `工作区有 ${gitSt.dirtyCount} 个未提交的文件变更。为防止代码被覆盖，请先提交或保存后再执行。`,
+      };
+    }
+    return { ok: true, dirtyCount: 0, samples: [] };
+  }
+
+  /**
    * 安全切换当前工作区的 Git 分支。
    * 三重安全防御纪律：
    * 1. 目标工作区必须存在有效的 .git 目录；
    * 2. 分支名称严格执行字符白名单校验，防命令行参数注入；
-   * 3. 检查工作区干净度（dirtyCount），若有未提交或未保存的变更直接阻断，杜绝代码被破坏性覆盖。
+   * 3. 工作区干净度交给 ensureCleanWorkspace（唯一实现，与 checkout / develop 共用）。
    */
   async switchGitBranch(cwd: string | undefined, branchName: string): Promise<{ ok: boolean; currentBranch?: string; error?: string }> {
     const targetCwd = this.resolveWorkspaceCwd(cwd);
@@ -873,12 +913,9 @@ export class GhExecutor {
     }
 
     // 防线二：工作区未提交变更阻断（Dirty File Guard）
-    const gitSt = await this.getLocalGitStatus(targetCwd);
-    if (gitSt && gitSt.dirtyCount > 0) {
-      return {
-        ok: false,
-        error: `工作区有 ${gitSt.dirtyCount} 个未提交的文件变更。为防止代码被覆盖，请先提交或保存后再切换分支。`,
-      };
+    const guard = await this.ensureCleanWorkspace(targetCwd);
+    if (!guard.ok) {
+      return { ok: false, error: guard.error };
     }
 
     try {

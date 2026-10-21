@@ -90,7 +90,7 @@ dsh plugin --profile web add dsh-github-flow
   * `create`：一键自动创建 PR（支持 draft 草稿模式与 `--dry-run` 预演，支持 `attach_images` 上传本地附件）；
   * `edit`：🆕 编辑 PR 标题、描述与关联元数据，支持附加本地图片；
   * `comment`：🆕 向指定 PR 追加讨论评论与审查意见，支持附加本地图片；
-  * `checkout`：🆕 把 PR 代码检出到本地分支，Agent 可直接在沙箱跑测试验证改动；
+  * `checkout`：🆕 把 PR 代码检出到本地分支，Agent 可直接在本地工作区跑测试验证改动（检出前校验工作区干净度；默认不重置已有同名分支，需要重置须显式传 `force: true` + `confirm: true`）；
   * `status`：🆕 查看当前分支关联 PR 的合并冲突状态（`CLEAN` / `CONFLICT`）；
   * `review`：提交代码审查意见（`APPROVE`, `REQUEST_CHANGES`, `COMMENT`）；
   * `merge`：自动执行合并（支持 `squash` / `merge` / `rebase`，可指定 `delete_branch`；需 `confirm: true` 二次确认）；

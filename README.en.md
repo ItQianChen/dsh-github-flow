@@ -90,7 +90,7 @@ Consolidates scattered GitHub endpoints into **18 core domain tools (103 actions
   * `create`: Auto-create PRs (supports draft mode & `--dry-run`, supports `attach_images` local uploads);
   * `edit`: 🆕 Edit PR title, body description, and metadata with image attachment support;
   * `comment`: 🆕 Post comments and reviews to pull requests with image attachment support;
-  * `checkout`: 🆕 Check out PR code to a local branch for sandboxed testing;
+  * `checkout`: 🆕 Check out PR code to a local branch so the Agent can run tests in the local workspace (requires a clean working tree; an existing branch is not reset unless `force: true` + `confirm: true` are passed);
   * `status`: 🆕 Inspect merge conflict status (`CLEAN` / `CONFLICT`) for the current branch's PR;
   * `review`: Submit code reviews (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`);
   * `merge`: Merge pull requests (`squash` / `merge` / `rebase`, optional `delete_branch`; requires `confirm: true`);

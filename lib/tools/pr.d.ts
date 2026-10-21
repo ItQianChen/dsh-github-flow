@@ -53,6 +53,10 @@ export declare function createPrTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            force: {
+                type: string;
+                description: string;
+            };
             undo: {
                 type: string;
                 description: string;

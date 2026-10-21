@@ -161,9 +161,15 @@ export function createSkillTool(executor: GhExecutor) {
           const isDryRun = args.dry_run !== false && !isFix;
           const targetDir = typeof args.directory === 'string' && args.directory.trim() ? args.directory.trim() : undefined;
 
-          // 1. 目录存在性前置安全校验
+          // 1. 目录存在性 + 工作区包含性前置安全校验
           if (targetDir) {
+            const workspaceRoot = path.resolve(cwd);
             const resolvedPath = path.resolve(cwd, targetDir);
+            // 只校验存在性是不够的：`directory: "../.."` 可以指向仓库外任意目录，
+            // 配合 dry_run:false + confirm:true 就能把仓库外的内容发布成 Release。
+            if (resolvedPath !== workspaceRoot && !resolvedPath.startsWith(workspaceRoot + path.sep)) {
+              throw new Error(`技能目录必须位于当前工作区内（工作区: ${workspaceRoot}，解析结果: ${resolvedPath}）。`);
+            }
             if (!fs.existsSync(resolvedPath)) {
               throw new Error(`指定的技能目录不存在: ${targetDir}`);
             }

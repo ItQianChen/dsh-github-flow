@@ -145,6 +145,45 @@ export function readJsonBody(req: any, maxBytes = 256 * 1024): Promise<any> {
   });
 }
 
+/**
+ * 本地 HTTP 写端点的跨站门禁。
+ *
+ * 威胁模型：任意网页可以用 simple request（`Content-Type: text/plain`，不触发预检）
+ * 向 `127.0.0.1:<port>` 发 POST，触发 `create_pr` / `switch_branch` / 一键升级这类写操作。
+ * 两道门：
+ *   1) `Origin` 必须为空（同源导航或非浏览器客户端）或与 `Host` 同源；
+ *   2) 需要读 JSON body 的端点额外要求 `Content-Type: application/json`——它不在
+ *      simple request 白名单里，浏览器会强制先发预检，跨站站点伪造不过去。
+ *
+ * 为什么允许 Origin 为空：同源 fetch 在部分场景下不带 Origin，非浏览器客户端
+ * （curl / 脚本）也不带。这两类不构成跨站威胁，拦掉只会误伤自家前端。
+ */
+export function guardLocalWrite(req: any, res: any, opts: { requireJson?: boolean } = {}): boolean {
+  const origin = typeof req.headers?.origin === 'string' ? req.headers.origin : '';
+  const host = String(req.headers?.host || '');
+  if (origin) {
+    let originHost = '';
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      // Origin 形如 "null"（沙箱 iframe / file://）时 URL 解析失败 → 视为不同源
+      originHost = '';
+    }
+    if (!originHost || originHost !== host) {
+      sendJson(res, 403, { ok: false, error: '跨站请求已拒绝：Origin 与本地服务不同源' });
+      return false;
+    }
+  }
+  if (opts.requireJson) {
+    const contentType = String(req.headers?.['content-type'] || '').toLowerCase();
+    if (!contentType.includes('application/json')) {
+      sendJson(res, 415, { ok: false, error: '请求必须使用 Content-Type: application/json' });
+      return false;
+    }
+  }
+  return true;
+}
+
 /** 各路由分组共享的依赖包类型：注册器装配时一次性注入，分组内不再触碰全局 */
 export interface RouteDeps {
   bindRoute: (route: any) => void;

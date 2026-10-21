@@ -176,6 +176,15 @@ warning\t\tno active tag protection rulesets found`;
   }
   assert(nonExistDirThrows, '指定不存在的技能目录严格拦截抛错');
 
+  // 3.2b 目录必须位于工作区内：否则 "../.." 能把仓库外的内容发布成 Release
+  let outsideDirRejected = false;
+  try {
+    await skillTool.execute({ action: 'publish', directory: '../..' });
+  } catch (err) {
+    outsideDirRejected = String(err?.message || '').includes('工作区内');
+  }
+  assert(outsideDirRejected, 'skill publish 拒绝工作区外的目录');
+
   // 3.3 --fix 模式
   recordedCmds = [];
   const resFix = await skillTool.execute({ action: 'publish', fix: true });

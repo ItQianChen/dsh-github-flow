@@ -393,6 +393,7 @@ async function runTests() {
 
   const bigReq = new EventEmitter();
   bigReq.method = 'POST';
+  bigReq.headers = { 'content-type': 'application/json' };
   bigReq.url = '/api/github/action';
   bigReq.destroy = () => {};
   const bigRes = makeRes();
@@ -403,9 +404,41 @@ async function runTests() {
   ok(bigRes.status === 413, '超大请求体返回 413（行为级验证）', String(bigRes.status));
   ok(String(bigRes.payload?.error || '').includes('256'), '413 响应说明上限值');
 
+  // ---- 跨站门禁（CSRF）：本地写端点不能被任意网页用 simple request 触发 ----
+  const runActionReq = async (headers, bodyText) => {
+    const r = new EventEmitter();
+    r.method = 'POST';
+    r.url = '/api/github/action';
+    r.headers = headers;
+    r.destroy = () => {};
+    const res = makeRes();
+    const p = bodyCaptured['/api/github/action'](r, res);
+    r.emit('data', Buffer.from(bodyText));
+    r.emit('end');
+    await p;
+    return res;
+  };
+  const evilRes = await runActionReq({ origin: 'https://evil.example', host: '127.0.0.1:1234', 'content-type': 'application/json' }, '{}');
+  ok(evilRes.status === 403, '跨站 Origin 被拒绝 403', String(evilRes.status));
+  const noCtRes = await runActionReq({ host: '127.0.0.1:1234' }, '{}');
+  ok(noCtRes.status === 415, '缺 application/json 的写请求返回 415', String(noCtRes.status));
+  const badJsonRes = await runActionReq({ host: '127.0.0.1:1234', 'content-type': 'application/json' }, '{not-json');
+  ok(badJsonRes.status === 400, '畸形 JSON 返回 400 而非 500', String(badJsonRes.status));
+
+  // 不变量：每个 POST 端点都必须接跨站门禁，否则下一个人加端点时又会漏
+  {
+    const allRouteSrc = ['routes-actions', 'routes-lifecycle', 'routes-proxy']
+      .map((n) => fs.readFileSync(path.join(__dirname, `../src/api/${n}.ts`), 'utf8'))
+      .join('\n');
+    const postChecks = (allRouteSrc.match(/req\.method !== 'POST'/g) || []).length;
+    const guarded = (allRouteSrc.match(/guardLocalWrite\(req, res/g) || []).length;
+    ok(postChecks > 0 && guarded >= postChecks, `每个 POST 端点都有跨站门禁（POST=${postChecks}, guard=${guarded}）`);
+  }
+
   // 正常小 body 仍然可以走通业务分支
   const smallReq = new EventEmitter();
   smallReq.method = 'POST';
+  smallReq.headers = { 'content-type': 'application/json' };
   smallReq.url = '/api/github/action';
   smallReq.destroy = () => {};
   const smallRes = makeRes();

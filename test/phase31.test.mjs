@@ -305,6 +305,7 @@ async function runTests() {
 
   const actionReq = new EventEmitter();
   actionReq.method = 'POST';
+  actionReq.headers = { 'content-type': 'application/json' };
   actionReq.url = '/api/github/action';
   actionReq.destroy = () => {};
   const actionRes = makeRes();

@@ -90,10 +90,10 @@ console.log('\n--- 4. route e2e (mock) ---');
   {
     let status = 0, body = '';
     const res = { setHeader() {}, end(d) { body = d; }, get statusCode() { return status; }, set statusCode(v) { status = v; } };
-    const req = { method: 'POST', on(ev, cb) { if (ev === 'data') cb('{}'); if (ev === 'end') cb(); } };
+    const req = { method: 'POST', headers: { 'content-type': 'application/json' }, on(ev, cb) { if (ev === 'data') cb('{}'); if (ev === 'end') cb(); } };
     // 覆写 body 内容：用闭包注入 payload
     let payload = JSON.stringify({ action: 'open_terminal', command: 'rm -rf /' });
-    const req2 = { method: 'POST', on(ev, cb) { if (ev === 'data') cb(payload); if (ev === 'end') cb(); } };
+    const req2 = { method: 'POST', headers: { 'content-type': 'application/json' }, on(ev, cb) { if (ev === 'data') cb(payload); if (ev === 'end') cb(); } };
     await handler(req2, res);
     const json = JSON.parse(body);
     assert(status === 500 && json.ok === false && /不支持唤起/.test(json.error || json.message || ''), '非白名单命令被拒绝');
@@ -105,7 +105,7 @@ console.log('\n--- 4. route e2e (mock) ---');
     let status = 0, body = '';
     const res = { setHeader() {}, end(d) { body = d; }, get statusCode() { return status; }, set statusCode(v) { status = v; } };
     const payload = JSON.stringify({ action: 'open_terminal', command: 'gh auth login' });
-    const req2 = { method: 'POST', on(ev, cb) { if (ev === 'data') cb(payload); if (ev === 'end') cb(); } };
+    const req2 = { method: 'POST', headers: { 'content-type': 'application/json' }, on(ev, cb) { if (ev === 'data') cb(payload); if (ev === 'end') cb(); } };
     await handler(req2, res);
     // 响应经 spawn close 异步到达：最多等 12s（后端兜底 10s + 余量）
     for (let i = 0; i < 120 && !body; i++) {
