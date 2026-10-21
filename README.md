@@ -544,6 +544,9 @@ dsh plugin --profile web add dsh-github-flow
     proxyUrl: ''              # 代理地址预置默认值（如 'http://127.0.0.1:7890'；仅未在驾驶舱设置过时生效，界面设置优先）
 ```
 
+> 配置由 Schemastery Schema 校验：类型写错（例如把 `maxOutputChars: '24000'` 写成字符串）会**直接报错**，不再静默回落到默认值。
+> `maxOutputChars` / `defaultTimeoutMs` / `defaultListLimit` 是**热更新字段**——改这几项时 loader 只把新值热提交进运行中的实例，不触发插件整体重载；改动其余字段（含 `checkUpdate`）仍会重载插件。
+
 ---
 
 ## 🔌 生态服务扩展 (Cordis Service)
@@ -552,6 +555,8 @@ dsh plugin --profile web add dsh-github-flow
 
 ```typescript
 import type { Context } from '@deepseek-ai/cordis';
+// 可选但推荐：加载本插件随包发布的声明合并，ctx.github 才有完整类型与自动补全
+import type {} from 'dsh-github-flow/host';
 
 export const inject = ['github'];
 

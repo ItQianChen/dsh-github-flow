@@ -538,6 +538,9 @@ Fine-tune options via DSH config:
     proxyUrl: ''              # Default proxy URL (overridden by UI settings)
 ```
 
+> Config is validated by a Schemastery schema: a wrong type (e.g. `maxOutputChars: '24000'` as a string) now **fails loudly** instead of silently falling back to the default.
+> `maxOutputChars` / `defaultTimeoutMs` / `defaultListLimit` are **volatile fields** — editing only these hot-commits the new values into the running instance without reloading the plugin; editing any other field (including `checkUpdate`) still triggers a plugin reload.
+
 ---
 
 ## 🔌 Cordis Ecosystem Service (`ctx.github`)
@@ -546,6 +549,9 @@ Exports a standard Cordis service `ctx.github` for other DSH plugins:
 
 ```typescript
 import type { Context } from '@deepseek-ai/cordis';
+// Optional but recommended: load the declaration merge shipped with this package
+// so `ctx.github` gets full types and autocompletion.
+import type {} from 'dsh-github-flow/host';
 
 export const inject = ['github'];
 
