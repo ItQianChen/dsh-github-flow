@@ -42,12 +42,15 @@ export declare function readJsonBody(req: any, maxBytes?: number): Promise<any>;
 /**
  * 本地 HTTP 写端点的跨站门禁。
  *
- * 威胁模型：任意网页可以用 simple request（`Content-Type: text/plain`，不触发预检）
- * 向 `127.0.0.1:<port>` 发 POST，触发 `create_pr` / `switch_branch` / 一键升级这类写操作。
+ * 威胁模型（写准，别夸大）：防的是「任意网页用 simple request 打本地端口」这一类
+ * CSRF——`Content-Type: text/plain` 的跨站 POST 不触发预检，浏览器会照发。
+ * **不防 DNS rebinding**：攻击者页面若与目标同 host 名，`Origin === Host` 就成立。
+ * 真正挡住 rebinding 需要校验 Host 白名单或引入 token，属另一件事。
+ *
  * 两道门：
  *   1) `Origin` 必须为空（同源导航或非浏览器客户端）或与 `Host` 同源；
- *   2) 需要读 JSON body 的端点额外要求 `Content-Type: application/json`——它不在
- *      simple request 白名单里，浏览器会强制先发预检，跨站站点伪造不过去。
+ *   2) 需要读 JSON body 的端点额外要求 media type 恰为 `application/json`
+ *      ——它不在 simple request 白名单里，浏览器会强制先发预检。
  *
  * 为什么允许 Origin 为空：同源 fetch 在部分场景下不带 Origin，非浏览器客户端
  * （curl / 脚本）也不带。这两类不构成跨站威胁，拦掉只会误伤自家前端。

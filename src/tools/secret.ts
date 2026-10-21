@@ -183,7 +183,12 @@ export function createSecretTool(executor: GhExecutor) {
       const scopeFlags: string[] = [];
       if (args.org) {
         scopeFlags.push('--org', args.org);
-        if (!isVariable && args.visibility) scopeFlags.push('--visibility', args.visibility);
+        // `--visibility` 只有 `gh secret set` 支持（实测 gh 2.96：list / delete 的 FLAGS
+        // 区块里没有它）。早期实现对所有动作都下发，导致带 org 的 list/delete 必然
+        // unknown flag——这正是 phase34 契约测试上线第一天抓到的那条。
+        if (!isVariable && args.visibility && args.action === 'set') {
+          scopeFlags.push('--visibility', args.visibility);
+        }
       } else if (args.env) {
         scopeFlags.push('--env', args.env);
       }

@@ -116,7 +116,7 @@ export declare class GhExecutor {
      * 零网络：status 基于 remote-tracking ref（上次 fetch 的快照），毫秒级本地读取，
      * 符合 global-overview 端点「工作区探测不发网络」的性能红线。
      */
-    getLocalGitStatus(cwd?: string): Promise<GitLocalStatus | null>;
+    getLocalGitStatus(cwd?: string, timeoutMs?: number): Promise<GitLocalStatus | null>;
     /**
      * 分页获取本地未提交文件列表（无网络开销，纯本地毫秒级响应）
      */
@@ -181,9 +181,13 @@ export declare class GhExecutor {
      * 于是「强阻断」的成文承诺只对界面成立。安全不变量必须只有一处实现。
      *
      * 三态语义（fail-closed）：
-     * - `null`（git 不可用 / 非仓库）→ 拒绝。读不到状态≠干净，放行等于闸门失效。
+     * - `null`（git 读不到）→ 拒绝。读不到状态≠干净，放行等于闸门失效。
      * - `dirtyCount > 0` → 拒绝，并带前 5 条样例便于用户判断。
      * - 其余 → 放行。
+     *
+     * 超时为什么单独给 20s：`getLocalGitStatus` 默认 3s 是给概览面板用的（读不到就不渲染那一行），
+     * 但这里是一次安全判决——大型仓库 / 网络盘 / OneDrive 同步目录下 `git status` 冷启动超 3s
+     * 很常见，用 3s 会把"慢"误判成"脏/不可用"，直接把 checkout 挡死。
      */
     ensureCleanWorkspace(cwd: string | undefined): Promise<WorkspaceCleanResult>;
     /**

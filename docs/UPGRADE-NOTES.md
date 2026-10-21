@@ -31,8 +31,8 @@
 
 | # | 文件 | 位置 | 现状 | 为什么不能填死 |
 |---|---|---|---|---|
-| 5 | [README.md](../README.md) | 第 67 行 `dsh-github-flow@<最新版本号>` | 占位符 | 每次发版都改会漏；占位符引导用户自己查最新版 |
-| 6 | [README.en.md](../README.en.md) | 第 67 行 `dsh-github-flow@<latest-version>` | 占位符 | 同上（英文版） |
+| 5 | [README.md](../README.md) | 第 68 行 `dsh-github-flow@<最新版本号>` | 占位符 | 每次发版都改会漏；占位符引导用户自己查最新版 |
+| 6 | [README.en.md](../README.en.md) | 第 68 行 `dsh-github-flow@<latest-version>` | 占位符 | 同上（英文版） |
 | 7 | [src/updater.ts](../src/updater.ts) | 所有 `CURRENT_PLUGIN_VERSION` 引用 | 常量引用 | 全部从 version.ts 导入，无一硬编码——升级只改 version.ts 一处即全局生效 |
 | 8 | [src/commands/gh.ts](../src/commands/gh.ts) | `/gh status`、`/gh upgrade` 输出 | 常量引用 | 同上 |
 
@@ -40,7 +40,7 @@
 
 | # | 机制 | 说明 |
 |---|---|---|
-| 9 | CI 取版（.github/workflows/npm-publish.yml:62） | `VERSION=$(node -p "require('./package.json').version")`——从 package.json 读，无硬编码 |
+| 9 | CI 取版（.github/workflows/npm-publish.yml:74） | `VERSION=$(node -p "require('./package.json').version")`——从 package.json 读，无硬编码 |
 | 10 | Git tag | `git tag v0.6.0` 手动打，值必须 = package.json 版本（tag 与 package.json 不一致时：CI 发布的 npm 版本以 package.json 为准，GitHub Release 标题以 tag 为准，出现两者错位） |
 
 ## 五、发版完整流程（含版本修改）
