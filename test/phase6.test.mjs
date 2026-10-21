@@ -118,7 +118,7 @@ const { buildCrossPlatformEnv, probeDshCliAvailable } = await import('../lib/upg
 {
   let tmpDshBin = null;
   const initialEnv = buildCrossPlatformEnv();
-  const initialPaths = initialEnv.PATH.split(';');
+  const initialPaths = initialEnv.PATH.split(process.platform === 'win32' ? ';' : ':');
   let hasDshBin = initialPaths.some((p) => /runtime.cli.bin$/i.test(p.trim()));
   if (!hasDshBin) {
     // 本机未预装 DSH 桌面版时，创建受控的 mock 临时目录以验证 PATH 自愈与 probe 检测契约
@@ -135,7 +135,7 @@ const { buildCrossPlatformEnv, probeDshCliAvailable } = await import('../lib/upg
 
   try {
     const env = buildCrossPlatformEnv();
-    const paths = env.PATH.split(';');
+    const paths = env.PATH.split(process.platform === 'win32' ? ';' : ':');
     hasDshBin = paths.some((p) => /runtime.cli.bin$/i.test(p.trim()));
     assert(hasDshBin, `PATH 已注入 dsh CLI 目录（runtime/cli/bin）`);
     // 探测在自愈 PATH 下应可达；沙箱拦截嵌套 spawn（EPERM）时降级为 PATH 字符串级验证
