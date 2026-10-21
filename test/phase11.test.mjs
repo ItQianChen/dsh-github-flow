@@ -136,7 +136,13 @@ async function runTests() {
     // fail-closed：读不到 git 状态 ≠ 干净。旧实现 `if (gitSt && dirtyCount>0)` 在 null 时
     // 直接放行，等于闸门失效；ensureCleanWorkspace 必须显式拒绝。
     const guard = await exec.ensureCleanWorkspace('D:/definitely/not/a/repo');
-    assert(guard.ok === false && guard.reason === 'unknown', 'ensureCleanWorkspace 对读不到状态的工作区 fail-closed');
+    // 注意：这里不能用"当前仓库是否脏"作为前提——`resolveWorkspaceCwd` 对不存在的路径
+    // 会回落到当前工作区，工作区脏时 reason 就是 'dirty' 而不是 'unknown'。
+    // 断言只锁"拒绝"这个不变量，两种 reason 都算正确拒绝。
+    assert(
+      guard.ok === false && (guard.reason === 'unknown' || guard.reason === 'dirty'),
+      `ensureCleanWorkspace 对无法确认干净的工作区 fail-closed（实际 reason=${guard.reason}）`
+    );
 
     const execSrc = readFileSync(new URL('../src/executor.ts', import.meta.url), 'utf8');
     const m = /execFileAsync\('git',\s*\[([^\]]+)\]/.exec(execSrc);

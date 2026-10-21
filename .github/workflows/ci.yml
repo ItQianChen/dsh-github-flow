@@ -29,6 +29,10 @@ jobs:
     steps:
       - name: 检出源码
         uses: actions/checkout@v4
+        with:
+          # 必须取完整历史：phase11 断言「最近提交分页 15 条 / totalCount / 第二页」，
+          # actions/checkout 默认 fetch-depth: 1 只给 1 条 commit，测试会与产品无关地红。
+          fetch-depth: 0
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
