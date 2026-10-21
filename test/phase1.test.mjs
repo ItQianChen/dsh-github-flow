@@ -116,8 +116,16 @@ async function runTests() {
   assert(!checksFields.includes('conclusion') && !checksFields.includes('detailsUrl'), '不再使用 gh 从未支持的 conclusion/detailsUrl');
 
   recorded.length = 0;
-  await prTool.execute({ action: 'diff', pr_number: 101, stat_only: true });
-  assert(recorded[0].join(' ').includes('pr diff 101 -R owner/test-repo --stat'), 'pr diff adds --stat for stat_only');
+  const statOnlyOut = await prTool.execute({ action: 'diff', pr_number: 101, stat_only: true });
+  // gh pr diff 没有 --stat（实测 gh 2.96.0 直接 unknown flag / exit 1）。
+  // 文件变更概览的合法来源是 pr view --json files；这条断言锁死「走 pr view 而不是 pr diff」。
+  const statOnlyArgv = recorded[0].join(' ');
+  assert(statOnlyArgv.includes('pr view 101 -R owner/test-repo'), 'stat_only 改走 gh pr view（pr diff 无 --stat）');
+  assert(statOnlyArgv.includes('--json files,additions,deletions'), 'stat_only 请求 files/additions/deletions 字段');
+  assert(!statOnlyArgv.includes('--stat'), '不再向 gh 下发不存在的 --stat');
+  // mock 未返回 files 数组 → 走「解析失败」分支。绝不能把"没解析出来"渲染成 0 个文件
+  // （executor 在输出被截断时会跳过 JSON.parse，data 就是空的）。
+  assert(!/本次取到 0 个变更文件/.test(String(statOnlyOut?.result ?? '')), '解析不出文件清单时不得谎报 0 个文件');
 
   const mergeBlock = await prTool.execute({ action: 'merge', pr_number: 101, confirm: false });
   assert(mergeBlock.status === 'AWAITING_CONFIRMATION', 'pr merge blocked without confirm');

@@ -153,7 +153,9 @@ export function createRulesetTool(executor: GhExecutor) {
           }
 
           if (args.no_parents) {
-            listCmd.push('--no-parents');
+            // gh 只有 -p/--parents（默认 true），没有 --no-parents（实测 2.96.0 unknown flag）。
+            // 排除继承的语义等价写法是显式关掉 --parents。
+            listCmd.push('--parents=false');
           }
           const limit = typeof args.limit === 'number' && args.limit > 0 ? args.limit : 30;
           listCmd.push('-L', String(limit));
@@ -182,7 +184,8 @@ export function createRulesetTool(executor: GhExecutor) {
           }
 
           if (args.no_parents) {
-            viewCmd.push('--no-parents');
+            // 同 list：排除继承用 --parents=false，不存在 --no-parents。
+            viewCmd.push('--parents=false');
           }
 
           const res = await executor.run(viewCmd, { ...runOpts, rawText: true });

@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手和脚，为人机协作打造沉浸式 GitHub 工作台。</b><br>
-  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>18 大领域 Agent 核心工具（104 个 action，覆盖 PR 审查/Issue 任务/Actions 工作流与构建缓存治理/免 clone 读文件/分支规则集策略排障/代码片段 Gist/标签与全局待办大盘/密钥与变量管理/智能体任务会话/社区 Discussions 讨论/Projects v2 看板/云端 Codespaces/运行时遥测与自愈健康度）</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
+  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>18 大领域 Agent 核心工具（103 个 action，覆盖 PR 审查/Issue 任务/Actions 工作流与构建缓存治理/免 clone 读文件/分支规则集策略排障/代码片段 Gist/标签与全局待办大盘/密钥与变量管理/智能体任务会话/社区 Discussions 讨论/Projects v2 看板/云端 Codespaces/运行时遥测与自愈健康度）</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
 </p>
 
 <p align="center">
@@ -73,7 +73,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ## 🤖 核心工具集 (Agent Tools)：给 Agent 装上 GitHub 的手和脚
 
-本插件精选聚合为 **18 大领域核心工具（104 个 action）**，官方命令语义化覆盖率高达 **87%（104/120）**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）**、**高密度 Markdown 原生渲染（列表输出压缩 70%+ Token）**、**OAuth Scope 缺失单行自愈引导** 与 **零参数 CWD 智能绑定**。
+本插件精选聚合为 **18 大领域核心工具（103 个 action）**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）**、**高密度 Markdown 原生渲染（列表输出压缩 70%+ Token）**、**OAuth Scope 缺失单行自愈引导** 与 **零参数 CWD 智能绑定**。
 
 ### 1. `github_pr`：PR 全生命周期管理与自动化代码审查
 > **典型对话指令**：
@@ -196,7 +196,10 @@ dsh plugin --profile web add dsh-github-flow
 
 ---
 
-### 7. `github_skill`：Agent Skills 生态发现与本地安装
+### 7. `github_skill`：Agent Skills 生态发现与本地安装 🧪 Preview
+
+> 🧪 **Preview 依赖**：底层是 `gh skill`，该命令当前为 public preview（`subject to change without notice`），命令面可能随 gh 升级变更。
+
 > **典型对话指令**：
 > - *"在 GitHub 开源社区检索关于 'markdown' 的 Agent Skills"*
 > - *"预览并安装 'github/awesome-copilot' 仓库里的代码审查 Skill 到当前项目"*
@@ -304,20 +307,26 @@ dsh plugin --profile web add dsh-github-flow
 
 ---
 
-### 15. `github_agent_task`：云端编码智能体任务会话治理
+### 15. `github_agent_task`：云端编码智能体任务会话治理 🧪 Preview
+
+> 🧪 **Preview 依赖**：底层是 `gh agent-task`，该命令当前为 public preview（`subject to change without notice`），命令面可能随 gh 升级变更。
+
 > **典型对话指令**：
 > - *"查阅我名下所有的 GitHub Copilot 智能体任务会话列表"*
 > - *"检视任务 'e2fa49d2' 的执行状态，并抓取详细会话日志"*
 > - *"向云端 Agent 发起新任务：'重构网络通信模块以支持自动重试'，基于 develop 分支"*
 
 * **支持操作 (`action`)**：
-  * `list`：列出当前用户关联的智能体任务（支持 `-L/--limit` 与 `-R/--repo`）；
+  * `list`：列出当前用户关联的智能体任务（支持 `-L/--limit`；`gh agent-task list` 不支持 `-R/--repo`，该参数对本动作无效）；
   * `view`：查看任务详情与会话执行日志（支持 `--log`，强制校验 `task_id` 防交互挂起）；
   * `create`：向云端 Agent 派发新编码/重构任务（支持 `-b/--base` 指定基准分支，`-a/--custom-agent` 指定仓库智能体定义）。
 
 ---
 
-### 16. `github_discussion`：团队技术研讨与开源社区 RFC 闭环
+### 16. `github_discussion`：团队技术研讨与开源社区 RFC 闭环 🧪 Preview
+
+> 🧪 **Preview 依赖**：底层是 `gh discussion`，该命令当前为 public preview（`subject to change without notice`），命令面可能随 gh 升级变更。
+
 > **典型对话指令**：
 > - *"查看当前仓库分类为 'Ideas' 的开放讨论列表"*
 > - *"查看讨论 #101 的正文内容与回复楼层"*
@@ -435,7 +444,7 @@ dsh plugin --profile web add dsh-github-flow
 * **本地缓存可视化管理**：透明查看本地快照体积与保存时间戳，支持一键 `[🗑️ 清空缓存]` 重置。
 
 **🌐 网络代理分区**——让插件全部外联流量走你的代理：
-* **全局生效范围**：设置后驾驶舱、右侧栏面板、9 大 Agent 工具调用与一键升级链路全部经代理访问；未启用时默认使用系统环境代理（`HTTPS_PROXY` 等）或直连；
+* **全局生效范围**：设置后驾驶舱、右侧栏面板、18 大 Agent 工具调用与一键升级链路全部经代理访问；未启用时默认使用系统环境代理（`HTTPS_PROXY` 等）或直连；
 * **协议支持**：`http://` / `https://` / `socks5://` / `socks5h://`（gh 与 npm 链路原生支持 SOCKS5；`socks5h` 会把域名解析也交给代理端，抗 DNS 污染更强；npm 版本探测走 Node fetch 暂不支持 SOCKS，将保持直连并在界面如实标注）；
 * **`[🧪 测试连通性]`**：一键探测经当前代理访问 GitHub API 的延迟；
 * **保存即生效**：写入 `~/.dsh/data/dsh-github-flow/proxy.json` 持久化（DSH 重启自动恢复），无需重启、不重载插件；
@@ -546,7 +555,7 @@ import type { Context } from '@deepseek-ai/cordis';
 
 export const inject = ['github'];
 
-export function apply(ctx: Context) {
+export async function apply(ctx: Context) {
   // 直接调用经过安全包装的底层执行引擎
   const auth = await ctx.github.checkAuth();
   const repo = await ctx.github.getRepoMetadata();

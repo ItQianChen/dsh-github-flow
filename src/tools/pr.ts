@@ -68,7 +68,7 @@ export function createPrTool(executor: GhExecutor) {
         },
         delete_branch: {
           type: 'boolean',
-          description: '合并/revert 后是否删除源分支（merge、revert 操作时使用，默认 false）。删除分支不可撤销，只在确认该分支已无用后再开启。',
+          description: '合并后是否删除源分支（仅 merge 动作生效，默认 false）。gh pr revert 没有该 flag，传了也不会生效。删除分支不可撤销，只在确认该分支已无用后再开启。',
         },
         undo: {
           type: 'boolean',
@@ -89,7 +89,7 @@ export function createPrTool(executor: GhExecutor) {
         },
         stat_only: {
           type: 'boolean',
-          description: '是否仅输出文件变动概览（diff 动作使用，映射为 gh pr diff --stat，防止大 PR 爆 Token）。',
+          description: '是否仅输出文件变动概览（diff 动作使用，改走 gh pr view --json files，防止大 PR 爆 Token）。',
         },
         confirm: {
           type: 'boolean',
@@ -266,11 +266,40 @@ export function createPrTool(executor: GhExecutor) {
 
         case 'diff': {
           const target = args.pr_number ? [String(args.pr_number)] : [];
-          const diffCmd = ['pr', 'diff', ...target, ...repoArgs];
+
+          // gh pr diff 不提供 --stat（实测 gh 2.96.0 直接 unknown flag / exit 1）。
+          // 文件变更概览的合法来源是 pr view --json files（字段含 path/additions/deletions）。
+          // 返回值保持 { result: string } 形状——renderPrMarkdown 对 result 字符串直出
+          // （src/renderers/pr.ts:15），因此这条路渲染层零改动。
           if (args.stat_only === true) {
-            diffCmd.push('--stat');
+            const statRes = await executor.run(
+              ['pr', 'view', ...target, ...repoArgs, '--json', 'files,additions,deletions'],
+              runOpts
+            );
+            if (!statRes.ok) throw new Error(statRes.error);
+            const detail: any = statRes.data || {};
+            // executor.run 在输出被 24KB 阈值截断时会跳过 JSON.parse（executor.ts:341），
+            // 此时 data 为空、rawOutput 是被切断的半截 JSON。绝不能把「没解析出来」说成「0 个文件」。
+            if (!Array.isArray(detail.files)) {
+              return {
+                result: '未能解析文件变更清单：gh 输出可能被 24KB 截断阈值切断。请改用 github_pr 的完整 diff 动作，或缩小范围后重试。',
+              };
+            }
+            const rows: any[] = detail.files;
+            // 只说是"本次取到的文件"：gh 的 --json files 在超过 100 个文件时静默截断
+            // （cli/cli#12522），不能对外声称是完整清单。
+            const cell = (v: unknown) => String(v ?? '').replace(/\|/g, '\\|');
+            const lines = [
+              `本次取到 ${rows.length} 个变更文件（+${detail.additions ?? 0} / -${detail.deletions ?? 0}）`,
+              '',
+              '| 文件 | 增 | 删 |',
+              '| :--- | ---: | ---: |',
+              ...rows.map((f: any) => `| ${cell(f.path)} | ${f.additions ?? 0} | ${f.deletions ?? 0} |`),
+            ];
+            return { result: lines.join('\n') };
           }
-          const res = await executor.run(diffCmd, runOpts);
+
+          const res = await executor.run(['pr', 'diff', ...target, ...repoArgs], runOpts);
           if (!res.ok) throw new Error(res.error);
           return { result: res.rawOutput || '无差异内容' };
         }
@@ -364,7 +393,8 @@ export function createPrTool(executor: GhExecutor) {
             };
           }
           const revertCmd = ['pr', 'revert', String(args.pr_number), ...repoArgs];
-          if (args.delete_branch === true) revertCmd.push('--delete-branch');
+          // 注意：gh pr revert 没有 --delete-branch（实测 2.96.0 unknown flag），
+          // 不在这里推该 flag；删分支只在 merge 通道支持。
           const res = await executor.run(revertCmd, runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: `PR #${args.pr_number} 的反向提交已创建`, url: res.rawOutput };

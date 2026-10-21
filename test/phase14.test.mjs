@@ -212,7 +212,9 @@ async function runTests() {
   const lastListRsCmd = recordedCmds[recordedCmds.length - 1].cmd;
   assert(lastListRsCmd[0] === 'ruleset' && lastListRsCmd[1] === 'list', '调用 gh ruleset list');
   assert(lastListRsCmd.includes('-R') && lastListRsCmd.includes('owner/test-repo'), '仓库级传递 -R');
-  assert(lastListRsCmd.includes('--no-parents'), '传递 --no-parents');
+  // gh 只有 -p/--parents（默认 true），没有 --no-parents；排除继承必须写 --parents=false
+  assert(lastListRsCmd.includes('--parents=false'), 'no_parents 映射为 --parents=false');
+  assert(!lastListRsCmd.includes('--no-parents'), '不再下发不存在的 --no-parents');
   assert(lastListRsCmd.includes('-L') && lastListRsCmd.includes('15'), '传递 -L limit');
 
   recordedCmds = [];
@@ -226,6 +228,13 @@ async function runTests() {
   await rulesetTool.execute({ action: 'view', ruleset_id: '4898070' });
   const lastViewCmd = recordedCmds[recordedCmds.length - 1].cmd;
   assert(lastViewCmd[0] === 'ruleset' && lastViewCmd[1] === 'view' && lastViewCmd[2] === '4898070', '调用 gh ruleset view <id>');
+
+  // view 侧同款：原测试对此零覆盖，导致同一处假 flag 在本通道长期失守
+  recordedCmds = [];
+  await rulesetTool.execute({ action: 'view', ruleset_id: '4898070', no_parents: true });
+  const viewNoParentsCmd = recordedCmds[recordedCmds.length - 1].cmd;
+  assert(viewNoParentsCmd.includes('--parents=false'), 'view 的 no_parents 映射为 --parents=false');
+  assert(!viewNoParentsCmd.includes('--no-parents'), 'view 不下发不存在的 --no-parents');
 
   let viewMissingId = false;
   try {

@@ -3,7 +3,7 @@
  *
  * 为什么需要这个文件：README 教生态插件这样复用本插件的能力——
  *   export const inject = ['github']
- *   export function apply(ctx) { await ctx.github.checkAuth() }
+ *   export async function apply(ctx) { await ctx.github.checkAuth() }
  * 但在此之前项目里没有任何 `declare module` 声明合并，消费方拿到的 `ctx.github`
  * 类型是 unknown，照文档写会直接编译不过，也没有任何自动补全。
  * 官方每个服务包（如 @deepseek-ai/dsh-workspace、dsh-commands）都做这件事，这里补齐。

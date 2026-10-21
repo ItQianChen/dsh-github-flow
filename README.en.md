@@ -10,7 +10,7 @@
 
 <p align="center">
   <b>Give DeepSeek Harness Agents native hands and feet to operate GitHub, crafting an immersive collaboration cockpit for developers.</b><br>
-  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>18 core domain Agent tools (104 actions covering PR review/Issue tracking/Actions workflow & cache governance/clone-free file reads/branch ruleset policy diagnosis/Gist snippets/labels & global status dashboards/secrets & variables/agent tasks/discussions/projects v2/codespaces/runtime telemetry)</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
+  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>18 core domain Agent tools (103 actions covering PR review/Issue tracking/Actions workflow & cache governance/clone-free file reads/branch ruleset policy diagnosis/Gist snippets/labels & global status dashboards/secrets & variables/agent tasks/discussions/projects v2/codespaces/runtime telemetry)</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
 </p>
 
 <p align="center">
@@ -73,7 +73,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ## 🤖 Core Agent Tools: Equipping Agents with Native GitHub Powers
 
-Consolidates scattered GitHub endpoints into **18 core domain tools (104 actions)** with an official command coverage of **87% (104/120)**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)**, **OAuth Scope self-healing guidance**, and **Zero-argument CWD auto-binding**.
+Consolidates scattered GitHub endpoints into **18 core domain tools (103 actions)**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)**, **OAuth Scope self-healing guidance**, and **Zero-argument CWD auto-binding**.
 
 ### 1. `github_pr`: Pull Request Lifecycle & Automated Code Review
 > **Example Agent Prompts**:
@@ -196,7 +196,9 @@ Consolidates scattered GitHub endpoints into **18 core domain tools (104 actions
 
 ---
 
-### 7. `github_skill`: Agent Skills Ecosystem Discovery & Local Installation
+### 7. `github_skill`: Agent Skills Ecosystem Discovery & Local Installation 🧪 Preview
+
+> 🧪 **Preview dependency**: built on `gh skill`, which is currently in public preview (`subject to change without notice`); the command surface may change with gh releases.
 > **Example Agent Prompts**:
 > - *"Search GitHub for open-source Agent skills related to 'markdown'."*
 > - *"Preview and install the code review skill from 'github/awesome-copilot' into this project."*
@@ -304,20 +306,24 @@ Consolidates scattered GitHub endpoints into **18 core domain tools (104 actions
 
 ---
 
-### 15. `github_agent_task`: Cloud Coding Agent Session Governance
+### 15. `github_agent_task`: Cloud Coding Agent Session Governance 🧪 Preview
+
+> 🧪 **Preview dependency**: built on `gh agent-task`, which is currently in public preview (`subject to change without notice`); the command surface may change with gh releases.
 > **Example Agent Prompts**:
 > - *"List all GitHub Copilot Coding Agent task sessions assigned under my account."*
 > - *"View task 'e2fa49d2' details and fetch its execution logs."*
 > - *"Dispatch a task to the cloud Agent: 'Refactor network layer with retry support', based on branch develop."*
 
 * **Supported Actions**:
-  * `list`: List agent tasks (supports `-L/--limit` and `-R/--repo`);
+  * `list`: List agent tasks (supports `-L/--limit`; `gh agent-task list` does not accept `-R/--repo`, which has no effect on this action);
   * `view`: View task session details and logs (supports `--log`, strictly requires `task_id` to prevent TTY hangs);
   * `create`: Create and dispatch a cloud agent coding task (supports `-b/--base` and `-a/--custom-agent`).
 
 ---
 
-### 16. `github_discussion`: Team Discussions & Open-Source RFC Loop
+### 16. `github_discussion`: Team Discussions & Open-Source RFC Loop 🧪 Preview
+
+> 🧪 **Preview dependency**: built on `gh discussion`, which is currently in public preview (`subject to change without notice`); the command surface may change with gh releases.
 > **Example Agent Prompts**:
 > - *"List open discussions in category 'Ideas' for this repository."*
 > - *"View discussion #101 body and comment thread."*
@@ -436,7 +442,7 @@ Click **`[⚙️ Settings]`** in the top right of the Cockpit (or the ⚙️ but
 * **Visual Cache Management**: Real-time snapshot size and timestamp visibility with one-click `[🗑️ Clear Cache]`.
 
 **🌐 Network Proxy Section** — route all plugin traffic through your proxy:
-* **Global Scope**: Once configured, the cockpit, right-sidebar panel, all 9 Agent tool invocations, and one-click upgrades route through the proxy;
+* **Global Scope**: Once configured, the cockpit, right-sidebar panel, all 18 Agent tool invocations, and one-click upgrades route through the proxy;
 * **Protocol Support**: `http://` / `https://` / `socks5://` / `socks5h://` (`socks5h` delegates DNS resolution to the proxy for stronger pollution resistance);
 * **`[🧪 Test Connectivity]`**: One-click latency probe against the GitHub API through the current proxy;
 * **Instant Effect**: Persisted to `~/.dsh/data/dsh-github-flow/proxy.json` (auto-restored on DSH restart) — no restart, no plugin reload;
@@ -543,7 +549,7 @@ import type { Context } from '@deepseek-ai/cordis';
 
 export const inject = ['github'];
 
-export function apply(ctx: Context) {
+export async function apply(ctx: Context) {
   const auth = await ctx.github.checkAuth();
   const repo = await ctx.github.getRepoMetadata();
   const prs = await ctx.github.run(['pr', 'list', '--json', 'number,title']);
