@@ -27,14 +27,26 @@ export { globalCacheTtlMs };
 export function registerApiRoutes(
   ctxOrWebServer: any,
   executor: GhExecutor,
-  workspaceRegistry?: any,
   cacheTtlMs = 15_000,
   updateChecker?: UpdateChecker,
   upgradeManager?: UpgradeManager,
-  proxyManager?: ProxyRouteManager
+  proxyManager?: ProxyRouteManager,
+  /**
+   * 显式 webServer 覆盖。
+   *
+   * 为什么必须显式传：cordis 的服务只有 `inject` 过才会挂在 `ctx` 上，而未 inject 时
+   * 读 `ctx.webServer` **不是返回 undefined，而是直接抛错**——
+   * `cannot get property "webServer" without inject`（cordis `src/reflect.ts:144-169`
+   * 的 Proxy get 陷阱）。所以 `ctx?.webServer` 这种"安全回退"根本不安全：它在
+   * CLI/TUI profile 里会把插件从「PENDING」变成「加载失败」。
+   */
+  webServerOverride?: any
 ) {
   const ctx = ctxOrWebServer;
-  const webServer = ctx?.webServer || ctx;
+  // 只对「真 Context」走 ctx.get()：ctx.get 是 Context 原型方法，读它永远安全；
+  // 而 `ctx.webServer` 只有确定 ctx 不是 cordis Proxy（即测试用的普通对象）时才能读。
+  const isCordisContext = typeof ctx?.get === 'function';
+  const webServer = webServerOverride ?? (isCordisContext ? ctx.get('webServer') : (ctx?.webServer ?? ctx));
   if (!webServer || typeof webServer.register !== 'function') return;
 
   const checker = updateChecker || new UpdateChecker();

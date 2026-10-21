@@ -3,7 +3,7 @@ name: CI
 # PR / push 门禁。
 #
 # 为什么必须存在：在加这个文件之前，仓库只有 npm-publish.yml（tag 触发），
-# 没有任何东西在 PR 上跑测试——"33 个 phase 全绿"这个数字从来没有拦住过任何一次提交。
+# 没有任何东西在 PR 上跑测试——"全量 phase 全绿"这个数字从来没有拦住过任何一次提交。
 #
 # 为什么必须先 build 再测：test/ 里有 170+ 处 `../lib/` 引用，而 `lib/` 是被 git 跟踪的
 # 构建产物。裸跑 `node test/run-all.mjs` 验的是**上一次提交的产物**，改完 src 不构建
@@ -54,7 +54,7 @@ jobs:
       - name: 构建产物
         run: pnpm run build
 
-      - name: 全量测试（含 phase34 契约 / phase35 文档对账）
+      - name: 全量测试（含 phase34 契约 / phase35 文档对账 / phase36 宿主契约）
         run: node test/run-all.mjs
 
       # 产物漏提交检查：先只告警。typescript 小版本差异可能产生纯格式 diff，

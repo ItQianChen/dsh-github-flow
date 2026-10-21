@@ -9,6 +9,8 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 async function runTests() {
   let passed = 0;
@@ -100,9 +102,27 @@ index 1234567..89abcdef 100644
   // 当前仓库真实存在的文件 diff 探测
   const selfDiff = await executor.getFileDiff(process.cwd(), 'package.json');
   assert(selfDiff.ok && selfDiff.filePath === 'package.json', '探测已有文件返回结构化 diff 对象');
+
   // 干净文件不得被伪造成 'M'：旧实现默认 fileStatus='M'，只在 porcelain 有输出时覆盖，
   // 于是没改动的文件也显示"已修改但 diff 为空"。
-  assert(selfDiff.status !== 'M', `干净文件的 status 不再伪造为 M（实际: ${selfDiff.status}）`);
+  //
+  // 为什么不用本仓的 package.json 当样本：那隐含「工作区恰好干净」这个前提，任何人
+  // 只要动了 package.json（加依赖、升版本号）这条断言就假红——测的是工作区状态，
+  // 不是被测逻辑。改为在临时目录现造一个「已提交且无改动」的仓库，与工作区彻底解耦。
+  const cleanRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-clean-repo-'));
+  try {
+    const git = (...args) => execFileSync('git', args, { cwd: cleanRepo, stdio: 'ignore' });
+    git('init', '-q');
+    git('config', 'user.email', 'test@example.com');
+    git('config', 'user.name', 'test');
+    fs.writeFileSync(path.join(cleanRepo, 'clean.txt'), 'hello\n');
+    git('add', 'clean.txt');
+    git('commit', '-q', '-m', 'init');
+    const cleanDiff = await executor.getFileDiff(cleanRepo, 'clean.txt');
+    assert(cleanDiff.ok && cleanDiff.status !== 'M', `干净文件的 status 不再伪造为 M（实际: ${cleanDiff.status}）`);
+  } finally {
+    fs.rmSync(cleanRepo, { recursive: true, force: true });
+  }
 
   // getUncommittedFiles 分页逻辑测试
   const pagedFiles = await executor.getUncommittedFiles(process.cwd(), 15, 0);

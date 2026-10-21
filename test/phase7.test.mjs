@@ -81,7 +81,9 @@ console.log('\n--- 4. route e2e (mock) ---');
   const { registerApiRoutes } = await import('../lib/api/routes.js');
   const { TtlCache } = await import('../lib/cache.js');
   const mockExec = { run: async () => ({ ok: true }), checkAuth: async () => ({ installed: true, loggedIn: false }) };
-  registerApiRoutes(fakeCtx, mockExec, undefined, 15000);
+  // 签名：registerApiRoutes(ctxOrWebServer, executor, cacheTtlMs, updateChecker, upgradeManager, proxyManager, webServerOverride)
+  // 注意 fakeCtx 是普通对象（不是 cordis Proxy），所以 routes 内部的 `ctx.webServer` 回退可读。
+  registerApiRoutes(fakeCtx, mockExec, 15000);
 
   const handler = registered['/api/github/action'];
   assert(typeof handler === 'function', 'action 路由已注册');

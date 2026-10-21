@@ -4,6 +4,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
+import { createMockContext } from './helpers/mock-ctx.mjs';
 
 async function runTests() {
   let passed = 0;
@@ -281,18 +282,11 @@ async function runTests() {
 
   console.log('\n--- 3. main.ts 16 工具装配与 help 映射覆盖测试 ---');
   const mainModule = await import('../lib/main.js');
-  let registeredTools = [];
-  const mockCtx = {
-    tools: {
-      register(tool) {
-        registeredTools.push(tool.name);
-      },
-    },
-    commands: {
-      register() {},
-    },
-  };
-  mainModule.apply(mockCtx, { checkUpdate: false });
+  const mockCtx = createMockContext();
+  // 配置必须过 Schema：apply 的入参是 Schemastery 的输出形态（volatile 字段是稳定引用），
+  // 直接喂裸对象会让 .get() 落空。这里与 cordis loader 的做法保持一致。
+  mainModule.apply(mockCtx, mainModule.Config({ checkUpdate: false }));
+  const registeredTools = mockCtx.registeredTools;
   assert(registeredTools.length >= 16, `main.ts 成功装配核心工具矩阵 (实际: ${registeredTools.length} >= 16)`);
   assert(registeredTools.includes('github_agent_task'), '装配中包含 github_agent_task');
   assert(registeredTools.includes('github_discussion'), '装配中包含 github_discussion');

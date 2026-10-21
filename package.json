@@ -17,6 +17,7 @@
     ".": "./lib/main.js",
     "./entry": "./lib/main.js",
     "./client": "./lib/client.js",
+    "./host": "./lib/github-service.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -55,9 +56,15 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4"
+  },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
     "@types/node": "^26.6.3",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.5"
   }
 }

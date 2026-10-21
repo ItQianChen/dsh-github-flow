@@ -30,8 +30,11 @@ function ok(cond, name, extra) {
 }
 
 // ---- 1. 从代码派生：工具数 ----
+// 只数「把工具工厂产物注册进去」的语句：tools.register(createXxxTool(…))。
+// 不用裸 `ctx.tools.register(`：main.ts 已改为经 inject 声明后局部取 tools 服务，
+// 裸模式会静默变成 0，而 0 会让「=== 18」失败得莫名其妙。
 const mainSrc = readFileSync(path.join(ROOT, 'src/main.ts'), 'utf8');
-const toolCount = (mainSrc.match(/ctx\.tools\.register\(/g) || []).length;
+const toolCount = (mainSrc.match(/tools\.register\(\s*create[A-Z]\w*Tool\(/g) || []).length;
 
 // ---- 2. 从产物派生：每个工具的 action enum 长度 ----
 const LIB_TOOLS = path.join(ROOT, 'lib/tools');
@@ -113,6 +116,21 @@ ok(!/87%|104\/120/.test(readmeSrc) && !/87%|104\/120/.test(readmeEn), '不再出
 ok(
   !/export function apply\(ctx/.test(readmeSrc) && !/export function apply\(ctx/.test(readmeEn),
   'README 的 ctx.github 示例已声明 async（否则照抄编译不过）'
+);
+
+console.log('\n--- 4. docs/architecture.md 声明的测试阶段数与 run-all.mjs 对账 ---');
+// 这个数字在文档里长期是手写的（曾写「33 个独立阶段」而实际已是 35 个）。
+// 断言它等于 phases 数组长度，加阶段忘了改文档就会红。
+const runAllSrc = readFileSync(path.join(ROOT, 'test/run-all.mjs'), 'utf8');
+const phasesMatch = runAllSrc.match(/const phases = \[([\s\S]*?)\];/);
+const actualPhases = phasesMatch ? (phasesMatch[1].match(/'[^']+\.test\.mjs'/g) || []).length : 0;
+const archSrc = readFileSync(path.join(ROOT, 'docs/architecture.md'), 'utf8');
+const archPhaseMatch = archSrc.match(/(\d+)\s*个独立阶段/);
+ok(actualPhases > 0, `run-all.mjs 的 phases 数组可解析（实际 ${actualPhases} 项）`);
+ok(archPhaseMatch !== null, 'docs/architecture.md 声明了测试阶段数');
+ok(
+  archPhaseMatch !== null && Number(archPhaseMatch[1]) === actualPhases,
+  `architecture.md 的阶段数与 run-all.mjs 一致（文档 ${archPhaseMatch?.[1] ?? '缺失'} / 实际 ${actualPhases}）`
 );
 
 console.log('\n========================================');

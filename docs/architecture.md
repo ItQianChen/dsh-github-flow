@@ -83,14 +83,14 @@
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
 │   │ 模块化 UI 架构 (src/ui/ ➔ 经 scripts/build.mjs 拓扑聚合单一 Bundle)  │   │
 │   │                                                                     │   │
-│   │  · styles.ts (1290行自适应 CSS, 构建期紧凑压缩)                      │   │
+│   │  · styles.ts (自适应 CSS, 构建期紧凑压缩)                          │   │
 │   │  · icons.ts (Octocat, Git 官方菱形分支矢量组件, 插件徽标)           │   │
 │   │  · storage.ts (LocalStorage SWR 状态机与偏好存储)                   │   │
 │   │  · components/ (分支下拉/认证引导/升级通知/离线横幅/状态胶囊)       │   │
 │   │  · modals/ (Commit 详情弹窗 / PR 审阅工作台 / Issue 在线查看 / 全局设置弹窗)  │   │
 │   │  · panels/ (首页全景大面板 workspace-panel.ts)                      │   │
 │   │                                                                     │   │
-│   │ 核心组装入口 (src/client.ts, ~1,260 行高内聚):                      │   │
+│   │ 核心组装入口 (src/client.ts, 高内聚):                              │   │
 │   │  - applyTabState (纯 DOM 互斥状态应用, 满足单测白盒契约)            │   │
 │   │  - renderGithubRepoView (五 Tab 核心视图: Git/未提交/PR/Issue/Run)   │   │
 │   │  - GithubRightbarBody (右侧栏主体, 状态引用解耦与时序安全守护)       │   │
@@ -137,7 +137,7 @@
 为彻底解决单文件臃肿过长（如旧版 `client.ts` 超过 5,200 行、`executor.ts` 超过 1,100 行）的技术债，项目已全面落地分层解耦与自包含构建规范：
 
 ### 3.1 后端执行引擎分层 (`src/executor/`)
-- [src/executor.ts](../src/executor.ts)（瘦身至 ~820 行）：保留 `GhExecutor` 类核心编排（命令白名单、执行通道、认证与版本缓存），完整 Re-export 子模块符号，保持 100% 向后兼容；
+- [src/executor.ts](../src/executor.ts)（瘦身至只保留编排层）：保留 `GhExecutor` 类核心编排（命令白名单、执行通道、认证与版本缓存），完整 Re-export 子模块符号，保持 100% 向后兼容；
 - [src/executor/git-parser.ts](../src/executor/git-parser.ts)：纯文本解析器（`status -sb`、`log`、`branch -a`），无 I/O、无副作用；
 - [src/executor/version-utils.ts](../src/executor/version-utils.ts)：语义化版本数值分段比对纯算法；
 - [src/executor/process-utils.ts](../src/executor/process-utils.ts)：`spawnWithStdin` 进程管道流控与 UTF-8 字符边界截断算法；
@@ -155,24 +155,35 @@
 
 ### 3.4 前端客户端解耦与自包含 Bundle 机制 (`src/ui/` + `src/client.ts`)
 - **源码物理剥离**：
-  - [src/client.ts](../src/client.ts)（当前约 2,400 行）：保留右侧栏核心协同 `renderGithubRepoView` 与 `GithubRightbarBody` 及插件入口；新增 UI 优先下沉到 `src/ui/`，不在入口文件里堆叠；
-  - **18 个独立子模块**下沉至 [src/ui/](../src/ui/) 目录：样式 2,506 行、全景大面板 932 行、PR 审阅弹窗 817 行、Issue 查看弹窗 565 行、设置弹窗 552 行、使用指南 408 行，其余卡片类组件 60~300 行；
+  - [src/client.ts](../src/client.ts)（保留右侧栏协同层与插件入口）：保留右侧栏核心协同 `renderGithubRepoView` 与 `GithubRightbarBody` 及插件入口；新增 UI 优先下沉到 `src/ui/`，不在入口文件里堆叠；
+  - **18 个独立子模块**下沉至 [src/ui/](../src/ui/) 目录：样式（最大的单模块）、全景大面板、PR 审阅弹窗、Issue 查看弹窗、设置弹窗、使用指南，其余卡片类组件体量更小；
+    > 这里刻意不写绝对行数。行数会随每次重构变化，而本文档没人会跟着改——历史上同一个 `client.ts` 在本文件里同时存在「~1,260 行」与「约 2,400 行」两个互斥数字，`executor.ts` 也写着早已失效的「~820 行」。需要精确数字请直接看文件。
 - **命名空间防护**：
   - 严禁在与 `package.json` 的 `exports["./client"]` 同级创建名为 `client/` 的目录，统一命名为 `src/ui/` 与编译产物 `lib/ui/`，彻底杜绝模块解析器产生“同名文件 vs 目录”的歧义报错；
 - **自包含 Bundle 聚合器 (`scripts/build.mjs`)**：
   - 构建脚本按严格拓扑顺序将 `lib/ui/` 子模块内联注入 `lib/client.js` 的 `window.__ModuleLoader__.load` 闭包中，移除 `export` 关键字；
   - **顺序即依赖**：`markdown-lite → pr-modal → issue-modal → …` 不可随意重排（`issue-modal` 复用了 `pr-modal` 的 `CollapsibleBody`）；`workspace-panel` 置于后置列表，保证 `GithubRightbarBody` 位于 `GithubWorkspacePanel` 之前；
-  - 对嵌入的约 2,500 行纯 CSS 实施紧凑压缩；压缩后强制校验「无注释定界符残留 / 无行首 `*` 悬空段 / 花括号配平」，任一项不过直接构建失败——非法 CSS 会被浏览器**静默丢弃整条规则**，只表现为「样式莫名不生效」，极难排查；
+  - 对嵌入的纯 CSS 实施紧凑压缩；压缩后强制校验「无注释定界符残留 / 无行首 `*` 悬空段 / 花括号配平」，任一项不过直接构建失败——非法 CSS 会被浏览器**静默丢弃整条规则**，只表现为「样式莫名不生效」，极难排查；
 - **React Hook 时序安全防线**：
   - 全部 Hook（含 `useEffect`）必须位于任何 early return 之前，否则「参数由空变有值」时两次渲染的 Hook 数量不一致，触发 `Rendered fewer hooks than expected` 崩溃；
   - `renderGithubRepoView` 这类每次渲染都重新执行的普通函数内**禁止**调用 Hook，状态必须住在有 Hook 的组件体内再传参；
   - 组件内引用的 `useRef`（如 `containerRef`）必须在组件声明最前列初始化，严禁跨行下置引发变量提升 `undefined`；所有的 Ref 访问点必须配备 `containerRef && containerRef.current` 守卫。
 
+### 3.5 客户端加载器：对宿主 client 契约的适配层
+
+`src/client.ts` 里的 `window.__ModuleLoader__.load({ id, factory })` **不是本插件的设计，而是宿主客户端的加载契约**：
+
+- 全局声明在 `src/client.ts` 顶部（`Window.__ModuleLoader__`），唯一调用点在文件末尾的 `load({ id: "dsh-github-flow", factory })`；
+- `factory` 收到的 `require` 是**宿主注入的模块解析器**（`react`、`react-dom` 等由宿主提供，插件不打包也不得打包自己的副本），`id` 必须与 `package.json` 的 `dsh.client.entry` 归属一致；
+- 该 API **不是官方公开文档化的稳定接口**，语义由宿主实现决定。一旦宿主调整加载方式，**只改这一层**，`src/ui/` 下的 18 个子模块一行都不用动；
+- 因为它是"适配层"，`test/phase36-host-contract.test.mjs` 对它的**形状**做了断言（入口存在、id 固定、`apply`/`inject` 已导出、18 个子模块全部内联、闭包内无残留 ESM `export`），而不是只靠"跑起来没报错"来验证。
+
 ---
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **33 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，覆盖 **1784 项全量自动化测试断言**：
+项目配备了 **36 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
+- 阶段数与 `test/run-all.mjs` 的 `phases` 数组由 `test/phase35-doc.test.mjs` 对账，改一处漏一处会直接红；
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
 - `phase3`：Release 资产交付、Secret 密文管道与 Skills 检索；
@@ -205,4 +216,7 @@
 - `phase30`：PR 弹窗 Markdown 渲染与滚动适配（markdown-lite 零依赖解析器：标题/粗斜体/行内码/围栏代码块/列表/引用/分隔线/任务列表；链接协议白名单拒绝 javascript:/data:/vbscript:/协议相对；HTML 标签降级为纯文本；estimateContentLines 折叠阈值估算；卡片 flex:0 0 auto 修复「长内容无法滚动」；CollapsibleBody 提升到模块顶层避免内联组件导致展开状态被重置）。
 - `phase31`：Issue 在线查看工作台（getIssueDetail 参数白名单含小数/负数拒绝、**2MB 字符阈值防长讨论被截断成假空详情**、老版本 gh `Unknown JSON field` 的 BASE 字段降级链与 fieldsDegraded 标记、非字段类失败不重试、截断与解析缺失显式失败并给出浏览器直达链接、state/author/labels/milestone/subIssuesSummary/closedByPullRequestsReferences 归一化、SPAM 隐藏评论标记保留、图片清单正文+评论合并去重、/api/github/issue-detail 路由 200/400/405/500 全路径、action 通道 issue_detail 对称可用、主面板与右侧栏 Issue 卡片改点击进弹窗 + 同行 GitHub ↗ 外跳 stopPropagation + 卡片禁内联 flex 布局、onSelectIssue 追加在形参末尾、React Hooks 顺序与 bundle 三模块拓扑顺序防回退）。
 - `phase32`：右侧栏 PR/Issue 状态筛选（**单仓库查询显式 `--state all`**，修复「只显示已打开」根因——gh 默认 state 就是 open，数据在到达浏览器前已被过滤；条数上限 10→20 并抽成 RIGHTBAR_LIST_LIMIT 常量，依据 `gh pr list` 按 number 降序而非 updatedAt，取 10 条时非 OPEN 仅剩 5 条；触顶下发 prsTruncated/issuesTruncated 并渲染提示；PR 四档 all/open/merged/closed 与 Issue 三档 all/open/closed 胶囊复用既有样式类、计数先于过滤保证数字反映全量；偏好按 cwd 隔离存储、非法值与脏 JSON 归一回退、大写输入归一；空态区分「仓库无记录」与「筛选无结果」并给切换引导；Hook 位置（不可落在 renderGithubRepoView 内）、切仓库对齐只依赖 cwd、**作用域键无碰撞（/a/b 与 /a_b 不得压成同一个键）**、卡片布局纪律防回退）。
-- `phase33`：使用指南内容与代码事实对账（help-modal 从 4 Tab 扩到 5 Tab，新增「18 大工具速查」；**工具数量对 src/main.ts 的 ctx.tools.register 数量、action 总数对 src/tools 的 enum 累计、Tab 名称对 TAB_DEFS 与 workspace-panel 逐个核对**，代码演进而指南没跟上即失败；覆盖 PR/Issue 在线弹窗、状态筛选三档、Markdown 渲染、仓库切换器、提交详情、Diff 下钻、view_images 等近期能力；FAQ 扩至 6 条含「列表为空但网页有记录」与「为何需重启 DSH」；**防编造断言：指南中每条 `gh auth refresh -s <scope>` 必须能在源码找到出处**；**github_help 知识库同步对账：mapping 表声明的每组 action 数逐个对 src/tools 的 enum 长度、每个业务 action 必须在知识库有落点、规模口径统一为「18 工具 / 103 业务 action」（排除 help 的 21 查询主题与 api 的 4 HTTP method），Agent 侧知识库与 UI 侧使用指南必须同口径**）。
+- `phase33`：使用指南内容与代码事实对账（help-modal 从 4 Tab 扩到 5 Tab，新增「18 大工具速查」；**工具数量对 src/main.ts 的工具工厂注册语句数量、action 总数对 src/tools 的 enum 累计、Tab 名称对 TAB_DEFS 与 workspace-panel 逐个核对**，代码演进而指南没跟上即失败；覆盖 PR/Issue 在线弹窗、状态筛选三档、Markdown 渲染、仓库切换器、提交详情、Diff 下钻、view_images 等近期能力；FAQ 扩至 6 条含「列表为空但网页有记录」与「为何需重启 DSH」；**防编造断言：指南中每条 `gh auth refresh -s <scope>` 必须能在源码找到出处**；**github_help 知识库同步对账：mapping 表声明的每组 action 数逐个对 src/tools 的 enum 长度、每个业务 action 必须在知识库有落点、规模口径统一为「18 工具 / 103 业务 action」（排除 help 的 21 查询主题与 api 的 4 HTTP method），Agent 侧知识库与 UI 侧使用指南必须同口径**）。
+- `phase34`：**gh CLI 契约测试**（离线采集 18 工具 × 103 action 的全部 argv，逐条校验下发的每个 flag 与 `--json` 字段都真实存在于缓存下来的 `gh <cmd> --help` 里；`scripts/cache-gh-help.mjs` 抓取 124 个子命令的帮助并裁剪成 fixture；覆盖 124 argv / 317 flag / 256 个 `--json` 字段，SKIP 白名单显式登记「需真实凭证或真实文件」的少数条目）。
+- `phase35`：**文档数字派生测试**（README / README.en / help.ts / help-modal.ts 里的「工具数 / 业务 action 数」全部从 `src/main.ts` 与 `lib/tools/*.js` 派生，一个都不手写；同时守卫三条历史漂移：不再出现 `104`、不再出现不可复现的「87%（104/120）」、README 的 `ctx.github` 示例必须是 `async`；并对账 `docs/architecture.md` 声明的测试阶段数与 `run-all.mjs` 的 `phases` 数组长度）。
+- `phase36`：**宿主契约测试**（① 客户端 Bundle 形状：loader 入口 / id / apply+inject 导出 / 18 个子模块内联 / 闭包内无残留 ESM `export`；② 插件元数据：`inject` 收敛为唯一硬依赖 `tools`、`provide='github'`、无 `ctx.github` 裸赋值兜底、Config 已迁 Schemastery、`peerDependencies` 只声明宿主 cordis、`exports["./host"]` 指向的产物真实存在；③ 18 个工具的 descriptor 逐个复刻宿主 enforced JSON Schema 子集规则——关键字白名单、`type` 取值域、`properties`/`required`/`items`/`additionalProperties` 的归属约束、`required ⊆ properties`、`enum` 标量性，以及 `output.schema`/`output.render`/`execute` 的必备性；④ **真实 cordis Context 加载冒烟**——只 provide `tools` 时插件必须 ACTIVE 且 18 工具可用（这条专抓 mock 抓不到的缺陷：cordis 的 Context 是 Proxy，读未 inject 的服务属性会**抛错**而不是返回 undefined）、`commands`/`webServer` 晚于插件就绪仍能补注册、volatile 热更新不得冲掉显式配置的 `maxOutputBytes`）。

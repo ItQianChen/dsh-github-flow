@@ -34,7 +34,10 @@ async function runTests() {
   // ============================================================
   console.log('\n--- 1. 工具数量与代码事实对账 ---');
   // ============================================================
-  const registered = (mainSrc.match(/ctx\.tools\.register\(/g) || []).length;
+  // 只数「把工具工厂产物注册进去」的语句：ctx.tools.register(createXxxTool(…))
+  // 不用裸 `ctx.tools.register(` 是因为 tools 服务可能经局部别名（const tools = …）调用，
+  // 裸模式一旦别名化就静默变成 0，而 0 恰好会让「== 18」失败得莫名其妙。
+  const registered = (mainSrc.match(/tools\.register\(\s*create[A-Z]\w*Tool\(/g) || []).length;
   ok(registered === 18, '代码中注册 18 个 Agent 工具', String(registered));
 
   // 指南里声明的工具数量必须与实际一致
