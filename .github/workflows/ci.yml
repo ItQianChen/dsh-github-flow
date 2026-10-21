@@ -1,0 +1,62 @@
+name: CI
+
+# PR / push 门禁。
+#
+# 为什么必须存在：在加这个文件之前，仓库只有 npm-publish.yml（tag 触发），
+# 没有任何东西在 PR 上跑测试——"33 个 phase 全绿"这个数字从来没有拦住过任何一次提交。
+#
+# 为什么必须先 build 再测：test/ 里有 170+ 处 `../lib/` 引用，而 `lib/` 是被 git 跟踪的
+# 构建产物。裸跑 `node test/run-all.mjs` 验的是**上一次提交的产物**，改完 src 不构建
+# 等于白测——这正是历史上「测试全绿但行为是错的」能长期共存的原因之一。
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0 # 与 npm-publish.yml 同版本，避免 lockfile 解析差异
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 类型检查
+        run: pnpm exec tsc --noEmit
+
+      - name: 构建产物
+        run: pnpm run build
+
+      - name: 全量测试（含 phase34 契约 / phase35 文档对账）
+        run: node test/run-all.mjs
+
+      # 产物漏提交检查：先只告警。typescript 小版本差异可能产生纯格式 diff，
+      # 直接硬门禁会误伤；但这条检查必须有——docs/UPGRADE-NOTES.md 记着
+      # v0.2.0 事故的一半原因是"发布时 lib/version.js 是旧产物"。
+      # 稳定两周后把 continue-on-error 去掉。
+      - name: 产物一致性（先只告警）
+        continue-on-error: true
+        run: git diff --exit-code --stat -- lib/
