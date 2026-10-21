@@ -526,17 +526,19 @@ export class GhExecutor {
    * 零网络：status 基于 remote-tracking ref（上次 fetch 的快照），毫秒级本地读取，
    * 符合 global-overview 端点「工作区探测不发网络」的性能红线。
    */
-  async getLocalGitStatus(cwd?: string): Promise<GitLocalStatus | null> {
+  async getLocalGitStatus(cwd?: string, timeoutMs = 3_000): Promise<GitLocalStatus | null> {
     try {
-      // 纯本地毫秒级；3s 超时兜底异常文件系统
+      // 默认 3s：概览面板只是"读不到就不渲染这一行"的兜底语义。
+      // 但安全闸门（ensureCleanWorkspace）必须显式传更长超时——大型仓库 / 网络盘上
+      // `git status` 冷启动超 3s 很常见，用 3s 会把"读不到"误判成"有风险"。
       const { stdout } = await execFileAsync('git', ['status', '-sb', '--porcelain'], {
         cwd: cwd || undefined,
-        timeout: 3_000,
+        timeout: timeoutMs,
         windowsHide: true,
       });
       return parseGitStatusOutput(String(stdout), 2000);
     } catch {
-      // 非 Git 目录 / git 未安装 / 超时：静默降级为 null（调用方不渲染该行）
+      // 非 Git 目录 / git 未安装 / 超时：静默降级为 null（调用方自行决定语义）
       return null;
     }
   }
@@ -865,20 +867,34 @@ export class GhExecutor {
    * 于是「强阻断」的成文承诺只对界面成立。安全不变量必须只有一处实现。
    *
    * 三态语义（fail-closed）：
-   * - `null`（git 不可用 / 非仓库）→ 拒绝。读不到状态≠干净，放行等于闸门失效。
+   * - `null`（git 读不到）→ 拒绝。读不到状态≠干净，放行等于闸门失效。
    * - `dirtyCount > 0` → 拒绝，并带前 5 条样例便于用户判断。
    * - 其余 → 放行。
+   *
+   * 超时为什么单独给 20s：`getLocalGitStatus` 默认 3s 是给概览面板用的（读不到就不渲染那一行），
+   * 但这里是一次安全判决——大型仓库 / 网络盘 / OneDrive 同步目录下 `git status` 冷启动超 3s
+   * 很常见，用 3s 会把"慢"误判成"脏/不可用"，直接把 checkout 挡死。
    */
   async ensureCleanWorkspace(cwd: string | undefined): Promise<WorkspaceCleanResult> {
     const targetCwd = this.resolveWorkspaceCwd(cwd);
-    const gitSt = await this.getLocalGitStatus(targetCwd);
+    // 先区分"根本不是 Git 仓库"与"是仓库但读不到状态"——两者对用户的可操作性完全不同。
+    if (!hasGitDir(targetCwd)) {
+      return {
+        ok: false,
+        reason: 'unknown',
+        dirtyCount: 0,
+        samples: [],
+        error: `当前目录不是 Git 仓库（${targetCwd}），无法执行需要切换分支的操作。`,
+      };
+    }
+    const gitSt = await this.getLocalGitStatus(targetCwd, 20_000);
     if (gitSt === null) {
       return {
         ok: false,
         reason: 'unknown',
         dirtyCount: 0,
         samples: [],
-        error: '无法读取当前工作区的 Git 状态（可能不是 Git 仓库，或 git 不可用）。为避免覆盖本地改动，已拒绝执行。',
+        error: '读取工作区 Git 状态失败（git 不可用、超时或权限不足）。为避免覆盖本地改动，已拒绝执行。',
       };
     }
     if (gitSt.dirtyCount > 0) {
