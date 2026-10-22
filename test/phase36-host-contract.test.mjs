@@ -80,7 +80,7 @@ ok(/id:\s*"dsh-github-flow"/.test(bundle), 'loader id 固定为 dsh-github-flow'
 ok(/exports\.apply = apply/.test(bundle) && /exports\.inject = inject/.test(bundle), 'apply/inject 已导出');
 const bundledCount = (bundle.match(/---- \[Bundled: /g) || []).length;
 ok(bundle.includes('---- [Bundled: state-badges.js]'), '共享状态徽章模块 state-badges.js 已内联（服务端与 UI 共用同一份映射）');
-ok(bundledCount === 19, '19 个 Bundle 子模块已内联（18 UI + 1 shared）', `实际 ${bundledCount}`);
+ok(bundledCount === 20, '20 个 Bundle 子模块已内联（19 UI + 1 shared）', `实际 ${bundledCount}`);
 // 子模块被内联进闭包后不得残留 ESM 导出语法，否则整段在浏览器里语法错误
 ok(!/^export\s+(const|function|class|default)\s/m.test(bundle), 'Bundle 内无残留 ESM export 语句');
 

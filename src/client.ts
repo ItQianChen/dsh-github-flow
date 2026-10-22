@@ -42,6 +42,7 @@ import { SyncStatusBadge } from './ui/sync-status-badge.js';
 import { CommitDetailModal } from './ui/commit-modal.js';
 import { PrDetailModal } from './ui/pr-modal.js';
 import { IssueDetailModal } from './ui/issue-modal.js';
+import { RunDetailModal } from './ui/run-modal.js';
 import { GlobalSyncSettingsModal } from './ui/sync-settings-modal.js';
 import { GithubHelpModal } from './ui/help-modal.js';
 import { GithubWorkspacePanel } from './ui/workspace-panel.js';
@@ -85,6 +86,7 @@ export {
   CommitDetailModal,
   PrDetailModal,
   IssueDetailModal,
+  RunDetailModal,
   GlobalSyncSettingsModal,
   GithubHelpModal,
   GithubWorkspacePanel,
@@ -475,7 +477,12 @@ window.__ModuleLoader__.load({
        * 为什么需要它：请求往返几百毫秒到数秒，页脚不变化的话用户会以为点击没生效而连点，
        * 触发重复请求（服务端虽然有 loadingMoreListsRef 兜底，但界面必须有反馈）。
        */
-      listLoading: { prs?: boolean; issues?: boolean; runs?: boolean } | null = null
+      listLoading: { prs?: boolean; issues?: boolean; runs?: boolean } | null = null,
+      /**
+       * Actions 卡片点击 → Run 详情弹窗。
+       * 同样必须追加在形参末尾（理由见上一条：位置参数错位不会报错，只会静默串值）。
+       */
+      onSelectRun: ((target: { runId: number; repo: string }) => void) | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -1473,13 +1480,37 @@ window.__ModuleLoader__.load({
               runs.map((r: any) =>
                 h(
                   "div",
-                  { key: r.databaseId, className: "dsh-github-item" },
-                  h("a", {
-                    className: "dsh-github-item-title",
-                    href: r.url,
-                    target: "_blank",
-                    title: r.createdAt ? `始于 ${r.createdAt}` : undefined,
-                  }, r.name),
+                  {
+                    key: r.databaseId,
+                    className: "dsh-github-item",
+                    // 只加 cursor：内联 display:flex 会顶掉 .dsh-github-item 的 column 布局
+                    style: onSelectRun ? { cursor: "pointer" } : undefined,
+                    title: onSelectRun ? "点击在线查看该运行（job / step / 失败日志）" : undefined,
+                    onClick: onSelectRun
+                      ? function () {
+                          onSelectRun({ runId: Number(r.databaseId), repo: repo?.nameWithOwner || "" });
+                        }
+                      : undefined,
+                  },
+                  // 标题与外跳必须同行拆开：Actions 卡片过去整行就是一个 <a>，
+                  // 点击即跳浏览器；现在卡片本身要进弹窗，外跳必须独立成按钮并
+                  // stopPropagation，否则点外跳会连带把弹窗也打开。
+                  h(
+                    "div",
+                    { className: "dsh-github-pr-title-row" },
+                    h("span", {
+                      className: "dsh-github-item-title",
+                      title: r.createdAt ? `始于 ${r.createdAt}（点击在线查看）` : "点击在线查看该运行",
+                    }, r.name),
+                    h("a", {
+                      className: "dsh-github-pr-gh-btn",
+                      href: r.url,
+                      target: "_blank",
+                      rel: "noopener noreferrer",
+                      onClick: (e: any) => e.stopPropagation(),
+                      title: "在浏览器打开该运行（不进入在线详情）",
+                    }, "GitHub ↗")
+                  ),
                   h(
                     "div",
                     { className: "dsh-github-item-meta" },
@@ -1496,7 +1527,7 @@ window.__ModuleLoader__.load({
                     ? h("div", {
                         className: "dsh-github-card-subtext",
                         style: { fontSize: "11px", marginTop: "2px" },
-                      }, `💡 让 Agent 调用 github_run(action:'log_failed', run_id:'${r.databaseId}') 提取失败日志定位原因`)
+                      }, `💡 点击卡片查看失败步骤与日志；或让 Agent 调用 github_task(action:'diagnose_ci', run_id:'${r.databaseId}')`)
                     : null
                 )
               )
@@ -1968,6 +1999,8 @@ window.__ModuleLoader__.load({
       var [activePr, setActivePr] = React.useState(null as { number: number; repo: string } | null);
       // Issue 在线查看弹窗状态：与 PR 同构
       var [activeIssue, setActiveIssue] = React.useState(null as { number: number; repo: string } | null);
+      // Run 在线详情弹窗状态：{ runId, repo }；为 null 时不挂载弹窗（零常驻开销）
+      var [activeRun, setActiveRun] = React.useState(null as { runId: number; repo: string } | null);
       var [extraCommits, setExtraCommits] = React.useState([] as any[]);
       var [loadingMore, setLoadingMore] = React.useState(false);
       var [hasMoreCommits, setHasMoreCommits] = React.useState(true);
@@ -2352,7 +2385,8 @@ window.__ModuleLoader__.load({
           changeIssueFilter,
           // 必须追加在形参末尾（该函数 30+ 个位置参数，插中间会静默错位）
           loadMoreTabList,
-          listLoading
+          listLoading,
+          (target: { runId: number; repo: string }) => setActiveRun(target)
         ),
         h(GlobalSyncSettingsModal, {
           isOpen: aboutModalOpen,
@@ -2400,6 +2434,15 @@ window.__ModuleLoader__.load({
               repoNameWithOwner: activeIssue.repo,
               cwd: cwd,
               onClose: function () { setActiveIssue(null); },
+              showToast: showToast,
+            })
+          : null,
+        activeRun
+          ? h(RunDetailModal, {
+              runId: activeRun.runId,
+              repoNameWithOwner: activeRun.repo,
+              cwd: cwd,
+              onClose: function () { setActiveRun(null); },
               showToast: showToast,
             })
           : null

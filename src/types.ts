@@ -584,6 +584,94 @@ export interface WorkflowRunItem {
   createdAt: string;
 }
 
+/**
+ * 单次 Run 里的一个 job 步骤（`gh run view --json jobs` 实测字段）。
+ *
+ * 为什么只有这四个时间/状态字段：step 在 GitHub 上**没有独立 URL**（锚点是页面内
+ * `#step:` 片段，API 不返回），也没有自己的一行日志入口。UI 因此只能展示
+ * 「序号 + 名称 + 结论 + 耗时」，任何「点击某步看日志」的交互都做不到——
+ * 日志的最小粒度是 job。
+ */
+export interface RunStepItem {
+  number: number;
+  name: string;
+  status: string;
+  conclusion?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+/** 单次 Run 里的一个 job（数据库 ID 即 check-run ID，可用于注解/日志端点） */
+export interface RunJobItem {
+  databaseId: number;
+  name: string;
+  status: string;
+  conclusion?: string;
+  startedAt?: string;
+  completedAt?: string;
+  /** 该 job 在 GitHub 的页面地址；step 级别没有对应 URL */
+  url?: string;
+  steps: RunStepItem[];
+}
+
+/**
+ * Run 完整详情契约（供 RunDetailModal 在线查看消费）。
+ *
+ * 与 PrDetailData / IssueDetailData 的关键差异：这里**不携带日志正文**。
+ * 日志动辄几十 MB 且实测单次拉取 4–40 秒还会被代理掐断，挂在详情上会让
+ * 弹窗首屏被慢链路拖死；日志走独立的 /run-logs 通道按需拉取。
+ */
+export interface RunDetailData {
+  runId: number;
+  /** 重跑次数（>1 时 UI 显示「第 N 次尝试」） */
+  attempt?: number;
+  name: string;
+  displayTitle?: string;
+  status: string;
+  conclusion?: string;
+  event?: string;
+  headBranch?: string;
+  headSha?: string;
+  url: string;
+  createdAt: string;
+  startedAt?: string;
+  updatedAt: string;
+  workflowName?: string;
+  jobs: RunJobItem[];
+  /**
+   * 失败口径只算一次。
+   * 为什么在服务端算：UI 与将来的其它消费方（Agent 摘要、测试）必须同一口径，
+   * 三处各写一遍 `conclusion === 'failure'` 迟早出现「卡片说 1 个失败、弹窗说 2 个」。
+   */
+  failedJobs: number;
+  failedSteps: number;
+  /** gh 版本过低触发过字段降级（供排查，不弹错） */
+  fieldsDegraded?: boolean;
+}
+
+/** 失败日志按需拉取的结果（一 job 一块，单 job 失败不拖垮整体） */
+export interface RunLogExcerptData {
+  runId: number;
+  jobs: Array<{
+    jobId: number;
+    jobName: string;
+    /** 锚点萃取后的纯文本片段（含尾部回退与显式截断声明） */
+    excerpt: string;
+    truncated: boolean;
+  }>;
+  /** 拉取失败但可重试的 job；UI 必须显式展示，不能静默当成「没有失败日志」 */
+  errors?: Array<{ jobName: string; error: string }>;
+  /**
+   * job 名称未能从详情树解析（服务端详情降级/失败）。
+   *
+   * 为什么必须透出：此时 jobName 会退化成 `job #<id>`，属于用户可见的降级。
+   * 本仓纪律是「降级必须显式」——让界面能说一句「名称未取到」，
+   * 而不是让人以为这个 job 本来就叫 `job #111`。
+   */
+  namesUnavailable?: boolean;
+  fetchedAt: string;
+}
+
 export interface GitHubOverviewData {
   auth: AuthStatus;
   repo?: RepoMetadata;

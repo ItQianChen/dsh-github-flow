@@ -1,6 +1,7 @@
 import type { GhExecutor } from '../executor.js';
 import { wrapWithGate } from '../destructive.js';
 import { renderReleaseMarkdown } from '../renderers/markdown.js';
+import { assertPositionArg } from '../executor/args-guard.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -95,6 +96,8 @@ export function createReleaseTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
+      // 位置参数守卫：tag 是 `gh release view <tag>` / `upload <tag>` 的位置参数
+      assertPositionArg(args.tag, 'Release Tag');
       const { cwd, sessionId } = executor.resolveExecScope(execContext);
       let repoTarget = args.repo;
       if (!repoTarget) {
@@ -141,7 +144,7 @@ export function createReleaseTool(executor: GhExecutor) {
           // 资产文件直接跟在 tag 后（gh release create <tag> <files...>）
           if (Array.isArray(args.assets)) {
             for (const a of args.assets) {
-              if (typeof a === 'string' && a.trim()) createCmd.push(a);
+              if (typeof a === 'string' && a.trim()) createCmd.push(assertPositionArg(a.trim(), '资产路径'));
             }
           }
           if (args.title) createCmd.push('--title', args.title);
@@ -163,7 +166,9 @@ export function createReleaseTool(executor: GhExecutor) {
           }
           const uploadCmd = ['release', 'upload', args.tag, ...repoArgs];
           for (const a of args.assets) {
-            if (typeof a === 'string' && a.trim()) uploadCmd.push(a);
+            // 每个资产都是位置参数：`--clobber` 混进来会绕过 confirm 闸门覆盖删同名资产
+            // （复核报告 C-01a 的复现路径），必须在拼 argv 时就拒掉。
+            if (typeof a === 'string' && a.trim()) uploadCmd.push(assertPositionArg(a.trim(), '资产路径'));
           }
           if (args.clobber === true) uploadCmd.push('--clobber');
           const res = await executor.run(uploadCmd, runOpts);

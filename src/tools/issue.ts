@@ -3,6 +3,7 @@ import { wrapWithGate } from '../destructive.js';
 import { compareGhVersions } from '../executor.js';
 import { renderIssueMarkdown } from '../renderers/markdown.js';
 import { extractImageUrls, downloadImages, buildImageBlocks, filterRequestedUrls, validateAttachPaths } from './image-utils.js';
+import { assertPositionArg } from '../executor/args-guard.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -113,6 +114,8 @@ export function createIssueTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
+      // 位置参数守卫：issue_number 是 `gh issue <cmd> <number>` 的位置参数
+      assertPositionArg(args.issue_number, 'Issue 编号');
       const { cwd, sessionId } = executor.resolveExecScope(execContext);
       let repoTarget = args.repo;
       if (!repoTarget) {

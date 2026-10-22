@@ -1,4 +1,4 @@
-import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, WorkspaceCleanResult, GitCommitLog, GitCommitEntry, GitBranchesResult, AssociatedRepoItem, PrDetailData, IssueDetailData } from './types.js';
+import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConfig, GitLocalStatus, WorkspaceCleanResult, GitCommitLog, GitCommitEntry, GitBranchesResult, AssociatedRepoItem, PrDetailData, IssueDetailData, RunDetailData, RunLogExcerptData } from './types.js';
 import type { ProxyManager } from './proxy.js';
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
@@ -331,6 +331,62 @@ export declare class GhExecutor {
     getIssueDetail(cwd?: string, issueNumber?: number | string, repo?: string): Promise<{
         ok: boolean;
         data?: IssueDetailData;
+        error?: string;
+    }>;
+    /**
+     * 详情类接口的仓库参数归一化（PR / Issue / Run 共用）。
+     *
+     * 返回 `''` = 未传（由本地 remote 决定）；返回 `null` = 非法。
+     *
+     * 为什么要收编三处各自的校验：历史实现各写一份正则，只有 `setDefaultRepo` 额外
+     * 拒绝 `-` 开头与 `..`，其余靠「恒以 `-R <value>` 成对传入」兜底（复核报告 C-13）。
+     * 「成对传入所以安全」是当前调用形状的安全，不是接口的安全——多一处调用方就多
+     * 一次赌。统一到这里后，`-` 开头/`..`/反斜杠在任何详情入口都进不来。
+     */
+    private normalizeRepoFullName;
+    /**
+     * 获取单次 Actions Run 的完整详情（run + jobs + steps）。
+     *
+     * 架构设计：
+     * 1. **run_id 只认纯数字**。它会被当作 `gh run view` 的位置参数拼进 argv，
+     *    不做白名单就等于把「用参数值注入 flag」这条已知缺陷（复核报告 C-01）
+     *    复制到新通道——`--web`、`--log` 都能冒充编号。
+     * 2. 单次往返拿全：`jobs` 里已经包含 steps 树，没有需要并行拉取的第二路。
+     * 3. **日志不在这里拉**。实测单次失败日志 4–40 秒（本机代理下还直接连接重置），
+     *    挂在详情上等于让弹窗首屏去赌网络；日志走 getRunLogExcerpts() 按需拉。
+     */
+    getRunDetail(cwd?: string, runId?: number | string, repo?: string): Promise<{
+        ok: boolean;
+        data?: RunDetailData;
+        error?: string;
+    }>;
+    /**
+     * 按需拉取失败日志并压成纯文本摘要（供 Run 详情弹窗消费）。
+     *
+     * 与 github_run(log_failed) 的关系：同一份 `--log-failed` 原始输出、同一套锚点
+     * 萃取与尾部回退，只是排版不同（弹窗要的是 `<pre>` 纯文本，不是 Markdown）。
+     *
+     * 为什么逐 job 拉而不是整 run 一次拉：`gh run view --log-failed` 会把**整次运行**
+     * 的日志包都下载下来再过滤，矩阵构建下等于为了一个失败 job 拖几十 MB；`-j <jobId>`
+     * 是 gh 支持的定向形态（见 `gh run view --help`），失败 job 通常只有 1–3 个。
+     *
+     * 为什么单个 job 失败仍返回 ok:true：部分成功比整体失败有用——已拿到的块照常展示，
+     * 失败的那个进 errors[] 并在界面上显式可重试。只有参数非法才是 ok:false。
+     */
+    getRunLogExcerpts(cwd?: string, runId?: number | string, jobIds?: Array<number | string>, repo?: string, 
+    /**
+     * 本批日志的总预算（毫秒，默认 `RUN_LOG_TOTAL_BUDGET_MS`）。
+     *
+     * 为什么需要：单 job 超时 60s × 最多 3 个串行 = 最坏 180s。这个调用挂在 HTTP
+     * 路由上，而宿主 WebServer 是全 GUI 共享的——一次点击占住三分钟不可接受。
+     * 超预算的 job 进 `errors[]`（显式、可单独重试），而不是让连接一直挂着。
+     * 允许外部传入只为可测：传 0 能验证「超预算」分支而不必真的等待。
+     */
+    opts?: {
+        totalBudgetMs?: number;
+    }): Promise<{
+        ok: boolean;
+        data?: RunLogExcerptData;
         error?: string;
     }>;
     /** 生成当前操作系统平台的推荐安装引导与命令 */

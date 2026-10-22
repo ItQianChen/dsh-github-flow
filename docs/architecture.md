@@ -35,8 +35,8 @@
 │            │                       │                        │               │
 │            ▼                       ▼                        ▼               │
 │  ┌──────────────────┐    ┌──────────────────┐    ┌───────────────────────┐  │
-│  │  18 大 Agent 工具 │    │  人类 Slash 指令 │    │   Host HTTP WebServer │  │
-│  │  (defineTool DSL)│    │  /gh status      │    │ (Effect Disposer 清理)│  │
+│  │  19 大 Agent 工具 │    │  人类 Slash 指令 │    │   Host HTTP WebServer │  │
+│  │  (手写descriptor)│    │  /gh status      │    │ (Effect Disposer 清理)│  │
 │  │  - pr (+attach)  │    │  /gh upgrade     │    │ - /api/github/overview│  │
 │  │  - issue (+attach│    │  /gh help        │    │ - /api/github/action  │  │
 │  │  - run (workflow)│    └──────────────────┘    │ - /api/github/refresh │  │
@@ -156,7 +156,7 @@
 ### 3.4 前端客户端解耦与自包含 Bundle 机制 (`src/ui/` + `src/client.ts`)
 - **源码物理剥离**：
   - [src/client.ts](../src/client.ts)（保留右侧栏协同层与插件入口）：保留右侧栏核心协同 `renderGithubRepoView` 与 `GithubRightbarBody` 及插件入口；新增 UI 优先下沉到 `src/ui/`，不在入口文件里堆叠；
-  - **18 个独立子模块**下沉至 [src/ui/](../src/ui/) 目录：样式（最大的单模块）、全景大面板、PR 审阅弹窗、Issue 查看弹窗、设置弹窗、使用指南，其余卡片类组件体量更小；
+  - **19 个独立子模块**下沉至 [src/ui/](../src/ui/) 目录：样式（最大的单模块）、全景大面板、PR 审阅弹窗、Issue 查看弹窗、Run 详情弹窗、设置弹窗、使用指南，其余卡片类组件体量更小；
     > 这里刻意不写绝对行数。行数会随每次重构变化，而本文档没人会跟着改——历史上同一个 `client.ts` 在本文件里同时存在「~1,260 行」与「约 2,400 行」两个互斥数字，`executor.ts` 也写着早已失效的「~820 行」。需要精确数字请直接看文件。
 - **命名空间防护**：
   - 严禁在与 `package.json` 的 `exports["./client"]` 同级创建名为 `client/` 的目录，统一命名为 `src/ui/` 与编译产物 `lib/ui/`，彻底杜绝模块解析器产生“同名文件 vs 目录”的歧义报错；
@@ -175,8 +175,8 @@
 
 - 全局声明在 `src/client.ts` 顶部（`Window.__ModuleLoader__`），唯一调用点在文件末尾的 `load({ id: "dsh-github-flow", factory })`；
 - `factory` 收到的 `require` 是**宿主注入的模块解析器**（`react`、`react-dom` 等由宿主提供，插件不打包也不得打包自己的副本），`id` 必须与 `package.json` 的 `dsh.client.entry` 归属一致；
-- 该 API **不是官方公开文档化的稳定接口**，语义由宿主实现决定。一旦宿主调整加载方式，**只改这一层**，`src/ui/` 下的 18 个子模块一行都不用动；
-- 因为它是"适配层"，`test/phase36-host-contract.test.mjs` 对它的**形状**做了断言（入口存在、id 固定、`apply`/`inject` 已导出、18 个子模块全部内联、闭包内无残留 ESM `export`），而不是只靠"跑起来没报错"来验证。
+- 该 API **不是官方公开文档化的稳定接口**，语义由宿主实现决定。一旦宿主调整加载方式，**只改这一层**，`src/ui/` 下的 19 个子模块一行都不用动；
+- 因为它是"适配层"，`test/phase36-host-contract.test.mjs` 对它的**形状**做了断言（入口存在、id 固定、`apply`/`inject` 已导出、20 个子模块全部内联、闭包内无残留 ESM `export`），而不是只靠"跑起来没报错"来验证。
 
 ### 3.6 本地开发联调机制 (Local Development & Junction Linking)
 
@@ -201,7 +201,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **46 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
+项目配备了 **47 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
 - 阶段数与 `test/run-all.mjs` 的 `phases` 数组由 `test/phase35-doc.test.mjs` 对账，改一处漏一处会直接红；
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
@@ -247,4 +247,5 @@
 - `phase44`：**仓库规则与严重度契约测试**（s7：`extractSection` 的标题边界——代码围栏内的 `##` 不算标题、一级标题同样终止截取；`normalizeSeverity` 只补不删、幂等、`[P0]` 永不降级；`readReviewRules` 无 `AGENTS.md` 时返回 `null` 且 `pr view` 输出**不含** `reviewRules` 键）。
 - `phase45`：**CI 失败日志锚点萃取测试**（s7：pytest `FAILED` / node `AssertionError` / Go `panic:` / tsc `error TSxxxx` 四类锚点命中；相邻锚点合并成一块；单块行数 ≤ `2*radius+1`；`maxBlocks` 与 `droppedBlocks` 显式计数；无锚点走尾部 200 行回退；`log_failed` 已把输出预算放开到 2MB 字符/8MB 字节——否则截断发生在萃取之前）。
 - `phase46`：**任务级原语契约测试**（s8：`classifyCommits` 的 `feat!:` 必须归 breaking（否则版本少跳一级）；`suggestVersion` 的 auto 推导（breaking→major / feat→minor / 其余→patch）与无 tag 时从 0.1.0 起步；`selectFilesByBudget` 超预算只给元信息不硬塞；`finalizeEnvelope` 的 `cost.chars` 由信封体积计算而非手写；`github_task` 三个原语的端到端行为（review_pr 读模式零写回、写模式必须 confirm 且 commit_id 钉在 head SHA、diagnose_ci 只挑失败 job 并在日志截断时 `totalUnknown=true`、prepare_release **绝不自动发版**）；档位层面 core=3 个工具、只读模式剪掉 review_pr 保留另两个原语）。
+- `phase47`：**Actions Run 在线详情契约测试**（`getRunDetail` 的 `run_id` 只认纯数字——它是 `gh run view` 的位置参数，`--force`/`--web` 必须在触达子进程前拒绝且 argv 零产出；repo 白名单额外拒 `-` 开头与 `..`；`--json` 字段集含 `jobs` 且预算 2MB/8MB；缺 `steps` 归一化为空数组、`failedJobs`/`failedSteps` 只在服务端算一次；`truncated` 或解析缺失显式失败并给浏览器直达；`Unknown JSON field` 走 BASE 字段集重试且只重试一次；`getRunLogExcerpts` 用 `-j <jobId> --log-failed` **定向**拉取、最多 3 个 job、绝不使用 `--log` 整包、单 job 失败进 `errors[]` 而整体仍 `ok:true`；`run-log.ts` 的纯文本摘要（锚点块 / 尾部 200 行回退 / 两道截断声明 / 不产生 Markdown 围栏）；`/api/github/run-detail` 与 `/api/github/run-logs` 的 200/400/405/500 与 `job_id` 逗号/重复参数两种写法；前端 `onSelectRun` 追加在形参末尾、Actions 卡片标题行拆分 + 外跳 `stopPropagation` + 禁内联 `display:flex`；弹窗 Hook 先于 early return、日志必须走 `<pre>` 且不接 markdown-lite；bundle 内联顺序 `issue-modal → run-modal` 与 20 个子模块计数）。
 - `phase41`：**侧栏入口图标契约测试**（issue #9 回归网：宿主 `renderSlot("sidebar.panellist", { size: wide ? 16 : 18, active })` 注入的 `size` 必须被透传——从 `lib/client.js` 抽出 `GithubSidebarIcon` 函数体、在沙箱里真调，断言 16/18 两档尺寸、根节点必须是裸 `svg`（有 wrapper 就会把图标格撑宽、标签右移 12px）、`fill` 用 `currentColor` 继承行颜色、缺省/非数字 `size` 兜底 16、`active` 不改变输出结构）。

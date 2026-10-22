@@ -115,6 +115,7 @@ async function runTests() {
   const newFeatures = [
     { name: 'PR 在线审阅弹窗', pattern: /PR 审阅工作台/, code: fs.existsSync(path.join(__dirname, '../src/ui/pr-modal.ts')) },
     { name: 'Issue 在线查看弹窗', pattern: /Issue 详情|在线查看/, code: fs.existsSync(path.join(__dirname, '../src/ui/issue-modal.ts')) },
+    { name: 'Actions Run 在线详情弹窗', pattern: /Actions 详情|job \/ step/, code: fs.existsSync(path.join(__dirname, '../src/ui/run-modal.ts')) },
     { name: 'PR/Issue 状态筛选', pattern: /Merged|状态胶囊|状态过滤/, code: /prStateFilter/.test(clientSrc) },
     { name: 'Markdown 渲染', pattern: /Markdown/, code: fs.existsSync(path.join(__dirname, '../src/ui/markdown-lite.ts')) },
     { name: '仓库切换/Fork 血缘', pattern: /血缘行|基准仓库/, code: clientSrc.includes('associatedRepos') },

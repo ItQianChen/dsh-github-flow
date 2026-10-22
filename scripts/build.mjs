@@ -137,6 +137,9 @@ function bundleClient() {
     // issue-modal 依赖 pr-modal 里的 CollapsibleBody（长正文/长评论折叠）与
     // markdown-lite 的解析器，必须排在这两者之后，否则运行时引用为 undefined
     'issue-modal.js',
+    // run-modal 依赖 shared/state-badges 的 ciBadge 与 utils 的 eventLabel，
+    // 两者都已在更早位置内联；排在这里是「详情类弹窗」这一族的固定顺序
+    'run-modal.js',
     'sync-settings-modal.js',
     'help-modal.js',
   ];

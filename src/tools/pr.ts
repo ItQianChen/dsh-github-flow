@@ -2,6 +2,7 @@ import type { GhExecutor } from '../executor.js';
 import { wrapWithGate } from '../destructive.js';
 import { compareGhVersions } from '../executor.js';
 import { renderPrMarkdown } from '../renderers/markdown.js';
+import { assertPositionArg } from '../executor/args-guard.js';
 import { extractImageUrls, downloadImages, buildImageBlocks, filterRequestedUrls, validateAttachPaths } from './image-utils.js';
 import { readReviewRules, summarizeSeverity } from '../review-rules.js';
 
@@ -153,6 +154,10 @@ export function createPrTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
+      // 位置参数守卫：pr_number 会作为 `gh pr <cmd> <number>` 的位置参数进入 argv，
+      // `--force` 这类值会被 gh 当成选项而不是编号（复核报告 C-01b）。
+      // 放在入口一次校验即可覆盖全部 action，避免 11 处各自写一份。
+      assertPositionArg(args.pr_number, 'PR 编号');
       const { cwd, sessionId } = executor.resolveExecScope(execContext);
       let repoTarget = args.repo;
       if (!repoTarget) {
