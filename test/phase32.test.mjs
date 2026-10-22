@@ -57,10 +57,11 @@ async function runTests() {
   const singleSrc = singleStart >= 0 && singleEnd > singleStart ? routeSrc.slice(singleStart, singleEnd) : '';
   ok(singleSrc.length > 0, '成功定位单仓库 overview 段');
 
-  ok(/const RIGHTBAR_LIST_LIMIT = \d+/.test(routeSrc), '条数上限抽成常量（避免查询与截断判断两处漂移）');
+  ok(/export const RIGHTBAR_LIST_LIMIT = \d+/.test(routeSrc), '默认页大小抽成常量（客户端步长与它对齐）');
   const limitMatch = routeSrc.match(/const RIGHTBAR_LIST_LIMIT = (\d+)/);
   const limit = limitMatch ? Number(limitMatch[1]) : 0;
-  ok(limit >= 20, `上限不低于 20（实测取 10 条时非 OPEN 仅剩 5 条）`, String(limit));
+  // s5：首屏 15 + 下滑加载更多，所以不再要求单页 >= 20；关键是「能继续加载」
+  ok(limit === 15, `默认每页 15 条（与 Git 提交 / 未提交变更两个分页同口径）`, String(limit));
 
   ok(/'pr',\s*'list',\s*'--state',\s*'all'/.test(singleSrc), 'PR 查询显式传 --state all');
   ok(/'issue',\s*'list',\s*'--state',\s*'all'/.test(singleSrc), 'Issue 查询显式传 --state all');
@@ -68,10 +69,10 @@ async function runTests() {
   ok(!/['"]--state['"]\s*,\s*['"]open['"]/.test(singleSrc), "单仓库命令不得传 --state open");
   ok(!/['"]--state=open['"]/.test(singleSrc), '单仓库命令不得出现 --state=open');
 
-  const prLimitUsage = /'pr',\s*'list',[\s\S]{0,600}?'-L',\s*String\(RIGHTBAR_LIST_LIMIT\)/.test(singleSrc);
-  const issueLimitUsage = /'issue',\s*'list',[\s\S]{0,600}?'-L',\s*String\(RIGHTBAR_LIST_LIMIT\)/.test(singleSrc);
-  ok(prLimitUsage, 'PR 查询使用 RIGHTBAR_LIST_LIMIT 常量');
-  ok(issueLimitUsage, 'Issue 查询使用 RIGHTBAR_LIST_LIMIT 常量');
+  const prLimitUsage = /'pr',\s*'list',[\s\S]{0,600}?'-L',\s*String\(prLimit\)/.test(singleSrc);
+  const issueLimitUsage = /'issue',\s*'list',[\s\S]{0,600}?'-L',\s*String\(issueLimit\)/.test(singleSrc);
+  ok(prLimitUsage, 'PR 查询使用本次请求的 prLimit 参数');
+  ok(issueLimitUsage, 'Issue 查询使用本次请求的 issueLimit 参数');
 
   // 每条 gh 命令都必须在 Promise.all 里，不能退化成串行（右栏首屏受 8s 超时约束）
   ok(/Promise\.all\(\[/.test(singleSrc), 'PR/Issue/Run 仍并发拉取（不退化为串行）');
@@ -80,8 +81,8 @@ async function runTests() {
   // ============================================================
   console.log('\n--- 2. 触顶标记：截断必须可感知 ---');
   // ============================================================
-  ok(/const prsTruncated = pullRequests\.length >= RIGHTBAR_LIST_LIMIT/.test(routeSrc), 'PR 触顶判定基于上限常量');
-  ok(/const issuesTruncated = issues\.length >= RIGHTBAR_LIST_LIMIT/.test(routeSrc), 'Issue 触顶判定基于上限常量');
+  ok(/const prsTruncated = pullRequests\.length >= prLimit/.test(routeSrc), 'PR 触顶判定基于本次分页参数');
+  ok(/const issuesTruncated = issues\.length >= issueLimit/.test(routeSrc), 'Issue 触顶判定基于本次分页参数');
   ok(/\.\.\.\(prsTruncated \? \{ prsTruncated: true \} : \{\}\)/.test(routeSrc), '仅在触顶时下发 prsTruncated');
   ok(/\.\.\.\(issuesTruncated \? \{ issuesTruncated: true \} : \{\}\)/.test(routeSrc), '仅在触顶时下发 issuesTruncated');
   ok(/prsTruncated\?:\s*boolean/.test(typesSrc), 'GitHubOverviewData 声明 prsTruncated');
@@ -240,8 +241,9 @@ async function runTests() {
   // 截断提示渲染
   ok(clientSrc.includes('data.prsTruncated'), '前端消费 prsTruncated');
   ok(clientSrc.includes('data.issuesTruncated'), '前端消费 issuesTruncated');
-  ok(/仅显示最近 \$\{prs\.length\} 条 PR/.test(clientSrc), 'PR 触顶提示带条数');
-  ok(/仅显示最近 \$\{issues\.length\} 条 Issue/.test(clientSrc), 'Issue 触顶提示带条数');
+  // s5 起「触顶」不再是只能看、不能动的提示，而是可点击的「加载更多」入口
+  ok(/renderListMore\(\"prs\"/.test(clientSrc), 'PR 触顶时渲染可加载更多的页脚');
+  ok(/renderListMore\(\"issues\"/.test(clientSrc), 'Issue 触顶时渲染可加载更多的页脚');
 
   // 卡片布局纪律（phase29 回归点）
   const prCardIdx = clientSrc.indexOf('filteredPrs.map((pr: any) =>');

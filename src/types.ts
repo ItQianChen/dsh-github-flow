@@ -600,6 +600,8 @@ export interface GitHubOverviewData {
   prsTruncated?: boolean;
   /** 单仓库 Issue 列表是否触及条数上限（语义同 prsTruncated） */
   issuesTruncated?: boolean;
+  /** Actions 运行列表是否还有更多（语义同 prsTruncated；右侧栏分页用） */
+  runsTruncated?: boolean;
 }
 
 export interface UserRepoItem {
@@ -664,6 +666,8 @@ export interface GlobalOverviewData {
    * 「列表到此为止」与「数据没取到」。
    */
   prsTruncated?: boolean;
+  /** Issues 三路检索是否任一触及上限（有更多可加载） */
+  issuesTruncated?: boolean;
   lastUpdated: string;
   error?: string;
   /** 网络是否发生异常（超时、连接拒绝、代理阻断等） */

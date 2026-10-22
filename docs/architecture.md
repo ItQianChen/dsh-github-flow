@@ -178,11 +178,30 @@
 - 该 API **不是官方公开文档化的稳定接口**，语义由宿主实现决定。一旦宿主调整加载方式，**只改这一层**，`src/ui/` 下的 18 个子模块一行都不用动；
 - 因为它是"适配层"，`test/phase36-host-contract.test.mjs` 对它的**形状**做了断言（入口存在、id 固定、`apply`/`inject` 已导出、18 个子模块全部内联、闭包内无残留 ESM `export`），而不是只靠"跑起来没报错"来验证。
 
+### 3.6 本地开发联调机制 (Local Development & Junction Linking)
+
+当开发者在本地克隆代码库进行定制与二次开发时，需严格遵循本地联调机制：
+
+1. **Junction 目录联接直通机制**：
+   - DSH 宿主环境的各个 Profile（如 `~/.dsh/profiles/web`、`~/.dsh/profiles/desktop`）采用 pnpm 管理依赖。若通过 `file:` 协议安装插件，pnpm 会将其作为独立快照拷贝到 `node_modules` 中，并在后续操作中直接复用内容缓存哈希（`resolved 0, reused 1`）；
+   - 同时，DSH 内置的 pnpm (v11.x) 默认开启严格构建拦截策略，当检测到本地依赖包含 `prepare: "pnpm run build"` 脚本时，会直接抛出 `ERR_PNPM_IGNORED_BUILDS` 阻断安装；
+   - **解法**：在 Windows 环境下将 Profile 的 `node_modules\dsh-github-flow` 替换为指向本地 Git 工作区根目录的原生 **Junction（目录联接）**，直接消除拷贝过程，实现工作区产物与宿主运行时的物理同一性。
+2. **两阶段生效边界（编译与热刷新）**：
+   - 宿主加载的入口为编译后的 `lib/main.js` 与 `lib/client.js`，修改 `src/` 源码后必须执行 `pnpm run build` 生成最新产物；
+   - **纯前端 UI / 样式变更**（`src/client.ts`、`src/ui/`）：由于 DSH Web 客户端在页面载入时实时读取静态资源，按 **Ctrl + F5 强制刷新浏览器**即可即时呈现最新视图，**无需重启 DSH 进程**；
+   - **后端服务 / 执行引擎 / 工具实现**（`src/tools/`、`src/api/`、`src/executor.ts`、`src/main.ts`）：受 Node.js 底层 ESM 模块缓存机制限制，必须**重启 DSH 进程**才能完成服务重载。
+3. **联接保护与自愈**：
+   - 切勿在已建立 Junction 的 Profile 目录下执行 `dsh plugin install` 或 `pnpm install`，以防包管理器抹除联接并退化为静态拷贝；
+   - 若联接失效或被覆盖，可使用以下命令一键恢复直通：
+     ```powershell
+     New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-github-flow" -Target "D:\Desktop\AgentWork\DSHQuestion\dsh-github-flow" -Force
+     ```
+
 ---
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **39 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
+项目配备了 **40 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
 - 阶段数与 `test/run-all.mjs` 的 `phases` 数组由 `test/phase35-doc.test.mjs` 对账，改一处漏一处会直接红；
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；

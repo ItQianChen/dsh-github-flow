@@ -425,7 +425,10 @@ window.__ModuleLoader__.load({
             )
       );
     }
-    function renderGithubRepoView(
+    /** 列表分页步长：与服务端 parseListLimit 的默认页大小保持一致（15） */
+  var OVERVIEW_PAGE_SIZE = 15;
+
+  function renderGithubRepoView(
       h: any,
       data: any,
       loading: boolean,
@@ -461,13 +464,40 @@ window.__ModuleLoader__.load({
       prStateFilter: string = "all",
       issueStateFilter: string = "all",
       onChangePrFilter: ((v: string) => void) | null = null,
-      onChangeIssueFilter: ((v: string) => void) | null = null
+      onChangeIssueFilter: ((v: string) => void) | null = null,
+      /**
+       * PR / Issue / Actions 三个列表的「加载更多」。
+       *
+       * 为什么只给一个回调而不是三个：这三条列表是同一个 /api/github/overview 请求
+       * 一起取的（一个 cwd 一次 Promise.all），所以一次「加载更多」等于把三个 limit
+       * 一起 +15 再取一遍。分成三个回调只会制造「加载 PR 顺带把 Issue 也刷新了」的错觉。
+       */
+      onLoadMoreLists: (() => void) | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
       var prs = (data && data.pullRequests) || [];
       var issues = (data && data.issues) || [];
       var runs = (data && data.runs) || [];
+
+      /**
+       * 列表「加载更多」页脚：与「未提交变更 / Git 提交记录」两个已有分页同视觉同交互。
+       * 触发条件是服务端下发的 `*Truncated`（= 本次拉满，可能还有更早记录），不是本地条数比较——
+       * 本地比不出「还有没有」。
+       */
+      var renderListMore = function (kind: string, hasMore: any, count: number) {
+        if (!hasMore || typeof onLoadMoreLists !== "function") return null;
+        return h(
+          "div",
+          {
+            key: "load-more-" + kind,
+            style: { fontSize: "11px", opacity: 0.8, padding: "8px 0", textAlign: "center", cursor: "pointer" },
+            onClick: function () { onLoadMoreLists(); },
+            title: "点击加载更多（滚动到底部也会自动加载）",
+          },
+          "⬇️ 下滑或点击加载更多（已显示 " + count + " 条）"
+        );
+      };
 
       var effectiveUpdateInfo = updateInfo || data?.updateInfo;
       var upgradeBannerEl = effectiveUpdateInfo && effectiveUpdateInfo.hasUpdate
@@ -1157,21 +1187,6 @@ window.__ModuleLoader__.load({
         { className: "dsh-github-section" },
         h("div", { className: "dsh-github-section-header" }, h("h3", null, `🔀 Pull Requests (${filteredPrs.length}/${prs.length})`)),
         prPillsEl,
-        // 触顶提示：让用户知道列表被截断了，而不是以为历史 PR 凭空消失
-        data && data.prsTruncated
-          ? h("div", {
-              style: {
-                margin: "0 0 10px 0",
-                padding: "6px 10px",
-                borderRadius: "6px",
-                fontSize: "11px",
-                lineHeight: 1.5,
-                background: "rgba(210, 153, 34, 0.12)",
-                border: "1px solid rgba(210, 153, 34, 0.35)",
-                color: "var(--dsw-alias-state-attention-primary, #9a6700)",
-              },
-            }, `⚠️ 仅显示最近 ${prs.length} 条 PR（已触及检索上限）。更早的记录请到 GitHub 查看。`)
-          : null,
         filteredPrs.length === 0
           ? prEmptyEl
           : h(
@@ -1307,20 +1322,6 @@ window.__ModuleLoader__.load({
             : null
         ),
         issuePillsEl,
-        data && data.issuesTruncated
-          ? h("div", {
-              style: {
-                margin: "0 0 10px 0",
-                padding: "6px 10px",
-                borderRadius: "6px",
-                fontSize: "11px",
-                lineHeight: 1.5,
-                background: "rgba(210, 153, 34, 0.12)",
-                border: "1px solid rgba(210, 153, 34, 0.35)",
-                color: "var(--dsw-alias-state-attention-primary, #9a6700)",
-              },
-            }, `⚠️ 仅显示最近 ${issues.length} 条 Issue（已触及检索上限）。更早的记录请到 GitHub 查看。`)
-          : null,
         filteredIssues.length === 0
           ? issueEmptyEl
           : h(
@@ -1493,8 +1494,11 @@ window.__ModuleLoader__.load({
         { "data-active-tab": defaultTab },
         tabsBarEl,
         h("div", { "data-tab-page": "prs", hidden: defaultTab !== "prs" }, prSectionEl),
+        renderListMore("prs", data && data.prsTruncated, prs.length),
         h("div", { "data-tab-page": "issues", hidden: defaultTab !== "issues" }, issueSectionEl),
+        renderListMore("issues", data && data.issuesTruncated, issues.length),
         h("div", { "data-tab-page": "runs", hidden: defaultTab !== "runs" }, runSectionEl),
+        renderListMore("runs", data && data.runsTruncated, runs.length),
         gitSt ? h("div", { "data-tab-page": "git", hidden: defaultTab !== "git" }, gitSectionEl) : null,
         gitSt ? h("div", { "data-tab-page": "dirty", hidden: defaultTab !== "dirty" }, dirtySectionEl) : null
       );
@@ -1534,6 +1538,8 @@ window.__ModuleLoader__.load({
       var [toastMsg, setToastMsg] = React.useState(null as string | null);
       var cloudTimerRef = React.useRef(null as any);
       var dataRef = React.useRef(data);
+      // 列表分页游标用 ref：它只影响下一次请求，不需要触发重渲染（data 更新自会重渲染）
+      var listLimitRef = React.useRef(OVERVIEW_PAGE_SIZE);
       dataRef.current = data;
       var lastCwdRef = React.useRef(cwd);
       var containerRef = React.useRef(null as any);
@@ -1615,6 +1621,11 @@ window.__ModuleLoader__.load({
           if (cwd) {
             params.push("cwd=" + encodeURIComponent(cwd));
           }
+          // 分页：PR / Issue / Actions 三条列表同属这一个请求，
+          // 一次「加载更多」= 三个 limit 一起涨、一次重取（见 loadMoreLists）。
+          params.push("prLimit=" + listLimitRef.current);
+          params.push("issueLimit=" + listLimitRef.current);
+          params.push("runLimit=" + listLimitRef.current);
           if (params.length > 0) {
             url += "?" + params.join("&");
           }
@@ -1946,6 +1957,19 @@ window.__ModuleLoader__.load({
         setIssueStateFilter(stored.issue);
       }, [cwd]);
 
+      /**
+       * PR / Issue / Actions 三个列表共用的「加载更多」。
+       *
+       * 为什么是「一起涨」而不是每个 Tab 独立：这三条列表由同一个
+       * `/api/github/overview` 请求一次取回（一个 cwd 一次 Promise.all），
+       * 独立游标只会让同一个请求里的三个 limit 互相矛盾。
+       * 没有更多时页脚不渲染（由服务端 `*Truncated` 决定），所以这里不必再判 hasMore。
+       */
+      var loadMoreLists = function () {
+        listLimitRef.current = listLimitRef.current + OVERVIEW_PAGE_SIZE;
+        loadData(true);
+      };
+
       var loadMoreCommits = function () {
         if (loadingMore || !hasMoreCommits) return;
         var baseCount = (data?.commitLog?.recent?.length || 0);
@@ -2227,7 +2251,9 @@ window.__ModuleLoader__.load({
           prStateFilter,
           issueStateFilter,
           changePrFilter,
-          changeIssueFilter
+          changeIssueFilter,
+          // 必须追加在形参末尾（该函数 30+ 个位置参数，插中间会静默错位）
+          loadMoreLists
         ),
         h(GlobalSyncSettingsModal, {
           isOpen: aboutModalOpen,

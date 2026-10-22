@@ -50,8 +50,9 @@ async function runTests() {
    * 若历史 PR 超过上限，界面会静默少显示——用户无法区分
    * 「列表到此为止」与「数据没取到」。必须把触顶事实透出到 UI。
    */
-  ok(/PR_SEARCH_LIMIT\s*=\s*\d+/.test(routeSrc), 'PR 检索上限抽成常量（避免查询与截断判断两处漂移）');
-  ok(/myPrs\.length\s*>=\s*PR_SEARCH_LIMIT/.test(routeSrc), '命中上限时记录截断标记');
+  // s5 之后上限不再是写死的常量，而是每次请求的 prLimit 查询参数（默认 15，可下滑加载更多）。
+  ok(/const prLimit = parseListLimit\(url\.searchParams\.get\('prLimit'\)\)/.test(routeSrc), 'PR 检索上限改为按请求的分页参数（默认 15，可继续加载）');
+  ok(/myPrs\.length\s*>=\s*prLimit/.test(routeSrc), '命中本次分页上限时记录截断标记');
   ok(routeSrc.includes('prsTruncated'), '响应体下发 prsTruncated 字段');
   const typesSrc = fs.readFileSync(path.join(__dirname, '../src/types.ts'), 'utf8');
   ok(/prsTruncated\?:\s*boolean/.test(typesSrc), 'GlobalOverviewData 声明 prsTruncated');

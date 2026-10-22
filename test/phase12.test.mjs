@@ -220,7 +220,7 @@ async function runTests() {
   });
 
   await asyncTest('overview 路由在 PR 接口失败时保全已有有效 PR 缓存，绝不将数据冲刷为空且标记 partialFailure', async () => {
-    const { registerOverviewRoutes } = await import('../lib/api/routes-overview.js');
+    const { registerOverviewRoutes, overviewCacheKey, RIGHTBAR_LIST_LIMIT } = await import('../lib/api/routes-overview.js');
     const { TtlCache } = await import('../lib/cache.js');
 
     const fakeCache = new TtlCache(100000);
@@ -228,8 +228,12 @@ async function runTests() {
     // 仓库身份必须与当前工作区真实身份一致：since v0.5.1 缓存读取前会做一次
     // 身份失效校验（.git/config 变了就作废脏快照），种一个假 owner 会被直接清掉，
     // 那是校验在正常工作，不是本用例要验的「网络故障时保全列表」行为。
+    //
+    // 缓存键自「列表分页」起带上了分页参数（`cwd|pr|issue|run`），所以这里必须用
+    // 与路由同一个键构造器，否则种进去的条目根本不会被读到——那会让本用例变成
+    // 「永远测不到缓存保全分支」的假绿。
     const realIdentity = new GhExecutor().getRepoIdentityFromLocal(process.cwd());
-    fakeCache.set(process.cwd(), {
+    fakeCache.set(overviewCacheKey(process.cwd(), RIGHTBAR_LIST_LIMIT, RIGHTBAR_LIST_LIMIT, RIGHTBAR_LIST_LIMIT), {
       auth: { installed: true, loggedIn: true },
       repo: realIdentity || { nameWithOwner: 'test/repo', name: 'repo', owner: 'test', defaultBranch: 'main' },
       pullRequests: [{ number: 123, title: 'Existing Important PR' }],
