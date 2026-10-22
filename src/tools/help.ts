@@ -31,7 +31,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 💡 **使用准则**：优先调用高层语义工具（pr / issue / run / repo / release / secret）；当高层工具无法满足特殊接口需求时，再降级使用 \`github_api\`。
 📊 **规模口径**：19 个工具 / 106 个业务 action（不含 \`github_help\` 的 22 个查询主题与 \`github_api\` 的 4 个 HTTP method——它们不是业务动作）。
 💬 **人类指令**：聊天框支持 \`/gh status\`（大盘看板）、\`/gh upgrade\`（一键升级插件）、\`/gh help\`（快捷帮助）。
-🖥️ **可视化工作台**：最左侧 Octocat 图标打开全景驾驶舱（4 标签：本地工作区 / 我的仓库 / Pull Requests / 待办 Issues）；每个会话右侧栏有 5 个 Tab（Git / 未提交 / PR / Issues / Actions）。点击任一 PR 或 Issue 卡片可在线查看详情与评论，无需跳浏览器。
+🖥️ **可视化工作台**：最左侧 Octocat 图标打开全景驾驶舱（4 标签：本地工作区 / 我的仓库 / Pull Requests / 待办 Issues）；每个会话右侧栏有 5 个 Tab（Git / 未提交 / PR / Issues / Actions）。PR、Issue、Actions 三类卡片点击均可在线查看详情（Actions 为 job / step 树 + 按需失败日志），无需跳浏览器。
 🗺️ **命令对照**：不确定某 gh 命令对应哪个工具？\`github_help(topic: 'mapping')\` 查询完整映射表（含未覆盖域的 API 引导）。`,
 
   pr: `### 🔀 github_pr 详细操作指南
@@ -99,7 +99,11 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **启停工作流**: \`github_run(action: 'workflow_enable'/'workflow_disable', workflow: '…')\`
   - disable 后 trigger 将静默失败，直至重新 enable——输出会显式警告这一点。
 - **下载构建产物**: \`github_run(action: 'download', run_id: '12345678', name: '构建产物名'?)\`
-  - 落盘目录由插件固定管理（\`~/.dsh/data/dsh-github-flow/artifacts/\` 下按仓库与 run 隔离），返回文件清单。`,
+  - 落盘目录由插件固定管理（\`~/.dsh/data/dsh-github-flow/artifacts/\` 下按仓库与 run 隔离），返回文件清单。
+- **看单次运行的 job / step 结构**: \`github_run(action: 'view', run_id: '12345678')\`
+  - 返回 run 元数据 + jobs 树（每个 job 的 conclusion、起止时间、url，以及 steps 的 number/name/conclusion）；这是「挂在第几步」最快的入口。
+- **人类侧在线查看（不是工具调用）**: 右侧栏 Actions Tab 点击任一卡片 → job / step 树 + 失败步骤高亮 + 按需日志锚点（一次最多 3 个失败 job、服务端批次预算 90 秒）。
+  - Agent 侧的等价快捷方式是 \`github_task(action: 'diagnose_ci', run_id: '12345678')\`：定位失败 job/step → 萃取日志锚点 → 汇总疑似相关文件，一次返回结论包。`,
 
   repo: `### 📦 github_repo 详细操作指南
 
@@ -465,6 +469,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 
 - \`gh workflow …\` / \`gh search …\` / \`gh variable …\` 分别归 **github_run / github_repo / github_secret**（不是独立工具）
 - \`gh api\` 的等价物是 \`github_api\`（全端点逃生门，支持 raw/paginate/jq）
+- 人类侧在线查看（PR / Issue / Actions Run 详情弹窗）由插件 HTTP 路由提供（\`/api/github/pr-detail\`、\`/api/github/issue-detail\`、\`/api/github/run-detail\`、\`/api/github/run-logs\`），**不是工具 action**；Agent 侧对应能力分别是 \`github_pr(action:'view')\`、\`github_issue(action:'view')\`、\`github_run(action:'view')\`
 - 图片查看：\`github_issue\`/\`github_pr\` 的 \`view_images\`、\`github_repo\` 的 \`readme\` + image_urls（插件独有能力，gh 无对应命令）
 - 附件上传：\`github_issue\`/\`github_pr\` 的 \`attach_images\` 映射 gh ≥2.99 原生可重复 \`--attach\` flag（支持 create/edit/comment）
 
@@ -522,7 +527,13 @@ const KNOWLEDGE_BASE: Record<string, string> = {
     - *解法*：需管理员前往 GitHub 网页端 \`Settings -> General -> Features\` 勾选开启 \`Discussions\`。
  8. **操作被拦截提示 \`Awaiting confirmation\`**:
     - *原因*：对于高危破坏性操作（如合并 PR、删除分支、物理删除 Issue、清空构建缓存、删除密钥、销毁 Codespace），插件设置了强制安全确认防线，未确认时绝对不触发底层 CLI。
-    - *解法*：审阅影响评估报告后，在参数中显式传入 \`confirm: true\` 即可放行。`
+    - *解法*：审阅影响评估报告后，在参数中显式传入 \`confirm: true\` 即可放行。
+ 9. **\`log_failed\` 拉取很慢 / 报 \`unexpected EOF\` / 连接被重置**:
+    - *原因*：GitHub 日志接口是「先打包再下载」，实测单次 4–40 秒，走代理时可能被中途掐断；矩阵构建下日志体量随 job 数线性增长。
+    - *解法*：① 先 \`github_run(action:'view')\` 确认到底哪个 job 挂了，只对失败 job 重试；② 换 \`github_task(action:'diagnose_ci')\` 走一次性的结论包（内部同样是锚点萃取，但会顺带汇总相关文件）；③ 仍失败时改用 \`github_api\` 直接拉 job 日志端点，或让用户到 Actions 页面查看完整日志。
+ 10. **人类侧「提取失败日志」为何只给一小段 / 为什么最多 3 个 job**:
+    - *原因*：弹窗内展示的是**锚点萃取后的片段**（失败块 + 上下文，无锚点时回退尾部 200 行），不是完整日志；一次点击最多串行拉 3 个失败 job，服务端总预算 90 秒——这是为了不让一次点击把面板卡住几分钟。
+    - *解法*：需要完整日志或更多 job 时，让用户点弹窗右上角「GitHub ↗」，或由 Agent 用 \`github_run(action:'log_failed')\` / \`github_task(action:'diagnose_ci')\` 分批处理。`
 };
 
 export function createHelpTool(executor: GhExecutor) {

@@ -81,7 +81,7 @@ Consolidates scattered GitHub endpoints into **19 core domain tools (106 actions
 > - *"Why did CI fail?"*
 > - *"What should the next version be? Draft the notes"*
 
-The 18 domain tools above are a **verb table** (list / view / diff / checks / review…), while users speak in **tasks**. `github_task` wraps the three most repeated journeys into **one call** and returns an already-trimmed, directly actionable envelope:
+The 19 domain tools above are a **verb table** (list / view / diff / checks / review…), while users speak in **tasks**. `github_task` wraps the three most repeated journeys into **one call** and returns an already-trimmed, directly actionable envelope:
 
 ```text
 summary (≤1.5KB) + facts (structured) + nextActions (concrete next steps) + cost (chars / gh calls / elapsed)
@@ -422,6 +422,7 @@ Click the **Octocat icon** in DSH's left navigation bar to open the full-screen 
 * **Update Notification Banner**: Smoothly glides down when an update is available with one-click automated upgrade;
 * **🔀 PR Review Workbench**: Click any PR to review author, branch flow, CI/review status, Markdown description, comment timeline, and the changed-file list with high-fidelity unified diffs — all without leaving DSH (diffs are sliced per file in memory, so switching files is instant);
 * **📝 Issue Online Viewer**: Click any Issue to read the full discussion — body and comments rendered as Markdown, long content collapsed, GitHub-hidden (SPAM) comments explicitly flagged, with label chips, assignees, milestone, sub-issue progress, and linked PRs.
+* **⚡ Actions Run Online Detail**: Click any run card in the sidebar to inspect workflow / branch / commit / trigger event / duration plus the full job & step tree (per-step conclusion and timing, failed steps highlighted, first failed job expanded by default). On failure, pull an anchored log excerpt on demand (up to 3 failed jobs per click, 90s server-side batch budget, 100s client-side abort), while `GitHub ↗` still opens the complete log on GitHub.
 
 <p align="center">
   <img src="./docs/images/1.png" alt="GitHub Global Cockpit" width="100%" />
@@ -447,7 +448,7 @@ Located in the right drawer of every chat workspace, seamlessly bridging your lo
   * **Uncommitted Changes (`📁 Uncommitted (N)`)**: Full-width list of uncommitted files with color-coded status codes (`??` untracked, `M` modified, `D` deleted, `R` renamed) and change counts;
   * **Pull Requests (`🔀 PR (N)`)**: Shows **all** PRs (merged/closed included, default "All"), with status pills `All / 🟢 Open / 🟣 Merged / ⚪ Closed` showing per-state counts; 3-state CI rollup (`✅ CI Passed` / `❌ CI Failed` / `⏳ CI Pending`), merge conflict detection, review decisions (`✔ Approved` / `✋ Changes Requested` / `👀 Review Required`), Draft pills, and humanized timestamps; **click a card to open the in-app PR review workbench**, while `GitHub ↗` still jumps to the browser;
   * **Workspace Issues (`📋 Issues (N)`)**: Shows **all** issues (closed included, default "All"), with status pills `All / 🟢 Open / ⚪ Closed`; **click a card to open the in-app Issue viewer** (Markdown body / comment timeline / labels & milestone, Esc to close), while `GitHub ↗` still jumps to the browser;
-  * **Actions Pipeline (`⚡ Actions (N)`)**: Real-time CI workflow status tracking with trigger event badges (`push`/`schedule`/`manual`/`PR`), relative time, and self-healing diagnostic notes for failed runs (embedding `run_id` for Agent one-click log inspection);
+  * **Actions Pipeline (`⚡ Actions (N)`)**: Real-time CI workflow status tracking with trigger event badges (`push`/`schedule`/`manual`/`PR`) and relative time; **click a card to open the in-app run detail** — job / step tree with failed steps highlighted (first failed job expanded), plus an on-demand anchored log excerpt (up to 3 failed jobs, 90s batch budget), while `GitHub ↗` still opens the full log on GitHub;
 * **⚙️ Full Settings Access**: Dedicated settings button reusing the same settings modal as the cockpit (all four sections: Sync / Proxy / Update Source / About) — no need to switch back to the main page.
 
 <p align="center">

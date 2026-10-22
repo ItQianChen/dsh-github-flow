@@ -49,9 +49,9 @@
 │  │  - ruleset(check)│                            │ - /update-settings    │  │
 │  │  - cache (治理)  │                            │ - /proxy (全局代理)   │  │
 │  │  - gist (分享)   │                            │ - /auth (轻量探针)    │  │
-│  │  - status (健康) │                            │ - /issue-detail (Issue│  │
-│  │  - agent_task    │                            │   在线详情与评论)     │  │
-│  │  - discussion    │                            │ - /pr-detail (PR 审阅)│  │
+│  │  - status (健康) │                            │ - /issue-detail       │  │
+│  │  - agent_task    │                            │ - /pr-detail (PR 审阅)│  │
+│  │  - discussion    │                            │ - /run-detail (Run)   │  │
 │  │  - project (v2)  │                            └──────────┬────────────┘  │
 │  │  - codespace(MVP)│                        ┌───────────────────────────┐  │
 │  │  - help (元指南) │                        │ git-watcher (独立服务)    │  │
