@@ -81,8 +81,12 @@ async function runTests() {
   // ============================================================
   console.log('\n--- 2. 触顶标记：截断必须可感知 ---');
   // ============================================================
-  ok(/const prsTruncated = pullRequests\.length >= prLimit/.test(routeSrc), 'PR 触顶判定基于本次分页参数');
-  ok(/const issuesTruncated = issues\.length >= issueLimit/.test(routeSrc), 'Issue 触顶判定基于本次分页参数');
+  // 有真实总数时用精确比较（loaded < total），拿不到才回落「本次是否拉满」的启发式。
+  // 精确比较能消除边界误报：loaded=total 时 `>= prLimit` 会误判为还有更多，点下去却拉不到东西。
+  ok(/pullRequests\.length < repoCounts\.prTotal/.test(routeSrc), 'PR 触顶判定优先用真实总数做精确比较');
+  ok(/pullRequests\.length >= prLimit/.test(routeSrc), 'PR 触顶判定在无总数时回落本次分页参数');
+  ok(/issues\.length < repoCounts\.issueTotal/.test(routeSrc), 'Issue 触顶判定优先用真实总数做精确比较');
+  ok(/issues\.length >= issueLimit/.test(routeSrc), 'Issue 触顶判定在无总数时回落本次分页参数');
   ok(/\.\.\.\(prsTruncated \? \{ prsTruncated: true \} : \{\}\)/.test(routeSrc), '仅在触顶时下发 prsTruncated');
   ok(/\.\.\.\(issuesTruncated \? \{ issuesTruncated: true \} : \{\}\)/.test(routeSrc), '仅在触顶时下发 issuesTruncated');
   ok(/prsTruncated\?:\s*boolean/.test(typesSrc), 'GitHubOverviewData 声明 prsTruncated');

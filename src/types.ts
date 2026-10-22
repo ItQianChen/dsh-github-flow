@@ -314,7 +314,7 @@ export interface PrItem {
   number: number;
   title: string;
   state: 'OPEN' | 'CLOSED' | 'MERGED';
-  author: { login: string; avatarUrl?: string };
+  author?: { login: string; avatarUrl?: string };
   headRefName: string;
   baseRefName: string;
   isDraft: boolean;
@@ -602,6 +602,37 @@ export interface GitHubOverviewData {
   issuesTruncated?: boolean;
   /** Actions 运行列表是否还有更多（语义同 prsTruncated；右侧栏分页用） */
   runsTruncated?: boolean;
+
+  /*
+   * 仓库总量（与列表分页无关的真实总数）。
+   *
+   * 为什么必须单独下发：列表是「按页拉」的，`pullRequests.length` 只是**已加载条数**。
+   * 拿已加载条数当总数，用户每下滑一次就会看到 15 → 30 → 45，像是总数在变——这是 bug。
+   * 这里的一组数字来自 GraphQL `search.issueCount`，与分页参数完全解耦。
+   * 整组字段可选：计数查询失败时全部缺席，前端回落到已加载条数。
+   */
+  /** 仓库全部 PR 数（含 open/merged/closed） */
+  prTotal?: number;
+  /** 处于 open 的 PR 数 */
+  prOpenTotal?: number;
+  /** 已合并的 PR 数 */
+  prMergedTotal?: number;
+  /** 已关闭的 PR 数（GitHub 语义：含已合并） */
+  prClosedTotal?: number;
+  /** 仓库全部 Issue 数（不含 PR——用 `is:issue` 限定符区分） */
+  issueTotal?: number;
+  /** 处于 open 的 Issue 数 */
+  issueOpenTotal?: number;
+  /** 已关闭的 Issue 数 */
+  issueClosedTotal?: number;
+  /**
+   * Actions 运行总数。
+   *
+   * 来源是 REST `GET /repos/{owner}/{repo}/actions/runs?per_page=1` 的 `total_count`
+   * ——GitHub GraphQL 没有 workflow runs 连接，拿不到 totalCount。
+   * 同样与分页解耦：`runs.length` 只是已加载条数。
+   */
+  runTotal?: number;
 }
 
 export interface UserRepoItem {
@@ -668,6 +699,21 @@ export interface GlobalOverviewData {
   prsTruncated?: boolean;
   /** Issues 三路检索是否任一触及上限（有更多可加载） */
   issuesTruncated?: boolean;
+  /*
+   * 账号级 PR 总量（与分页解耦；来自 GraphQL `search.issueCount`，口径与列表一致）。
+   *
+   * 这里**故意没有** Issue 总量：主面板 Issue 列表是 owner/assignee/author 三路的并集，
+   * 唯一能给出不重复总数的 `is:issue involves:@me` 不含「我仓库里别人提的 issue」，
+   * 实测会小于已加载条数；三路分别计数相加又会因重叠虚高。拿不到正确口径就不下发假总数，
+   * 前端老实显示「已加载 N」。
+   */
+  prTotal?: number;
+  /** 账号 open PR 数 */
+  prOpenTotal?: number;
+  /** 账号已合并 PR 数 */
+  prMergedTotal?: number;
+  /** 账号已关闭 PR 数（GitHub 语义：含已合并） */
+  prClosedTotal?: number;
   lastUpdated: string;
   error?: string;
   /** 网络是否发生异常（超时、连接拒绝、代理阻断等） */

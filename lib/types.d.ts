@@ -310,7 +310,7 @@ export interface PrItem {
     number: number;
     title: string;
     state: 'OPEN' | 'CLOSED' | 'MERGED';
-    author: {
+    author?: {
         login: string;
         avatarUrl?: string;
     };
@@ -626,6 +626,28 @@ export interface GitHubOverviewData {
     issuesTruncated?: boolean;
     /** Actions 运行列表是否还有更多（语义同 prsTruncated；右侧栏分页用） */
     runsTruncated?: boolean;
+    /** 仓库全部 PR 数（含 open/merged/closed） */
+    prTotal?: number;
+    /** 处于 open 的 PR 数 */
+    prOpenTotal?: number;
+    /** 已合并的 PR 数 */
+    prMergedTotal?: number;
+    /** 已关闭的 PR 数（GitHub 语义：含已合并） */
+    prClosedTotal?: number;
+    /** 仓库全部 Issue 数（不含 PR——用 `is:issue` 限定符区分） */
+    issueTotal?: number;
+    /** 处于 open 的 Issue 数 */
+    issueOpenTotal?: number;
+    /** 已关闭的 Issue 数 */
+    issueClosedTotal?: number;
+    /**
+     * Actions 运行总数。
+     *
+     * 来源是 REST `GET /repos/{owner}/{repo}/actions/runs?per_page=1` 的 `total_count`
+     * ——GitHub GraphQL 没有 workflow runs 连接，拿不到 totalCount。
+     * 同样与分页解耦：`runs.length` 只是已加载条数。
+     */
+    runTotal?: number;
 }
 export interface UserRepoItem {
     name: string;
@@ -700,6 +722,13 @@ export interface GlobalOverviewData {
     prsTruncated?: boolean;
     /** Issues 三路检索是否任一触及上限（有更多可加载） */
     issuesTruncated?: boolean;
+    prTotal?: number;
+    /** 账号 open PR 数 */
+    prOpenTotal?: number;
+    /** 账号已合并 PR 数 */
+    prMergedTotal?: number;
+    /** 账号已关闭 PR 数（GitHub 语义：含已合并） */
+    prClosedTotal?: number;
     lastUpdated: string;
     error?: string;
     /** 网络是否发生异常（超时、连接拒绝、代理阻断等） */

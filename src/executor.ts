@@ -365,11 +365,16 @@ export class GhExecutor {
         rawOutput = errText.trim();
       }
 
-      const outcome = truncateOutput(
-        rawOutput,
-        options.maxOutputChars ?? this.maxOutputChars,
-        options.maxOutputBytes ?? this.maxOutputBytes
-      );
+      const maxChars = options.maxOutputChars ?? this.maxOutputChars;
+      // 字节上限联动推导：若调用方显式放宽了字符上限（如放宽到 1MB），未指定 maxOutputBytes 时
+      // 必须按 4 倍自动放宽，绝不能死板回落到全局实例的 96KB（否则 >96KB 的输出会被静默判定截断）。
+      // 取 Math.max 是为了不压低用户在 Config 里配置的更大 maxOutputBytes。
+      const maxBytes =
+        options.maxOutputBytes ??
+        (options.maxOutputChars
+          ? Math.max(options.maxOutputChars * 4, this.maxOutputBytes)
+          : this.maxOutputBytes);
+      const outcome = truncateOutput(rawOutput, maxChars, maxBytes);
       rawOutput = outcome.text;
       const truncated = outcome.truncated;
 

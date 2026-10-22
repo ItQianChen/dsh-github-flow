@@ -466,13 +466,16 @@ window.__ModuleLoader__.load({
       onChangePrFilter: ((v: string) => void) | null = null,
       onChangeIssueFilter: ((v: string) => void) | null = null,
       /**
-       * PR / Issue / Actions 三个列表的「加载更多」。
-       *
-       * 为什么只给一个回调而不是三个：这三条列表是同一个 /api/github/overview 请求
-       * 一起取的（一个 cwd 一次 Promise.all），所以一次「加载更多」等于把三个 limit
-       * 一起 +15 再取一遍。分成三个回调只会制造「加载 PR 顺带把 Issue 也刷新了」的错觉。
+       * PR / Issue / Actions 三个列表的「加载更多」回调（按 tab 独立触发）。
        */
-      onLoadMoreLists: (() => void) | null = null
+      onLoadMoreLists: ((kind: string) => void) | null = null,
+      /**
+       * 各 Tab 的「正在加载更多」标记。
+       *
+       * 为什么需要它：请求往返几百毫秒到数秒，页脚不变化的话用户会以为点击没生效而连点，
+       * 触发重复请求（服务端虽然有 loadingMoreListsRef 兜底，但界面必须有反馈）。
+       */
+      listLoading: { prs?: boolean; issues?: boolean; runs?: boolean } | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -485,17 +488,56 @@ window.__ModuleLoader__.load({
        * 触发条件是服务端下发的 `*Truncated`（= 本次拉满，可能还有更早记录），不是本地条数比较——
        * 本地比不出「还有没有」。
        */
-      var renderListMore = function (kind: string, hasMore: any, count: number) {
+      /**
+       * 列表「加载更多」页脚：与「未提交变更 / Git 提交记录」两个已有分页同视觉同交互。
+       * 触发条件是服务端下发的 `*Truncated`（= 本次拉满，可能还有更早记录），不是本地条数比较——
+       * 本地比不出「还有没有」。
+       *
+       * `loading` 为真时切换成「正在加载中」并禁用点击：请求往返可能几百毫秒到数秒，
+       * 不反馈的话用户会以为点击没生效而连点，触发重复请求。
+       */
+      var renderListMore = function (kind: string, hasMore: any, count: number, loading?: boolean) {
         if (!hasMore || typeof onLoadMoreLists !== "function") return null;
         return h(
           "div",
           {
             key: "load-more-" + kind,
-            style: { fontSize: "11px", opacity: 0.8, padding: "8px 0", textAlign: "center", cursor: "pointer" },
-            onClick: function () { onLoadMoreLists(); },
-            title: "点击加载更多（滚动到底部也会自动加载）",
+            style: {
+              fontSize: "11px",
+              opacity: loading ? 1 : 0.8,
+              padding: "8px 0",
+              textAlign: "center",
+              cursor: loading ? "default" : "pointer",
+            },
+            onClick: function () { if (!loading) onLoadMoreLists(kind); },
+            title: loading ? "正在加载更多…" : "点击加载更多（滚动到底部也会自动加载）",
+            "aria-busy": loading ? "true" : "false",
           },
-          "⬇️ 下滑或点击加载更多（已显示 " + count + " 条）"
+          loading
+            ? "⏳ 正在加载中…"
+            : "⬇️ 下滑或点击加载更多（已显示 " + count + " 条）"
+        );
+      };
+
+      /**
+       * 列表「到底了」终态提示。
+       *
+       * 只在「服务端说不能再加载了，但仓库里确实还有更早记录」时出现——
+       * 触发条件是 `parseListLimit` 的 100 条硬上限被顶满（或搜索索引与列表口径不一致）。
+       * 此时若什么都不说，用户看到「已加载 100 / 共 323」却没有入口，会以为界面坏了；
+       * 说清楚「更早记录请到 GitHub 查看」才是诚实的收尾。
+       */
+      var renderListEnd = function (kind: string, hasMore: any, count: number, total: any) {
+        if (hasMore) return null;
+        if (typeof total !== "number" || count >= total) return null;
+        return h(
+          "div",
+          {
+            key: "list-end-" + kind,
+            style: { fontSize: "11px", opacity: 0.6, padding: "8px 0", textAlign: "center" },
+            title: "单次最多加载 100 条，更早的记录请在 GitHub 查看",
+          },
+          "已加载 " + count + " / 共 " + total + " 条，更早记录请到 GitHub 查看"
         );
       };
 
@@ -1152,28 +1194,42 @@ window.__ModuleLoader__.load({
       var PR_STATE_LABEL: Record<string, string> = { all: "全部", open: "Open", merged: "Merged", closed: "Closed" };
       var prFilterLabel = PR_STATE_LABEL[prStateFilter] || "全部";
 
+      /*
+       * 计数口径：**优先用仓库真实总数**（服务端 GraphQL `search.issueCount` 下发），
+       * 只有拿不到总数时才回落到「已加载条数」。
+       *
+       * 为什么不能直接用 prs.length：列表按页拉，prs.length 是「已加载」，
+       * 用户每下滑一次它就从 15 → 30 → 45，看起来像仓库总数在变——这是 bug。
+       */
+      var prTotalCount = typeof data?.prTotal === "number" ? data.prTotal : prs.length;
+      // Actions 总数来自 REST actions/runs.total_count；拿不到才回落已加载条数
+      var runTotalCount = typeof data?.runTotal === "number" ? data.runTotal : runs.length;
+      var prOpenCount = typeof data?.prOpenTotal === "number" ? data.prOpenTotal : prByState.open;
+      var prMergedCount = typeof data?.prMergedTotal === "number" ? data.prMergedTotal : prByState.merged;
+      var prClosedCount = typeof data?.prClosedTotal === "number" ? data.prClosedTotal : prByState.closed;
+
       var prPillsEl = h(
         "div",
         { className: "dsh-github-pills" },
         h(
           "button",
           { className: `dsh-github-pill-btn ${prStateFilter === "all" ? "active" : ""}`, "aria-pressed": prStateFilter === "all" ? "true" : "false", onClick: () => onChangePrFilter && onChangePrFilter("all") },
-          `全部 (${prs.length})`
+          `全部 (${prTotalCount})`
         ),
         h(
           "button",
           { className: `dsh-github-pill-btn ${prStateFilter === "open" ? "active" : ""}`, "aria-pressed": prStateFilter === "open" ? "true" : "false", onClick: () => onChangePrFilter && onChangePrFilter("open") },
-          `🟢 Open (${prByState.open})`
+          `🟢 Open (${prOpenCount})`
         ),
         h(
           "button",
           { className: `dsh-github-pill-btn ${prStateFilter === "merged" ? "active" : ""}`, "aria-pressed": prStateFilter === "merged" ? "true" : "false", onClick: () => onChangePrFilter && onChangePrFilter("merged") },
-          `🟣 Merged (${prByState.merged})`
+          `🟣 Merged (${prMergedCount})`
         ),
         h(
           "button",
           { className: `dsh-github-pill-btn ${prStateFilter === "closed" ? "active" : ""}`, "aria-pressed": prStateFilter === "closed" ? "true" : "false", onClick: () => onChangePrFilter && onChangePrFilter("closed") },
-          `⚪ Closed (${prByState.closed})`
+          `⚪ Closed (${prClosedCount})`
         )
       );
 
@@ -1185,7 +1241,7 @@ window.__ModuleLoader__.load({
       var prSectionEl = h(
         "div",
         { className: "dsh-github-section" },
-        h("div", { className: "dsh-github-section-header" }, h("h3", null, `🔀 Pull Requests (${filteredPrs.length}/${prs.length})`)),
+        h("div", { className: "dsh-github-section-header" }, h("h3", null, `🔀 Pull Requests（${prs.length} / 共 ${prTotalCount}）`)),
         prPillsEl,
         filteredPrs.length === 0
           ? prEmptyEl
@@ -1278,23 +1334,28 @@ window.__ModuleLoader__.load({
       var ISSUE_STATE_LABEL: Record<string, string> = { all: "全部", open: "Open", closed: "Closed" };
       var issueFilterLabel = ISSUE_STATE_LABEL[issueStateFilter] || "全部";
 
+      // Issue 计数同 PR 口径：优先仓库真实总数，拿不到才回落已加载条数
+      var issueTotalCount = typeof data?.issueTotal === "number" ? data.issueTotal : issues.length;
+      var issueOpenCount = typeof data?.issueOpenTotal === "number" ? data.issueOpenTotal : issueByState.open;
+      var issueClosedCount = typeof data?.issueClosedTotal === "number" ? data.issueClosedTotal : issueByState.closed;
+
       var issuePillsEl = h(
         "div",
         { className: "dsh-github-pills" },
         h(
           "button",
           { className: `dsh-github-pill-btn ${issueStateFilter === "all" ? "active" : ""}`, "aria-pressed": issueStateFilter === "all" ? "true" : "false", onClick: () => onChangeIssueFilter && onChangeIssueFilter("all") },
-          `全部 (${issues.length})`
+          `全部 (${issueTotalCount})`
         ),
         h(
           "button",
           { className: `dsh-github-pill-btn ${issueStateFilter === "open" ? "active" : ""}`, "aria-pressed": issueStateFilter === "open" ? "true" : "false", onClick: () => onChangeIssueFilter && onChangeIssueFilter("open") },
-          `🟢 Open (${issueByState.open})`
+          `🟢 Open (${issueOpenCount})`
         ),
         h(
           "button",
           { className: `dsh-github-pill-btn ${issueStateFilter === "closed" ? "active" : ""}`, "aria-pressed": issueStateFilter === "closed" ? "true" : "false", onClick: () => onChangeIssueFilter && onChangeIssueFilter("closed") },
-          `⚪ Closed (${issueByState.closed})`
+          `⚪ Closed (${issueClosedCount})`
         )
       );
 
@@ -1308,7 +1369,7 @@ window.__ModuleLoader__.load({
         h(
           "div",
           { className: "dsh-github-section-header" },
-          h("h3", null, `📋 仓库 Issues (${filteredIssues.length}/${issues.length})`),
+          h("h3", null, `📋 仓库 Issues（${issues.length} / 共 ${issueTotalCount}）`),
           repo?.url
             ? h(
                 "a",
@@ -1403,7 +1464,7 @@ window.__ModuleLoader__.load({
       var runSectionEl = h(
         "div",
         { className: "dsh-github-section" },
-        h("div", { className: "dsh-github-section-header" }, h("h3", null, `⚡ 最近 Actions 流水线 (${runs.length})`)),
+        h("div", { className: "dsh-github-section-header" }, h("h3", null, `⚡ 最近 Actions 流水线（${runs.length} / 共 ${runTotalCount}）`)),
         runs.length === 0
           ? h("div", { className: "dsh-github-empty" }, "暂无工作流记录")
           : h(
@@ -1449,9 +1510,11 @@ window.__ModuleLoader__.load({
       var TAB_DEFS: Array<{ key: string; label: string; count: number | null; icon?: any }> = [
         { key: "git", label: "Git", count: null, icon: renderGitIcon(13, "#1296db") },
         { key: "dirty", label: "📁 未提交", count: gitSt ? gitSt.dirtyCount : null },
-        { key: "prs", label: "🔀 PR", count: prs.length },
-        { key: "issues", label: "📋 Issues", count: issues.length },
-        { key: "runs", label: "⚡ Actions", count: runs.length },
+        // Tab 上的数字是**仓库总数**（不是已加载条数）：下滑加载更多时它必须纹丝不动
+        { key: "prs", label: "🔀 PR", count: prTotalCount },
+        { key: "issues", label: "📋 Issues", count: issueTotalCount },
+        // Actions 没有可用的总数接口（gh/GraphQL 都不提供），保持已加载条数
+        { key: "runs", label: "⚡ Actions", count: runTotalCount },
       ].filter(function (t) {
         if ((t.key === "git" || t.key === "dirty") && !gitSt) return false;
         return true;
@@ -1493,12 +1556,9 @@ window.__ModuleLoader__.load({
         "div",
         { "data-active-tab": defaultTab },
         tabsBarEl,
-        h("div", { "data-tab-page": "prs", hidden: defaultTab !== "prs" }, prSectionEl),
-        renderListMore("prs", data && data.prsTruncated, prs.length),
-        h("div", { "data-tab-page": "issues", hidden: defaultTab !== "issues" }, issueSectionEl),
-        renderListMore("issues", data && data.issuesTruncated, issues.length),
-        h("div", { "data-tab-page": "runs", hidden: defaultTab !== "runs" }, runSectionEl),
-        renderListMore("runs", data && data.runsTruncated, runs.length),
+        h("div", { "data-tab-page": "prs", hidden: defaultTab !== "prs" }, prSectionEl, renderListMore("prs", data && data.prsTruncated, prs.length, Boolean(listLoading && listLoading.prs)), renderListEnd("prs", data && data.prsTruncated, prs.length, data && data.prTotal)),
+        h("div", { "data-tab-page": "issues", hidden: defaultTab !== "issues" }, issueSectionEl, renderListMore("issues", data && data.issuesTruncated, issues.length, Boolean(listLoading && listLoading.issues)), renderListEnd("issues", data && data.issuesTruncated, issues.length, data && data.issueTotal)),
+        h("div", { "data-tab-page": "runs", hidden: defaultTab !== "runs" }, runSectionEl, renderListMore("runs", data && data.runsTruncated, runs.length, Boolean(listLoading && listLoading.runs)), renderListEnd("runs", data && data.runsTruncated, runs.length, data && data.runTotal)),
         gitSt ? h("div", { "data-tab-page": "git", hidden: defaultTab !== "git" }, gitSectionEl) : null,
         gitSt ? h("div", { "data-tab-page": "dirty", hidden: defaultTab !== "dirty" }, dirtySectionEl) : null
       );
@@ -1538,8 +1598,15 @@ window.__ModuleLoader__.load({
       var [toastMsg, setToastMsg] = React.useState(null as string | null);
       var cloudTimerRef = React.useRef(null as any);
       var dataRef = React.useRef(data);
-      // 列表分页游标用 ref：它只影响下一次请求，不需要触发重渲染（data 更新自会重渲染）
-      var listLimitRef = React.useRef(OVERVIEW_PAGE_SIZE);
+      // 列表分页游标按 Tab 独立维护：防止加载更多 PR 顺带把 Issue 和 Actions 也拉满膨胀
+      var tabLimitsRef = React.useRef({
+        prs: OVERVIEW_PAGE_SIZE,
+        issues: OVERVIEW_PAGE_SIZE,
+        runs: OVERVIEW_PAGE_SIZE,
+      });
+      var loadingMoreListsRef = React.useRef(false);
+      // 各 Tab 的「正在加载更多」UI 标记（ref 只防重入，界面反馈必须走 state 才能重渲染）
+      var [listLoading, setListLoading] = React.useState({ prs: false, issues: false, runs: false } as Record<string, boolean>);
       dataRef.current = data;
       var lastCwdRef = React.useRef(cwd);
       var containerRef = React.useRef(null as any);
@@ -1552,6 +1619,11 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         if (lastCwdRef.current === cwd) return;
         lastCwdRef.current = cwd;
+        tabLimitsRef.current = {
+          prs: OVERVIEW_PAGE_SIZE,
+          issues: OVERVIEW_PAGE_SIZE,
+          runs: OVERVIEW_PAGE_SIZE,
+        };
         var snap = getStoredRightbarSnapshot(cwd);
         setData(snap?.data || null);
         setSyncStatus(snap ? "cached" : "loading");
@@ -1621,11 +1693,10 @@ window.__ModuleLoader__.load({
           if (cwd) {
             params.push("cwd=" + encodeURIComponent(cwd));
           }
-          // 分页：PR / Issue / Actions 三条列表同属这一个请求，
-          // 一次「加载更多」= 三个 limit 一起涨、一次重取（见 loadMoreLists）。
-          params.push("prLimit=" + listLimitRef.current);
-          params.push("issueLimit=" + listLimitRef.current);
-          params.push("runLimit=" + listLimitRef.current);
+          // 分页：PR / Issue / Actions 各自独立游标，避免相互膨胀
+          params.push("prLimit=" + tabLimitsRef.current.prs);
+          params.push("issueLimit=" + tabLimitsRef.current.issues);
+          params.push("runLimit=" + tabLimitsRef.current.runs);
           if (params.length > 0) {
             url += "?" + params.join("&");
           }
@@ -1958,16 +2029,31 @@ window.__ModuleLoader__.load({
       }, [cwd]);
 
       /**
-       * PR / Issue / Actions 三个列表共用的「加载更多」。
+       * PR / Issue / Actions 列表的「加载更多」（独立游标维护）。
        *
-       * 为什么是「一起涨」而不是每个 Tab 独立：这三条列表由同一个
-       * `/api/github/overview` 请求一次取回（一个 cwd 一次 Promise.all），
-       * 独立游标只会让同一个请求里的三个 limit 互相矛盾。
-       * 没有更多时页脚不渲染（由服务端 `*Truncated` 决定），所以这里不必再判 hasMore。
+       * 针对对应 Tab 单独累加步长，未处于当前焦点的 Tab 不增加 limit，
+       * 从源头杜绝并发膨胀触发底层 125KB 截断。
        */
-      var loadMoreLists = function () {
-        listLimitRef.current = listLimitRef.current + OVERVIEW_PAGE_SIZE;
-        loadData(true);
+      var loadMoreTabList = function (kind: string) {
+        if (loadingMoreListsRef.current) return;
+        var validKey = kind === "prs" ? "prs" : kind === "issues" ? "issues" : kind === "runs" ? "runs" : null;
+        if (!validKey) return;
+        tabLimitsRef.current[validKey] = tabLimitsRef.current[validKey] + OVERVIEW_PAGE_SIZE;
+        loadingMoreListsRef.current = true;
+        // 立刻把该 Tab 的页脚切成「正在加载中」，请求结束后再切回来（成功失败都要复位）
+        setListLoading(function (prev: Record<string, boolean>) {
+          var next = Object.assign({}, prev);
+          next[validKey as string] = true;
+          return next;
+        });
+        loadData(true).finally(function () {
+          loadingMoreListsRef.current = false;
+          setListLoading(function (prev: Record<string, boolean>) {
+            var next = Object.assign({}, prev);
+            next[validKey as string] = false;
+            return next;
+          });
+        });
       };
 
       var loadMoreCommits = function () {
@@ -2088,6 +2174,12 @@ window.__ModuleLoader__.load({
               loadMoreCommits();
             } else if (activeTab === "dirty") {
               loadMoreDirtyFiles();
+            } else if (activeTab === "prs" && data?.prsTruncated) {
+              loadMoreTabList("prs");
+            } else if (activeTab === "issues" && data?.issuesTruncated) {
+              loadMoreTabList("issues");
+            } else if (activeTab === "runs" && data?.runsTruncated) {
+              loadMoreTabList("runs");
             }
           }
         };
@@ -2104,6 +2196,12 @@ window.__ModuleLoader__.load({
               loadMoreCommits();
             } else if (activeTab === "dirty") {
               loadMoreDirtyFiles();
+            } else if (activeTab === "prs" && data?.prsTruncated) {
+              loadMoreTabList("prs");
+            } else if (activeTab === "issues" && data?.issuesTruncated) {
+              loadMoreTabList("issues");
+            } else if (activeTab === "runs" && data?.runsTruncated) {
+              loadMoreTabList("runs");
             }
           }
         };
@@ -2253,7 +2351,8 @@ window.__ModuleLoader__.load({
           changePrFilter,
           changeIssueFilter,
           // 必须追加在形参末尾（该函数 30+ 个位置参数，插中间会静默错位）
-          loadMoreLists
+          loadMoreTabList,
+          listLoading
         ),
         h(GlobalSyncSettingsModal, {
           isOpen: aboutModalOpen,
