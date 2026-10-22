@@ -176,6 +176,14 @@ export class GhExecutor {
   /** UTF-8 字节口径的硬上限；未配置时按 maxOutputChars × 4 推导（覆盖 CJK 3 字节与 emoji 4 字节） */
   public maxOutputBytes: number;
   /**
+   * 累计 gh 子进程调用次数（只增不清零，`run()` 每次 +1）。
+   *
+   * 为什么需要：任务原语（github_task）要如实汇报 `cost.ghCalls`，
+   * 而「原语是否真的比手动串步骤省钱」是这个能力存在的唯一判据。
+   * 消费方用「调用前快照 → 调用后求差」的方式取区间计数。
+   */
+  public ghCalls = 0;
+  /**
    * 列表类查询的默认条数上限。
    * 为什么挂在 executor 而不是给每个工具工厂加 config 参数：executor 是全部
    * 工具共享的依赖注入点，配置语义本就属于「执行层默认值」；工厂签名零改动，
@@ -300,6 +308,14 @@ export class GhExecutor {
    * 采用 execFile 参数数组隔离，彻底杜绝 Shell 字符串拼接注入漏洞
    */
   async run<T = unknown>(args: string[], options: GhExecutionOptions = {}): Promise<GhResult<T>> {
+    /*
+     * gh 子进程调用计数（只增不清零）。
+     *
+     * 为什么放在 executor 而不是各工具里手数：任务原语（github_task）必须能如实
+     * 汇报 `cost.ghCalls`，而「原语是否真的省钱」是它存在的唯一判据。
+     * 手写计数必然与实际调用漂移——真实调用点只有这里一个。
+     */
+    this.ghCalls++;
     const cwd = this.resolveWorkspaceCwd(options.cwd, options.sessionId);
     const timeout = options.timeoutMs || this.defaultTimeoutMs;
 
@@ -898,6 +914,94 @@ export class GhExecutor {
       return parseGitBranchLines(String(stdout));
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * 发版输入：最近 tag + 该 tag 以来的提交（供 `github_task(prepare_release)` 使用）。
+   *
+   * 为什么要在 executor 里开这个口子，而不是让工具自己拼 git 命令：
+   * 命令形态必须集中（本文件顶部就是"git 白名单"纪律），否则每个新工具都会
+   * 自己发明一套 argv，`phase34` 的契约网也就管不到它们了。
+   *
+   * 安全性：两条命令的形态**全部固定**——`describe --tags --abbrev=0` 无参数注入；
+   * log 的修订范围段只拼 `git describe` 自己的输出，且先过 `/^[A-Za-z0-9._\/-]+$/`
+   * 白名单校验，杜绝把任意字符串当 revision 传进 git。
+   */
+  async getReleaseInputs(cwd?: string, fromTagOverride?: string): Promise<{
+    ok: boolean;
+    fromTag: string | null;
+    commits: Array<{ sha: string; subject: string; author: string; date: string; body: string }>;
+    totalCommits: number;
+    error?: string;
+  }> {
+    const empty = {
+      ok: false,
+      fromTag: null as string | null,
+      commits: [] as Array<{ sha: string; subject: string; author: string; date: string; body: string }>,
+      totalCommits: 0,
+    };
+    const runOpts = { cwd: cwd || undefined, timeout: 5_000, windowsHide: true };
+
+    let fromTag: string | null = null;
+    /*
+     * 显式指定的起始 tag 优先，且**必须真的作为 range 起点**。
+     *
+     * 为什么强调：只拿它当「版本号基数」而不改 range，会出现「按 v1.0.0 算版本、
+     * 但统计的是 v1.2.0 以来的提交」——数字与标签对不上，比直接报错更坏。
+     */
+    const override = typeof fromTagOverride === 'string' ? fromTagOverride.trim() : '';
+    if (override) {
+      /*
+       * 两条校验缺一不可：
+       * - 字符白名单挡住 `;` `$()` 这类命令注入；
+       * - **禁止以 `-` 开头**：它会被拼进 `git log <tag>..HEAD` 的第一个位置，
+       *   git 会把 `-p..HEAD` 当成未知选项（实测报错）。虽然成不了真正的注入，
+       *   但「用户输入永远不许以 - 开头」是这条通道的基本纪律。
+       */
+      if (override.startsWith('-') || !/^[A-Za-z0-9._/-]+$/.test(override)) {
+        return { ...empty, error: `非法的 from_tag：${override}（只允许字母/数字/./_/-/，且不能以 - 开头）` };
+      }
+      fromTag = override;
+    } else {
+      try {
+        const tagRes = await execFileAsync('git', ['describe', '--tags', '--abbrev=0'], runOpts);
+        const raw = String(tagRes.stdout || '').trim();
+        // 白名单：describe 的输出来自仓库自身，但仍要挡住 `..`、空白与 shell 元字符
+        if (raw && /^[A-Za-z0-9._/-]+$/.test(raw)) fromTag = raw;
+      } catch {
+        // 没有任何 tag 是正常状态（新仓库），不是错误
+        fromTag = null;
+      }
+    }
+
+    try {
+      const range = fromTag ? `${fromTag}..HEAD` : 'HEAD';
+      const logRes = await execFileAsync(
+        'git',
+        // %b 带出提交正文：BREAKING CHANGE 常常只写在正文里，只看标题会漏判 major
+        ['log', range, '-n', '300', '--pretty=format:%x1e%h%x1f%s%x1f%an%x1f%ad%x1f%b'],
+        runOpts
+      );
+      const text = String(logRes.stdout || '');
+      const commits = text
+        .split('\x1e')
+        .map((chunk) => chunk.trim())
+        .filter(Boolean)
+        .map((chunk) => {
+          const parts = chunk.split('\x1f');
+          return {
+            sha: String(parts[0] || ''),
+            subject: String(parts[1] || ''),
+            author: String(parts[2] || ''),
+            date: String(parts[3] || ''),
+            // 正文只取前 500 字符：够判 BREAKING CHANGE，又不至于把整包撑大
+            body: String(parts.slice(4).join('\x1f') || '').slice(0, 500),
+          };
+        });
+      return { ok: true, fromTag, commits, totalCommits: commits.length };
+    } catch (err: any) {
+      return { ...empty, fromTag, error: err?.message || '读取提交记录失败' };
     }
   }
 

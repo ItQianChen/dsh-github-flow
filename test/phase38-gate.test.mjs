@@ -35,7 +35,7 @@ console.log('\n--- 0. 声明表形状 ---');
 const entries = Object.entries(DESTRUCTIVE_ACTIONS).flatMap(([tool, actions]) =>
   Object.keys(actions).map((action) => `${tool}.${action}`)
 );
-ok(entries.length === 16, '闸门表覆盖 16 个 (tool, action) 组合', String(entries.length));
+ok(entries.length === 17, '闸门表覆盖 17 个 (tool, action) 组合', String(entries.length));
 ok(entries.includes('github_pr.checkout'), '含 github_pr.checkout（仅 force 时拦）');
 ok(entries.includes('github_issue.transfer'), '含 github_issue.transfer');
 ok(entries.includes('github_cache.delete'), '含 github_cache.delete');

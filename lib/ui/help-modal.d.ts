@@ -10,7 +10,7 @@
  *
  * 【内容与代码同步的纪律】
  * 本文件里出现的工具数量、action 数量、Tab 名称、按钮文案，全部以当前代码为准：
- * 工具矩阵 = src/main.ts 的 18 处 ctx.tools.register；
+ * 工具矩阵 = src/main.ts 的 19 处 ctx.tools.register；
  * Tab 布局 = src/client.ts 的 TAB_DEFS 与 src/ui/workspace-panel.ts 的四个标签；
  * 若后续增删工具或 Tab，必须同步改这里，否则用户会照着过时说明去找不存在的入口。
  */

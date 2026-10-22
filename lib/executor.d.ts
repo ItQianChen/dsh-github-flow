@@ -16,6 +16,14 @@ export declare class GhExecutor {
     /** UTF-8 字节口径的硬上限；未配置时按 maxOutputChars × 4 推导（覆盖 CJK 3 字节与 emoji 4 字节） */
     maxOutputBytes: number;
     /**
+     * 累计 gh 子进程调用次数（只增不清零，`run()` 每次 +1）。
+     *
+     * 为什么需要：任务原语（github_task）要如实汇报 `cost.ghCalls`，
+     * 而「原语是否真的比手动串步骤省钱」是这个能力存在的唯一判据。
+     * 消费方用「调用前快照 → 调用后求差」的方式取区间计数。
+     */
+    ghCalls: number;
+    /**
      * 列表类查询的默认条数上限。
      * 为什么挂在 executor 而不是给每个工具工厂加 config 参数：executor 是全部
      * 工具共享的依赖注入点，配置语义本就属于「执行层默认值」；工厂签名零改动，
@@ -202,6 +210,30 @@ export declare class GhExecutor {
      * 零网络往返，毫秒级本地管道输出。
      */
     getGitBranches(cwd?: string): Promise<GitBranchesResult | null>;
+    /**
+     * 发版输入：最近 tag + 该 tag 以来的提交（供 `github_task(prepare_release)` 使用）。
+     *
+     * 为什么要在 executor 里开这个口子，而不是让工具自己拼 git 命令：
+     * 命令形态必须集中（本文件顶部就是"git 白名单"纪律），否则每个新工具都会
+     * 自己发明一套 argv，`phase34` 的契约网也就管不到它们了。
+     *
+     * 安全性：两条命令的形态**全部固定**——`describe --tags --abbrev=0` 无参数注入；
+     * log 的修订范围段只拼 `git describe` 自己的输出，且先过 `/^[A-Za-z0-9._\/-]+$/`
+     * 白名单校验，杜绝把任意字符串当 revision 传进 git。
+     */
+    getReleaseInputs(cwd?: string, fromTagOverride?: string): Promise<{
+        ok: boolean;
+        fromTag: string | null;
+        commits: Array<{
+            sha: string;
+            subject: string;
+            author: string;
+            date: string;
+            body: string;
+        }>;
+        totalCommits: number;
+        error?: string;
+    }>;
     /**
      * 工作区干净度闸门（唯一实现）。
      *

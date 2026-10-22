@@ -201,7 +201,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **45 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
+项目配备了 **46 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
 - 阶段数与 `test/run-all.mjs` 的 `phases` 数组由 `test/phase35-doc.test.mjs` 对账，改一处漏一处会直接红；
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
@@ -246,4 +246,5 @@
 - `phase43`：**行级评注写入契约测试**（s7：`gh pr review` 没有行级参数，唯一通道是 `POST /pulls/{n}/reviews`；`buildPrReviewPayload` 的 REST 字段形状与「一次说完所有校验错误」；`createPrReview` 的 argv 严格等于 `['api','--method','POST','repos/o/r/pulls/12/reviews','--input','-']` 且 stdin 含 event/comments[].side；**422 降级**把评注折叠进 body（内容不丢、显式 `degraded`）；403 不降级；**不传 comments 时 argv 与改前逐字节一致**）。
 - `phase44`：**仓库规则与严重度契约测试**（s7：`extractSection` 的标题边界——代码围栏内的 `##` 不算标题、一级标题同样终止截取；`normalizeSeverity` 只补不删、幂等、`[P0]` 永不降级；`readReviewRules` 无 `AGENTS.md` 时返回 `null` 且 `pr view` 输出**不含** `reviewRules` 键）。
 - `phase45`：**CI 失败日志锚点萃取测试**（s7：pytest `FAILED` / node `AssertionError` / Go `panic:` / tsc `error TSxxxx` 四类锚点命中；相邻锚点合并成一块；单块行数 ≤ `2*radius+1`；`maxBlocks` 与 `droppedBlocks` 显式计数；无锚点走尾部 200 行回退；`log_failed` 已把输出预算放开到 2MB 字符/8MB 字节——否则截断发生在萃取之前）。
+- `phase46`：**任务级原语契约测试**（s8：`classifyCommits` 的 `feat!:` 必须归 breaking（否则版本少跳一级）；`suggestVersion` 的 auto 推导（breaking→major / feat→minor / 其余→patch）与无 tag 时从 0.1.0 起步；`selectFilesByBudget` 超预算只给元信息不硬塞；`finalizeEnvelope` 的 `cost.chars` 由信封体积计算而非手写；`github_task` 三个原语的端到端行为（review_pr 读模式零写回、写模式必须 confirm 且 commit_id 钉在 head SHA、diagnose_ci 只挑失败 job 并在日志截断时 `totalUnknown=true`、prepare_release **绝不自动发版**）；档位层面 core=3 个工具、只读模式剪掉 review_pr 保留另两个原语）。
 - `phase41`：**侧栏入口图标契约测试**（issue #9 回归网：宿主 `renderSlot("sidebar.panellist", { size: wide ? 16 : 18, active })` 注入的 `size` 必须被透传——从 `lib/client.js` 抽出 `GithubSidebarIcon` 函数体、在沙箱里真调，断言 16/18 两档尺寸、根节点必须是裸 `svg`（有 wrapper 就会把图标格撑宽、标签右移 12px）、`fill` 用 `currentColor` 继承行颜色、缺省/非数字 `size` 兜底 16、`active` 不改变输出结构）。

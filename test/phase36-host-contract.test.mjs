@@ -197,7 +197,7 @@ for (const file of readdirSync(LIB_TOOLS).filter((f) => f.endsWith('.js') && f !
   descriptors.push({ file, tool: factory(mock) });
 }
 
-ok(descriptors.length === 18, '18 个工具工厂全部可实例化', `实际 ${descriptors.length}`);
+ok(descriptors.length === 19, '19 个工具工厂全部可实例化', `实际 ${descriptors.length}`);
 
 const seen = new Set();
 for (const { file, tool } of descriptors) {
@@ -239,7 +239,7 @@ const fiber = root.plugin(mainModule, { checkUpdate: false });
 await tick();
 
 ok(fiber.state === 2, '无 webServer/commands 的 profile 里插件为 ACTIVE（0=PENDING 2=ACTIVE 3=FAILED）', `实际 state=${fiber.state}`);
-ok(registeredTools.length === 18, '18 个工具全部注册', `实际 ${registeredTools.length}`);
+ok(registeredTools.length === 19, '19 个工具全部注册', `实际 ${registeredTools.length}`);
 ok(root.get('github') !== undefined, 'ctx.provide("github") 在真实 Context 上生效');
 ok(root.get('github')?.constructor?.name === 'GhExecutor', '提供的是 GhExecutor 实例');
 

@@ -19,6 +19,7 @@ import { createDiscussionTool } from './tools/discussion.js';
 import { createProjectTool } from './tools/project.js';
 import { createCodespaceTool } from './tools/codespace.js';
 import { createHelpTool } from './tools/help.js';
+import { createTaskTool } from './tools/task.js';
 import { defaultTelemetryCollector } from './telemetry.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
@@ -222,6 +223,8 @@ export function apply(ctx: Context, config: Config = Config({})) {
     createProjectTool(executor),
     createCodespaceTool(executor),
     createHelpTool(executor),
+    // 任务级原语（s8）：与 18 个领域工具并存，档位里用 core 预设二选一
+    createTaskTool(executor),
   ];
   const tier = applyTier(allTools as any, { toolsets: plain.toolsets, read_only: plain.read_only });
   if (tier.dropped.length > 0) {

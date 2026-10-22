@@ -263,7 +263,7 @@ async function runTests() {
   // 直接喂裸对象会让 .get() 落空。这里与 cordis loader 的做法保持一致。
   mainModule.apply(mockCtx, mainModule.Config({ checkUpdate: false }));
   const registeredTools = mockCtx.registeredTools;
-  assert(registeredTools.length === 18, `main.ts 成功装配 18 大核心工具 (实际: ${registeredTools.length})`);
+  assert(registeredTools.length === 19, `main.ts 成功装配 19 大核心工具 (实际: ${registeredTools.length})`);
   assert(registeredTools.includes('github_project'), '装配中包含 github_project');
   assert(registeredTools.includes('github_codespace'), '装配中包含 github_codespace');
 

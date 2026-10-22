@@ -118,6 +118,47 @@ function makeMock(recorded) {
     async ensureCleanWorkspace() {
       return { ok: true, dirtyCount: 0, samples: [] };
     },
+    /**
+     * s8 的任务原语会走这两个高层方法（内部仍由 executor 发 gh/git 命令）。
+     * 契约测试要校验的是**最终 argv**，所以这里按真实实现的形态把 argv 记进
+     * recorded，而不是返回空对象糊过去——否则 review_pr/prepare_release 会被
+     * 误判成「不调用 gh」，悄悄从契约网里掉出去。
+     */
+    async getPrDetail(cwd, prNumber, repo) {
+      const repoArgs = repo ? ['-R', repo] : [];
+      recorded.push(['pr', 'view', String(prNumber), ...repoArgs, '--json', 'number,title,state,isDraft,url,createdAt,updatedAt,author,baseRefName,headRefName,headRefOid,baseRefOid,changedFiles,headRepositoryOwner,body,reviewDecision,statusCheckRollup,comments,reviews,files,additions,deletions']);
+      recorded.push(['pr', 'diff', String(prNumber), ...repoArgs]);
+      return {
+        ok: true,
+        data: {
+          number: Number(prNumber),
+          title: 'mock pr',
+          state: 'OPEN',
+          isDraft: false,
+          url: 'https://github.com/owner/repo/pull/1',
+          createdAt: '',
+          updatedAt: '',
+          author: { login: 'u' },
+          headRefName: 'feat/x',
+          baseRefName: 'main',
+          headRefOid: 'a'.repeat(40),
+          baseRefOid: 'b'.repeat(40),
+          body: '',
+          additions: 1,
+          deletions: 0,
+          files: [{ path: 'src/a.ts', additions: 1, deletions: 0, changeType: 'MODIFIED' }],
+          changedFiles: 1,
+          comments: [],
+          reviews: [],
+          lineComments: [],
+          fileDiffs: { 'src/a.ts': 'diff --git a/src/a.ts b/src/a.ts' },
+        },
+      };
+    },
+    async getReleaseInputs() {
+      return { ok: true, fromTag: 'v1.0.0', commits: [{ sha: 'abc1234', subject: 'feat: x', author: 'u', date: '' }], totalCommits: 1 };
+    },
+    ghCalls: 0,
     resolveWorkspaceCwd() {
       return process.cwd();
     },

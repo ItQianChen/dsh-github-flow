@@ -55,7 +55,7 @@ for (const file of readdirSync(LIB_TOOLS).filter((f) => f.endsWith('.js') && f !
 
 console.log('\n--- 0. 派生基线 ---');
 console.log(`工具数(源码派生): ${toolCount}   业务 action 数(产物派生): ${businessActions}`);
-ok(toolCount === 18, `工具数为 18（实际 ${toolCount}）`);
+ok(toolCount === 19, `工具数为 19（实际 ${toolCount}）`);
 ok(businessActions >= 90, `业务 action 数规模合理（实际 ${businessActions}）`);
 
 const ALLOWED = new Set([String(toolCount), String(businessActions)]);

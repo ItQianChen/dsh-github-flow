@@ -21,3 +21,4 @@ export * from './agent-task.js';
 export * from './discussion.js';
 export * from './project.js';
 export * from './codespace.js';
+export * from './task.js';

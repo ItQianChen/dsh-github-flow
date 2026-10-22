@@ -38,7 +38,7 @@ async function runTests() {
   // 统一过 applyTier / wrapWithGate 后再注册。数工厂调用而不是 register 调用，
   // 是因为注册点已收敛成一条 for 循环——按 register 数会永远得到 1。
   const registered = (mainSrc.match(/^\s*create[A-Z]\w*Tool\(/gm) || []).length;
-  ok(registered === 18, '代码中实例化 18 个 Agent 工具', String(registered));
+  ok(registered === 19, '代码中实例化 19 个 Agent 工具', String(registered));
   // 实例化 ≠ 注册：只数工厂调用的话，把下面的注册循环删掉这行仍然绿。
   // 这里显式钉住「档位过滤后逐个注册」这条语句（真正的注册点已收敛为一条 for）。
   ok(
@@ -47,8 +47,8 @@ async function runTests() {
   );
 
   // 指南里声明的工具数量必须与实际一致
-  ok(helpSrc.includes('18 大工具'), '指南标题声明「18 大工具」');
-  ok(/18 个 Agent 工具/.test(helpSrc), '工具速查页声明「18 个 Agent 工具」');
+  ok(helpSrc.includes('19 大工具'), '指南标题声明「19 大工具」');
+  ok(/19 个 Agent 工具/.test(helpSrc), '工具速查页声明「19 个 Agent 工具」');
   ok(!/\b\d+ 大核心工具/.test(helpSrc) || helpSrc.includes('18 大核心工具'), '未出现与 18 冲突的工具数量');
 
   // 每个真实工具名都要在指南里出现，不能漏
@@ -60,7 +60,7 @@ async function runTests() {
     'github_api', 'github_help',
   ];
   const missingTools = toolNames.filter((n) => !helpSrc.includes(n));
-  ok(missingTools.length === 0, '18 个工具全部在指南中列出', missingTools.length ? '缺: ' + missingTools.join(', ') : '');
+  ok(missingTools.length === 0, '19 个工具全部在指南中列出', missingTools.length ? '缺: ' + missingTools.join(', ') : '');
 
   // action 总数对账。
   // 口径必须统一：help 的 21 项是「查询主题」、api 的 4 项是「HTTP method」，
@@ -75,13 +75,13 @@ async function runTests() {
     actionTotal += n;
     if (f !== 'help.ts' && f !== 'api.ts') businessTotal += n;
   }
-  ok(actionTotal === 128, '代码中 enum 项总计 128', String(actionTotal));
-  ok(businessTotal === 103, '代码中业务 action 数为 103（排除 help 主题与 api method）', String(businessTotal));
+  ok(actionTotal === 132, '代码中 enum 项总计 132（s8 新增 3 个 task action + 1 个 help 主题）', String(actionTotal));
+  ok(businessTotal === 106, '代码中业务 action 数为 106（排除 help 主题与 api method）', String(businessTotal));
 
   // 两个面向人类的入口（Agent 工具知识库 / 使用指南 UI）必须同口径
   const helpToolSrc = fs.readFileSync(path.join(__dirname, '../src/tools/help.ts'), 'utf8');
-  ok(helpToolSrc.includes('103 个业务 action'), 'github_help 声明「103 个业务 action」');
-  ok(helpSrc.includes('103 个业务动作'), 'UI 使用指南声明「103 个业务动作」');
+  ok(helpToolSrc.includes('106 个业务 action'), 'github_help 声明「106 个业务 action」');
+  ok(helpSrc.includes('106 个业务动作'), 'UI 使用指南声明「106 个业务动作」');
   ok(!helpSrc.includes('128 个动作'), 'UI 使用指南不再使用含混的「128 个动作」口径');
   ok(!helpToolSrc.includes('128 个动作'), 'github_help 不再使用含混的「128 个动作」口径');
 
@@ -196,8 +196,8 @@ async function runTests() {
   console.log('\n--- 6. bundle 产物 ---');
   // ============================================================
   const bundle = fs.readFileSync(path.join(__dirname, '../lib/client.js'), 'utf8');
-  ok(bundle.includes('18 大工具'), 'bundle 含「18 大工具」');
-  ok(bundle.includes('103 个业务动作'), 'bundle 含「103 个业务动作」');
+  ok(bundle.includes('19 大工具'), 'bundle 含「19 大工具」');
+  ok(bundle.includes('106 个业务动作'), 'bundle 含「106 个业务动作」');
   ok(!bundle.includes('128 个动作'), 'bundle 已无含混的「128 个动作」口径');
   ok(bundle.includes('PR 审阅工作台'), 'bundle 含 PR 在线审阅说明');
   ok(bundle.includes('Issue 详情'), 'bundle 含 Issue 在线查看说明');

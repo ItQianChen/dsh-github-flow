@@ -25,10 +25,11 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_discussion\` | 团队技术讨论与开源社区 RFC 闭环 | 浏览讨论列表、检视正文与评论楼层、发起新讨论、编辑正文与追加回复 |
 | \`github_project\` | Projects v2 项目看板与任务规划 | 查阅项目列表/详情、浏览看板条目 (Items)、添加 Issue/PR 到看板、创建草稿任务与删除条目 |
 | \`github_codespace\` | 云端远程开发环境管控 (MVP) | 查阅运行中实例、检视机器规格配置、停机防计费 (stop)、安全销毁环境 (delete，需 confirm) |
+| \`github_task\` | **任务级原语**（一次调用完成一件完整的事） | 审一个 PR（元数据 + diff + CI + 仓库规则，可选写回行级评注）、诊断一次 CI 失败（定位 job/step + 日志锚点）、准备一次发版（Conventional Commits 归类 + SemVer + notes 草稿）；默认只读 |
 | \`github_help\` | 路由导航、官方语法速查与故障自愈 | 遇到不确定的操作、搜索语法或接口报错时查询用法与诊断配方 |
 
 💡 **使用准则**：优先调用高层语义工具（pr / issue / run / repo / release / secret）；当高层工具无法满足特殊接口需求时，再降级使用 \`github_api\`。
-📊 **规模口径**：18 个工具 / 103 个业务 action（不含 \`github_help\` 的 21 个查询主题与 \`github_api\` 的 4 个 HTTP method——它们不是业务动作）。
+📊 **规模口径**：19 个工具 / 106 个业务 action（不含 \`github_help\` 的 22 个查询主题与 \`github_api\` 的 4 个 HTTP method——它们不是业务动作）。
 💬 **人类指令**：聊天框支持 \`/gh status\`（大盘看板）、\`/gh upgrade\`（一键升级插件）、\`/gh help\`（快捷帮助）。
 🖥️ **可视化工作台**：最左侧 Octocat 图标打开全景驾驶舱（4 标签：本地工作区 / 我的仓库 / Pull Requests / 待办 Issues）；每个会话右侧栏有 5 个 Tab（Git / 未提交 / PR / Issues / Actions）。点击任一 PR 或 Issue 卡片可在线查看详情与评论，无需跳浏览器。
 🗺️ **命令对照**：不确定某 gh 命令对应哪个工具？\`github_help(topic: 'mapping')\` 查询完整映射表（含未覆盖域的 API 引导）。`,
@@ -247,7 +248,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **排除噪音仓库**: \`github_status(exclude: ['owner/noisy-repo'])\`
   - 过滤高频刷屏但无需关注的仓库活动。
 - **查看工具链运行时健康度**: \`github_status(action: 'health')\`
-  - 审计当前会话 18 大工具矩阵的综合健康分、API 降级率、安全防线拦截频次与针对性自愈建议。`,
+  - 审计当前会话 19 大工具矩阵的综合健康分、API 降级率、安全防线拦截频次与针对性自愈建议。`,
 
   agent_task: `### 🤖 github_agent_task 智能体任务指南
 
@@ -296,6 +297,24 @@ const KNOWLEDGE_BASE: Record<string, string> = {
   - 物理销毁不可逆，必须附加 \`confirm: true\`。
 - 🔑 若报缺少权限，在终端执行单行自愈授权命令：\`gh auth refresh -h github.com -s codespace\``,
 
+  task: `### 🎯 github_task 任务级原语指南
+
+\`github_task\` 把「一件完整的事」封装成一次调用，返回**已裁剪、可直接执行**的结论包：
+\`summary\`（结论）+ \`facts\`（结构化事实）+ \`nextActions\`（下一步）+ \`cost\`（字符数 / gh 调用数 / 耗时）。
+
+- **审一个 PR**: \`github_task(action: 'review_pr', pr_number: 123)\`
+  - 一次拿齐：PR 元数据 + head SHA + 变动文件 diff（按 \`budget_chars\` 裁剪）+ CI 结论 + 仓库 \`AGENTS.md\` 审查规则 + 既有行级评论数。
+  - \`focus: 'security' | 'correctness' | 'perf' | 'style'\` 只影响 summary 的提示语，不改变取数。
+  - **写回**（默认关闭）: \`github_task(action: 'review_pr', pr_number: 123, write: true, confirm: true, body: '…', comments: [{path, line, body}])\`，字段语义与 \`github_pr(action: 'review')\` 完全一致。
+- **诊断一次 CI 失败**: \`github_task(action: 'diagnose_ci', run_id: 456)\` 或 \`github_task(action: 'diagnose_ci', pr_number: 123)\`
+  - 定位失败 job/step → 萃取失败日志锚点（pytest / node / Go / tsc / npm）→ 汇总疑似相关文件。
+  - 日志被截断时 \`truncated.totalUnknown = true\`：**不要据此判断「就这些失败」**。
+- **准备一次发版**: \`github_task(action: 'prepare_release', bump: 'auto')\`
+  - 读最近 tag 以来的提交 → 按 Conventional Commits 归类 → 推导 SemVer（breaking→major / feat→minor / 其余→patch）→ 生成 notes 草稿 + 发版体检（工作区干净 / 同步远端 / CI 绿）。
+  - **本原语不会打 tag、不会 push、不会创建 Release**：发版是人的决定，它只把「该发什么版本、notes 长什么样」准备好，并在 \`nextActions\` 里给出可直接执行的命令。
+
+> 需要细粒度控制时，用对应的原子工具：\`github_pr\` / \`github_run\` / \`github_release\`。原语是快捷方式，不是唯一入口。
+`,
   mapping: `### 🗺️ gh 命令 ↔ 插件工具映射总表
 
 #### 一、已覆盖域映射（语义化 action 精确对照）
@@ -393,6 +412,14 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`gh gist create\` | \`github_gist(action:'create', content:…)\` | 默认 secret 弱保密 |
 | \`gh gist edit\` | \`github_gist(action:'edit', gist_id:…)\` | 描述与文件修改 |
 | \`gh gist delete\` | \`github_gist(action:'delete', gist_id:…, confirm:true)\` | 物理删除，需 confirm |
+
+**Task（github_task，3 action）**
+
+| gh 命令 | 插件调用 | 说明 |
+| :--- | :--- | :--- |
+| \`gh pr view\` + \`gh pr diff\` + \`gh pr checks\` | \`github_task(action:'review_pr')\` | 一次拿齐审阅上下文（可选写回行级评注） |
+| \`gh run view --json jobs\` + \`--log-failed\` | \`github_task(action:'diagnose_ci')\` | 定位失败 job/step 并萃取日志锚点 |
+| \`git describe\` + \`git log\` | \`github_task(action:'prepare_release')\` | 推导版本 + 生成 notes 草稿（不发版） |
 
 **Status（github_status，2 action）**
 | gh 命令 | 插件调用 | 备注 |
@@ -526,6 +553,7 @@ export function createHelpTool(executor: GhExecutor) {
             'discussion',
             'project',
             'codespace',
+            'task',
             'mapping',
             'search_syntax',
             'troubleshooting',

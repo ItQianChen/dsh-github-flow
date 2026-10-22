@@ -8,8 +8,8 @@
 // 可机器判定的事实。
 //
 // 基线数字全部实测（s5 实施时 lib/ 的真实产物），不是文档里抄的：
-//   full = 18 工具 / 24,726 字符；core = 5 / 9,217（−62.7%）；
-//   ci = 7 / 10,626；maintain = 8 / 13,957；full+read_only = 17 / 23,444。
+//   full = 19 工具 / 27,016 字符；core = 3 / 4,412（−83.7%）；
+//   ci = 7 / 10,633；maintain = 8 / 13,964；full+read_only = 18 / 25,729。
 // 计划文档里的 23,765 / 8,302 / 22,396 是 s3 之前的旧产物，已失效。
 
 import { readdirSync } from 'node:fs';
@@ -62,34 +62,36 @@ for (const file of readdirSync(LIB_TOOLS).filter((f) => f.endsWith('.js') && f !
 }
 
 console.log('\n--- 1. 默认档位必须零破坏 ---');
-ok(all.length === 18, '工具工厂实例化出 18 个工具', String(all.length));
+ok(all.length === 19, '工具工厂实例化出 19 个工具', String(all.length));
 // s7 给 github_pr 加了 comments/commit_id 两个参数（行级评注 + 锚点），基线从 24,043 涨到 24,726（+683）
 // 这不是回归：新增能力必然占 schema，仍远低于 s5 定下的 25K 常驻红线
-ok(size(all) === 24726, '全量 schema 字符数 == 24,726（s7 新增两个参数后的新基线）', String(size(all)));
+// s8 加入 github_task（3 个任务原语）后基线 24,726 → 27,016。这不是回归：core 档同步从
+// 5 个工具 9,217 字符收缩到 3 个工具 4,412 字符（−83.7%），「加一个工具」与「减表面积」是同一个动作
+ok(size(all) === 27016, '全量 schema 字符数 == 27,016（s8 新增 github_task 后的新基线）', String(size(all)));
 {
   const r = applyTier(all, {});
-  ok(r.kept.length === 18, '不配置 toolsets → 保留全部 18 个');
-  ok(size(r.kept) === 24726, '不配置 toolsets → 字符数不变');
+  ok(r.kept.length === 19, '不配置 toolsets → 保留全部 19 个');
+  ok(size(r.kept) === 27016, '不配置 toolsets → 字符数不变');
   ok(r.dropped.length === 0, '不配置 toolsets → 不剔除任何工具');
   ok(Object.keys(r.pruned).length === 0, '不配置 read_only → 不剪任何 action');
 }
 {
   const r = applyTier(all, { toolsets: ['full'] });
-  ok(r.kept.length === 18, "显式 toolsets:['full'] 与不配置等价");
+  ok(r.kept.length === 19, "显式 toolsets:['full'] 与不配置等价");
 }
 
 console.log('\n--- 2. 预设档位 ---');
 const presets = [
-  ['core', 5, 9217],
-  ['ci', 7, 10626],
-  ['maintain', 8, 13957],
+  ['core', 3, 4412],
+  ['ci', 7, 10633],
+  ['maintain', 8, 13964],
 ];
 for (const [name, count, chars] of presets) {
   const r = applyTier(all, { toolsets: [name] });
   ok(r.kept.length === count, `toolsets:['${name}'] → ${count} 个工具`, String(r.kept.length));
   ok(size(r.kept) === chars, `toolsets:['${name}'] → schema ${chars} 字符`, String(size(r.kept)));
 }
-ok(TOOL_PRESETS.core.length === 5 && TOOL_PRESETS.core.includes('github_help'), 'core 预设恰好 5 个且含 github_help');
+ok(TOOL_PRESETS.core.length === 3 && TOOL_PRESETS.core.includes('github_help'), 'core 预设恰好 3 个（github_task + github_repo + github_help）且含 github_help');
 
 console.log('\n--- 3. 裸工具名 / 混用 / 未知名 ---');
 {
@@ -99,7 +101,7 @@ console.log('\n--- 3. 裸工具名 / 混用 / 未知名 ---');
 }
 {
   const r = applyTier(all, { toolsets: ['core', 'github_release'] });
-  ok(r.kept.length === 6, '预设与裸名混用取并集（5 + 1 = 6）', String(r.kept.length));
+  ok(r.kept.length === 4, '预设与裸名混用取并集（3 + 1 = 4）', String(r.kept.length));
 }
 {
   // 未知名字必须 warn 且忽略，不能静默把工具全砍光
@@ -116,8 +118,8 @@ console.log('\n--- 4. read_only 硬语义：写 action 在注册期被剪掉 ---
 {
   const r = applyTier(all, { read_only: true });
   ok(r.dropped.includes('github_api'), 'github_api 在只读模式下整体剔除（端点/method 任意，无法降级）');
-  ok(r.kept.length === 17, '只读模式保留 17 个工具', String(r.kept.length));
-  ok(size(r.kept) === 23444, '只读模式 schema 23,444 字符', String(size(r.kept)));
+  ok(r.kept.length === 18, '只读模式保留 18 个工具（github_api 整体剔除）', String(r.kept.length));
+  ok(size(r.kept) === 25729, '只读模式 schema 25,729 字符（github_task 的 review_pr 被剪掉 5 字符）', String(size(r.kept)));
 
   let violations = [];
   for (const tool of r.kept) {
@@ -128,7 +130,7 @@ console.log('\n--- 4. read_only 硬语义：写 action 在注册期被剪掉 ---
     if (leaked.length) violations.push(`${tool.name}: ${leaked.join('/')}`);
   }
   ok(violations.length === 0, '保留工具的 action.enum 与 WRITE_ACTIONS 交集为空', violations.slice(0, 3).join(' ; '));
-  ok(Object.keys(r.pruned).length === 14, '14 个混合工具被剪 action 而非整只剔除', String(Object.keys(r.pruned).length));
+  ok(Object.keys(r.pruned).length === 15, '15 个混合工具被剪 action 而非整只剔除', String(Object.keys(r.pruned).length));
   // 剪枝必须带上前缀，让模型知道为什么少了写动作
   const pr = r.kept.find((t) => t.name === 'github_pr');
   ok(pr.description.startsWith('[只读模式]'), '被剪枝的工具 description 前置「[只读模式]」');
@@ -137,7 +139,7 @@ console.log('\n--- 4. read_only 硬语义：写 action 在注册期被剪掉 ---
 }
 {
   const r = applyTier(all, { toolsets: ['core'], read_only: true });
-  ok(r.kept.length === 5, 'core + read_only 组合可用', String(r.kept.length));
+  ok(r.kept.length === 3, 'core + read_only 组合可用（3 个工具，review_pr 的写 action 被剪掉）', String(r.kept.length));
 }
 
 console.log('\n--- 4b. read_only 必须在执行期也拦住（不能只剪 schema）---');
