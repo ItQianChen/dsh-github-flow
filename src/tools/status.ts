@@ -1,9 +1,10 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { renderStatusMarkdown, parseStatusOutput } from '../renderers/markdown.js';
 import { TelemetryCollector, defaultTelemetryCollector } from '../telemetry.js';
 
 export function createStatusTool(executor: GhExecutor, telemetryCollector?: TelemetryCollector) {
-  return {
+  return wrapWithGate({
     name: 'github_status',
     description: '聚合展示当前登录用户的跨仓库全局待办与动态大盘（view），或审计当前工具链运行时健康度、API 降级率与自愈建议（health）。无需指定单仓，账号与系统维度一站式概览。',
     parameters: {
@@ -37,8 +38,7 @@ export function createStatusTool(executor: GhExecutor, telemetryCollector?: Tele
         return collector.getSummary();
       }
 
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
 
       const statusCmd = ['status'];
       if (args?.org) {
@@ -58,5 +58,5 @@ export function createStatusTool(executor: GhExecutor, telemetryCollector?: Tele
         rawText: res.rawOutput || '',
       };
     },
-  };
+  });
 }

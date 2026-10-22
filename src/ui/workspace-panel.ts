@@ -1,3 +1,4 @@
+import { prStateBadge, issueStateBadge } from '../shared/state-badges.js';
 declare const React: any;
 declare function getLocalSyncSettings(): any;
 declare function getStoredGlobalOverview(): any;
@@ -681,11 +682,10 @@ export function GithubWorkspacePanel() {
                 pr.isDraft ? h("span", { className: "dsh-github-badge dsh-badge-yellow", style: { flexShrink: 0 } }, "DRAFT") : null,
                 // 状态徽章：列表含 merged/closed，必须标明才能一眼区分
                 (() => {
-                  var s = String(pr.state || '').toUpperCase();
-                  if (s === 'MERGED') return h("span", { className: "dsh-github-badge dsh-badge-purple", style: { flexShrink: 0 } }, "MERGED");
-                  if (s === 'CLOSED') return h("span", { className: "dsh-github-badge dsh-badge-red", style: { flexShrink: 0 } }, "CLOSED");
-                  if (s === 'OPEN') return h("span", { className: "dsh-github-badge dsh-badge-green", style: { flexShrink: 0 } }, "OPEN");
-                  return null;
+                  // 状态→色调来自 shared/state-badges（与右侧栏、CLI 输出同一份）
+                  var b = prStateBadge(pr.state);
+                  if (!b || b.tone === 'neutral') return null;
+                  return h("span", { className: "dsh-github-badge dsh-badge-" + b.tone, style: { flexShrink: 0 } }, b.label);
                 })(),
                 h(
                   "a",
@@ -820,10 +820,9 @@ export function GithubWorkspacePanel() {
                 ...badges,
                 (() => {
                   // 状态徽章：全局检索含 closed，不标注会让用户把已关闭议题当成待办
-                  var s = String(is.state || '').toUpperCase();
-                  if (s === 'CLOSED') return h("span", { className: "dsh-github-badge dsh-badge-red", style: { flexShrink: 0 } }, "CLOSED");
-                  if (s === 'OPEN') return h("span", { className: "dsh-github-badge dsh-badge-green", style: { flexShrink: 0 } }, "OPEN");
-                  return null;
+                  var b = issueStateBadge(is.state);
+                  if (!b || b.tone === 'neutral') return null;
+                  return h("span", { className: "dsh-github-badge dsh-badge-" + b.tone, style: { flexShrink: 0 } }, b.label);
                 })(),
                 h(
                   "a",

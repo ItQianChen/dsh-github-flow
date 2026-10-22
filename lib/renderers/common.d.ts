@@ -1,6 +1,3 @@
-/**
- * DSH GitHub Flow - 通用 Markdown 格式化原子工具与状态徽章
- */
 /** 安全清洗表格单元格文本：转义竖线，压缩换行，限制最大长度 */
 export declare function sanitizeCell(text: any, maxLen?: number): string;
 /** 格式化 PR / Issue 状态药丸徽章 */

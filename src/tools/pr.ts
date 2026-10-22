@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { compareGhVersions } from '../executor.js';
 import { renderPrMarkdown } from '../renderers/markdown.js';
 import { extractImageUrls, downloadImages, buildImageBlocks, filterRequestedUrls, validateAttachPaths } from './image-utils.js';
@@ -17,7 +18,7 @@ function normalizeOutput(data: any): Record<string, any> {
 export { extractImageUrls as extractPrImageUrls, validateAttachPaths } from './image-utils.js';
 
 export function createPrTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_pr',
     description: '管理与审查 GitHub Pull Request (PR)。支持查看列表、详情、差异比对、CI 检查状态、代码审查、合并操作、本地代码检出 (checkout) 与冲突状态检测 (status)。默认针对当前工作区关联的仓库。',
     parameters: {
@@ -123,8 +124,7 @@ export function createPrTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       let repoTarget = args.repo;
       if (!repoTarget) {
         const meta = await executor.getRepoMetadata(cwd, sessionId);
@@ -330,14 +330,6 @@ export function createPrTool(executor: GhExecutor) {
           // 跨 fork 且本地无 remote 时走 `git fetch <ref>:<branch>`（不带 --force），
           // 分叉同样会失败。因此默认路径是安全的，真要重置必须 force + confirm 双门。
           if (args.force === true) {
-            if (args.confirm !== true) {
-              return {
-                status: 'AWAITING_CONFIRMATION',
-                warning: `⚠️ force 会把本地分支重置到 PR #${args.pr_number} 的最新状态，丢弃本地未推送的提交。`,
-                impact: '重置后本地分支与 PR 头一致，本地独有提交只能通过 git reflog 找回。',
-                requiredAction: '如确认重置，请附加 `force: true, confirm: true` 重新调用。',
-              };
-            }
             checkoutCmd.push('-f');
           }
           const res = await executor.run(checkoutCmd, runOpts);
@@ -395,14 +387,6 @@ export function createPrTool(executor: GhExecutor) {
 
         case 'merge': {
           if (!args.pr_number) throw new Error('merge 操作必须提供 pr_number');
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              warning: `⚠️ 高危操作拦截：你即将合并 PR #${args.pr_number}（合并策略: ${args.merge_method || 'squash'}${args.delete_branch ? '，且删除源分支' : ''}）。`,
-              impact: '合并操作将直接向基准分支写入代码并更新远端 PR 状态。',
-              requiredAction: '如确认执行合并，请向用户明确确认并附加 `confirm: true` 重新调用。',
-            };
-          }
           const method = args.merge_method === 'merge' ? '--merge' : (args.merge_method === 'rebase' ? '--rebase' : '--squash');
           const mergeCmd = ['pr', 'merge', String(args.pr_number), ...repoArgs, method];
           // 删分支默认关闭：合并他人仓库的 PR 时删掉源分支是不可撤销的破坏性动作，
@@ -428,14 +412,6 @@ export function createPrTool(executor: GhExecutor) {
         case 'revert': {
           if (!args.pr_number) throw new Error('revert 操作必须提供 pr_number');
           // revert 在远端创建反向提交与新 PR——虽不碰原 PR，但产生新实体，按 merge 级 confirm（D5）
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              warning: `⚠️ 高危操作拦截：你即将对 PR #${args.pr_number} 创建反向提交（revert）。`,
-              impact: '将在远端创建反向提交并生成新的 revert PR——这是新增远端实体，不是本地操作。',
-              requiredAction: '如确认执行，请向用户明确确认并附加 `confirm: true` 重新调用。',
-            };
-          }
           const revertCmd = ['pr', 'revert', String(args.pr_number), ...repoArgs];
           // 注意：gh pr revert 没有 --delete-branch（实测 2.96.0 unknown flag），
           // 不在这里推该 flag；删分支只在 merge 通道支持。
@@ -477,5 +453,5 @@ export function createPrTool(executor: GhExecutor) {
           throw new Error(`未知的 PR 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

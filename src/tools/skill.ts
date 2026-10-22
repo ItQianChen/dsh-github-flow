@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { wrapWithGate } from '../destructive.js';
 import fs from 'node:fs';
 import type { GhExecutor } from '../executor.js';
 import { renderSkillMarkdown, parseSkillPublishOutput } from '../renderers/markdown.js';
@@ -14,7 +15,7 @@ function normalizeOutput(data: any): Record<string, any> {
 }
 
 export function createSkillTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_skill',
     description: '通过 GitHub CLI 官方生态发现与管理 Agent Skills：跨仓库检索开源 Skills、预览 SKILL.md 内容、安装到本地 Agent 宿主（Claude Code / Cursor / Copilot 等）、查看已安装列表、合规自检与安全发布（publish）以及检查与同步更新（update）。install 会写入磁盘需 confirm；publish 默认 --dry-run 自检，正式发布需 tag 与 confirm；update 默认 --dry-run 检查。基于 gh CLI preview 特性（需 gh >= 2.9x）。',
     parameters: {
@@ -93,8 +94,7 @@ export function createSkillTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       // skill 工具天然面向跨仓库生态（search/preview 均以显式 repository 为目标），
       // 不做当前工作区仓库自动识别——识别失败反而会误导调用方。
 
@@ -130,14 +130,6 @@ export function createSkillTool(executor: GhExecutor) {
 
         case 'install': {
           if (!args.repository) throw new Error('install 操作必须提供 repository [owner/repo]');
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              warning: `⚠️ 安装确认拦截：你即将从仓库「${args.repository}」安装 Skill${args.skill_name ? `「${args.skill_name}」` : ''}到本地${args.scope === 'user' ? '用户主目录（全局）' : '当前项目'}。`,
-              impact: '安装会在本地磁盘写入 SKILL.md 及附属文件，并可能影响目标 Agent 宿主的默认行为。',
-              requiredAction: '如确认安装，请向用户核实并附加 `confirm: true` 重新调用。',
-            };
-          }
           const installCmd = ['skill', 'install', args.repository];
           if (args.skill_name) installCmd.push(args.skill_name);
           if (args.agent) installCmd.push('--agent', args.agent);
@@ -188,15 +180,8 @@ export function createSkillTool(executor: GhExecutor) {
             }
             const cleanTag = args.tag.trim();
 
-            // 防线 2: 破坏性发布二级确认拦截（创建 Release 与打 Tag 属于公开制品发布）
-            if (args.confirm !== true) {
-              return {
-                status: 'AWAITING_CONFIRMATION',
-                warning: `⚠️ 发布确认拦截：你即将正式发布 Agent Skill 并创建 GitHub Release（Tag: ${cleanTag}）。`,
-                impact: `该操作将在仓库中打上「agent-skills」Topic、创建 Git Tag「${cleanTag}」并发布正式 GitHub Release，向所有用户公开提供该版本。`,
-                requiredAction: `如确认发布，请核实版本号并在参数中附加 \`confirm: true\` 重新调用。`,
-              };
-            }
+            // 防线 2（破坏性发布的二级确认）已收口到 src/destructive.ts 的 github_skill.publish 条目——
+            // 闸门在工厂入口执行，这里只剩 tag 前置校验与 argv 组装。
 
             const publishCmd = ['skill', 'publish'];
             if (targetDir) publishCmd.push(targetDir);
@@ -263,5 +248,5 @@ export function createSkillTool(executor: GhExecutor) {
           throw new Error(`未知的 Skill 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

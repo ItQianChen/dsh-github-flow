@@ -173,6 +173,10 @@ async function runTests() {
   {
     const recorded = [];
     const mock = {
+      // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+      resolveExecScope(execContext) {
+        return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+      },
       defaultListLimit: 20,
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
       async run(cmd, opts) { recorded.push(cmd); return { ok: true, data: [], rawOutput: '[]' }; },
@@ -207,6 +211,8 @@ async function runTests() {
     // 6.1 主链路：runGuarded 被调且 minVersion 正确、命令数组正确
     const guardCalls = [];
     class GuardRecorder {
+    
+  resolveExecScope(execContext) { return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId }; }
       defaultListLimit = 20;
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
       async run(cmd, opts) { return { ok: true, rawOutput: 'file-body' }; }
@@ -226,6 +232,8 @@ async function runTests() {
     // 6.3 降级链：版本不足 → fallback 被调 → degraded 标注 + 渲染可见
     const apiCalls = [];
     class OldGhExecutor {
+    
+  resolveExecScope(execContext) { return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId }; }
       defaultListLimit = 20;
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
       async getGhVersion() { return '2.94.0'; }
@@ -249,6 +257,8 @@ async function runTests() {
 
     // 6.4 read_dir 主链路 TSV 解析
     class DirExecutor {
+    
+  resolveExecScope(execContext) { return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId }; }
       defaultListLimit = 20;
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
       async runGuarded(cmd, opts) { return { ok: true, rawOutput: 'dir\t.github\t040000\t0\nfile\tREADME.md\t100644\t25050\nfile\tLICENSE\t100644\t1072' }; }
@@ -259,6 +269,8 @@ async function runTests() {
 
     // 6.5 read_dir 降级链：contents JSON 数组归一
     class DirApiExecutor {
+    
+  resolveExecScope(execContext) { return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId }; }
       defaultListLimit = 20;
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
       async run(cmd) { return { ok: true, data: [{ type: 'dir', name: 'src', size: 0 }, { type: 'file', name: 'x.ts', size: 12 }] }; }
@@ -270,6 +282,8 @@ async function runTests() {
 
     // 6.6 二进制防线：NUL 字节拒绝并引导 github_api
     class BinExecutor {
+    
+  resolveExecScope(execContext) { return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId }; }
       defaultListLimit = 20;
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
       async runGuarded() { return { ok: true, rawOutput: 'abc\u0000def' }; }
@@ -285,6 +299,10 @@ async function runTests() {
   {
     const recorded = [];
     const mock = {
+      // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+      resolveExecScope(execContext) {
+        return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+      },
       defaultListLimit: 20,
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
       async run(cmd, opts) { recorded.push({ cmd, opts }); return { ok: true, data: [], rawOutput: '[]' }; },
@@ -302,6 +320,9 @@ async function runTests() {
     // workflow_view：rawText + 头部抽取（实测样本）
     const sample = 'Release & Publish to npm - npm-publish.yml\nID: 374382120\n\nTotal runs 12\nRecent runs\ncompleted\tsuccess\tchore(release): v0.2.1\tRelease & Publish to npm\tv0.2.1\tpush\t31s\t38417584979';
     const viewMock = {
+  resolveExecScope(execContext) {
+    return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId };
+  },
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
       async run(cmd, opts) { recorded.push({ cmd, opts }); return { ok: true, rawOutput: sample }; },
     };
@@ -326,6 +347,7 @@ async function runTests() {
   {
     const rec = [];
     const mkExec = () => ({
+      resolveExecScope(execContext) { return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId }; },
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
       async run(cmd, opts) { rec.push({ cmd, opts }); return { ok: true, rawOutput: 'done' }; },
       async getGhVersion() { return '2.96.0'; },
@@ -371,6 +393,7 @@ async function runTests() {
   {
     const rec = [];
     const mkExec = () => ({
+      resolveExecScope(execContext) { return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId }; },
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
       async run(cmd, opts) { rec.push({ cmd, opts }); return { ok: true, rawOutput: 'done' }; },
       async getGhVersion() { return '2.96.0'; },
@@ -447,6 +470,9 @@ async function runTests() {
   {
     const rec = [];
     const dlExec = {
+      resolveExecScope(execContext) {
+        return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId };
+      },
       async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; },
       async run(cmd, opts) { rec.push({ cmd, opts }); return { ok: true, rawOutput: 'downloaded' }; },
       async getGhVersion() { return '2.96.0'; }, // < 2.102 → securityNote 必须出现
@@ -474,7 +500,7 @@ async function runTests() {
   console.log('\n--- 11. help mapping anti-drift ---');
   {
     const { createHelpTool } = await import('../lib/tools/help.js');
-    const mockExec = { async run(cmd) { return { ok: true, rawOutput: 'gh-help-text' }; } };
+    const mockExec = { resolveExecScope: (e) => ({ cwd: e?.cwd || process.cwd(), sessionId: e?.sessionId }), async run(cmd) { return { ok: true, rawOutput: 'gh-help-text' }; } };
     const helpTool = createHelpTool(mockExec);
 
     // 11.1 topic 枚举含 mapping，且真实调用返回三段式内容

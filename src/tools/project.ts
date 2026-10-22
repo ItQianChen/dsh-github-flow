@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { renderProjectMarkdown } from '../renderers/markdown.js';
 
 function normalizeOutput(data: any): Record<string, any> {
@@ -28,7 +29,7 @@ export function checkScopeRequired(errorMsg: string, scope: string, command: str
 }
 
 export function createProjectTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_project',
     description: '管理 GitHub Projects v2 项目看板与任务规划：查看项目列表与卡片条目、关联 Issue/PR 到看板、创建草稿任务、删除看板条目。未授权时提供平台感知自愈命令。',
     parameters: {
@@ -89,8 +90,7 @@ export function createProjectTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       const owner = typeof args.owner === 'string' && args.owner.trim() ? args.owner.trim() : '@me';
       const runOpts = { cwd, sessionId };
 
@@ -216,15 +216,6 @@ export function createProjectTool(executor: GhExecutor) {
           }
           const cleanItemId = args.item_id.trim();
 
-          // 确认防线拦截
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              warning: `⚠️ 删除确认拦截：你即将从看板中删除条目（ID: ${cleanItemId}）。`,
-              impact: '该操作将从项目看板中物理移除该条目（若是关联的 Issue/PR，实体不会被删除，仅解除看板关联）。',
-              requiredAction: '如确认删除，请在参数中附加 `confirm: true` 重新调用。',
-            };
-          }
 
           const deleteCmd = [
             'project', 'item-delete',
@@ -249,5 +240,5 @@ export function createProjectTool(executor: GhExecutor) {
           throw new Error(`未知的 Project 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

@@ -36,6 +36,22 @@ export interface PluginConfig {
      * 注意：放在 Cordis Config 意味着修改此项会触发插件 reload（静态默认值，可接受）。
      */
     proxyUrl?: string;
+    /**
+     * 工具档位：控制注册给模型的工具数量（默认不填 = `full`，18 个全量，零破坏）。
+     *
+     * 三种预设 `core`（5 个）/ `ci`（7 个）/ `maintain`（8 个），也可直接写工具名
+     * （如 `['github_pr','github_release']`）混用。未知名字会 console.warn 一次后忽略。
+     * 存在的理由：18 个工具的 schema 常驻约 24,000 字符，等于每轮对话都在为用不到的工具付费。
+     */
+    toolsets?: string[];
+    /**
+     * 只读档位（默认 false）。
+     *
+     * 硬语义，不做运行时判断：写 action 在**注册期**就从 `enum` 里被剔除，模型连
+     * 「可以写」都看不到，宿主参数校验会直接拒绝。`github_api`（端点与 method 均可任意，
+     * 无法降级）在只读模式下整体剔除。
+     */
+    read_only?: boolean;
 }
 /** 数据同步与自动化感知偏好配置 */
 export interface SyncSettings {

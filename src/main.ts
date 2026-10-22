@@ -27,6 +27,7 @@ import { UpgradeManager } from './upgrade-manager.js';
 import { ProxyManager } from './proxy.js';
 import { NPM_PACKAGE_URL } from './version.js';
 import { loadUpdateSettings } from './update-settings.js';
+import { applyTier } from './tool-tiers.js';
 // 引用即生效：加载本模块以挂上 declare module '@deepseek-ai/cordis' 的 ctx.github 类型声明，
 // 并随下面 `export * from './github-service.js'` 一起传给消费方。
 import './github-service.js';
@@ -83,6 +84,10 @@ const ConfigSchema = Schema.object({
   registryUrl: Schema.string(),
   agentEnvInjection: Schema.boolean().default(true),
   proxyUrl: Schema.string(),
+  // 档位：缺省键直接缺席 → 下游按 full / 非只读处理，默认零破坏。
+  // 不设 default，是为了让「用户没配」与「用户显式配了 full」在诊断时仍可区分。
+  toolsets: Schema.array(Schema.string()),
+  read_only: Schema.boolean(),
 });
 
 /** 校验并补齐默认值后的运行期配置（volatile 字段为稳定引用，非普通值）。 */
@@ -114,6 +119,8 @@ function resolvePluginConfig(config: Config): PluginConfig {
     registryUrl: config.registryUrl ?? undefined,
     agentEnvInjection: config.agentEnvInjection,
     proxyUrl: config.proxyUrl ?? undefined,
+    toolsets: config.toolsets,
+    read_only: config.read_only,
   };
 }
 
@@ -194,24 +201,35 @@ export function apply(ctx: Context, config: Config = Config({})) {
   // `tools` 在 inject 内，运行期必然存在；其权威类型声明在 @deepseek-ai/dsh-tools，
   // 本仓不重复 declare module（会与消费方的同一份声明冲突），故在此局部收窄。
   const tools = (ctx as Context & { tools: ToolRegistryLike }).tools;
-  tools.register(createPrTool(executor));
-  tools.register(createIssueTool(executor));
-  tools.register(createRunTool(executor));
-  tools.register(createRepoTool(executor));
-  tools.register(createApiTool(executor));
-  tools.register(createReleaseTool(executor));
-  tools.register(createSecretTool(executor));
-  tools.register(createSkillTool(executor));
-  tools.register(createLabelTool(executor));
-  tools.register(createRulesetTool(executor));
-  tools.register(createCacheTool(executor));
-  tools.register(createGistTool(executor));
-  tools.register(createStatusTool(executor, defaultTelemetryCollector));
-  tools.register(createAgentTaskTool(executor));
-  tools.register(createDiscussionTool(executor));
-  tools.register(createProjectTool(executor));
-  tools.register(createCodespaceTool(executor));
-  tools.register(createHelpTool(executor));
+  // 先建全量数组再统一过档位与闸门：过滤点唯一，且 applyTier / wrapWithGate 都是纯函数，
+  // 可以完全离线单测（见 test/phase37-toolset / phase38-gate）。
+  const allTools = [
+    createPrTool(executor),
+    createIssueTool(executor),
+    createRunTool(executor),
+    createRepoTool(executor),
+    createApiTool(executor),
+    createReleaseTool(executor),
+    createSecretTool(executor),
+    createSkillTool(executor),
+    createLabelTool(executor),
+    createRulesetTool(executor),
+    createCacheTool(executor),
+    createGistTool(executor),
+    createStatusTool(executor, defaultTelemetryCollector),
+    createAgentTaskTool(executor),
+    createDiscussionTool(executor),
+    createProjectTool(executor),
+    createCodespaceTool(executor),
+    createHelpTool(executor),
+  ];
+  const tier = applyTier(allTools as any, { toolsets: plain.toolsets, read_only: plain.read_only });
+  if (tier.dropped.length > 0) {
+    // 不静默：档位/只读模式剪掉的工具要能从日志里看到，否则"模型看不见某工具"无法排查
+    console.log(`[dsh-github-flow] 按档位配置未注册 ${tier.dropped.length} 个工具：${tier.dropped.join(', ')}`);
+  }
+  // 闸门已在各工具工厂内部经 wrapWithGate 生效，这里只做档位过滤后的注册。
+  for (const tool of tier.kept) tools.register(tool as any);
 
   // 5. 注册面向 Client 端的 WebServer HTTP 路由
   // 同样用 ctx.inject 等待 webServer（理由同第 3 步）。

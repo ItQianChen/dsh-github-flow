@@ -1,6 +1,16 @@
 /**
  * DSH GitHub Flow - 通用 Markdown 格式化原子工具与状态徽章
+ *
+ * 状态徽章的实现已下沉到 `src/shared/state-badges.ts`（与客户端 UI 共用同一份映射）。
+ * 这里保留 `format*Badge` 的函数名与签名，服务端 14 处调用点零改动。
  */
+import {
+  badgeText,
+  prStateBadge,
+  ciBadge,
+  conflictBadge,
+  releaseBadge,
+} from '../shared/state-badges.js';
 
 /** 安全清洗表格单元格文本：转义竖线，压缩换行，限制最大长度 */
 export function sanitizeCell(text: any, maxLen = 80): string {
@@ -17,13 +27,7 @@ export function sanitizeCell(text: any, maxLen = 80): string {
 
 /** 格式化 PR / Issue 状态药丸徽章 */
 export function formatStateBadge(state?: string, isDraft?: boolean): string {
-  if (!state) return '-';
-  const s = state.toUpperCase();
-  if (isDraft) return '⚪ DRAFT';
-  if (s === 'OPEN') return '🟢 OPEN';
-  if (s === 'MERGED') return '🟣 MERGED';
-  if (s === 'CLOSED') return '🔴 CLOSED';
-  return s;
+  return badgeText(prStateBadge(state, isDraft));
 }
 
 /**
@@ -33,33 +37,17 @@ export function formatStateBadge(state?: string, isDraft?: boolean): string {
  * 同一组徽章；state 参数兜底（in_progress/queued 等进行中态）。
  */
 export function formatCiBadge(status?: string, conclusion?: string): string {
-  const conc = (conclusion || '').toLowerCase();
-  const st = (status || '').toLowerCase();
-  if (conc === 'success' || conc === 'pass') return '✅ ' + conc;
-  if (conc === 'failure' || conc === 'fail') return '❌ ' + conc;
-  if (conc === 'cancelled' || conc === 'cancel') return '🚫 ' + conc;
-  if (conc === 'skipped' || conc === 'skipping') return '⏭️ ' + conc;
-  if (conc === 'pending') return '⏳ pending';
-  if (st === 'in_progress') return '⏳ running';
-  if (st === 'queued') return '⏱️ queued';
-  return conc || st || '-';
+  return badgeText(ciBadge(status, conclusion));
 }
 
 /** 格式化合并冲突状态 */
 export function formatConflictBadge(status?: string): string {
-  if (!status) return '-';
-  const s = status.toUpperCase();
-  if (s === 'CLEAN') return '✅ CLEAN';
-  if (s === 'DIRTY' || s === 'CONFLICT') return '⚠️ CONFLICT';
-  if (s === 'BLOCKED') return '⛔ BLOCKED';
-  return s;
+  return badgeText(conflictBadge(status));
 }
 
 /** 格式化 Release 状态徽章 */
 export function formatReleaseBadge(isDraft?: boolean, isPrerelease?: boolean): string {
-  if (isDraft) return '⚪ DRAFT';
-  if (isPrerelease) return '🍼 PRE';
-  return '✅ STABLE';
+  return badgeText(releaseBadge(isDraft, isPrerelease));
 }
 
 /**

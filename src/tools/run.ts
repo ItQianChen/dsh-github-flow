@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { compareGhVersions } from '../executor.js';
 import { renderRunMarkdown } from '../renderers/markdown.js';
 import fs from 'node:fs';
@@ -16,7 +17,7 @@ function normalizeOutput(data: any): Record<string, any> {
 }
 
 export function createRunTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_run',
     description: '排查和诊断 GitHub Actions 工作流构建状态。特别优化了获取失败步骤日志能力（log_failed），专供 Agent 快速定位 CI 报错，并支持手动触发工作流 (trigger)。',
     parameters: {
@@ -78,8 +79,7 @@ export function createRunTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       let repoTarget = args.repo;
       if (!repoTarget) {
         const meta = await executor.getRepoMetadata(cwd, sessionId);
@@ -285,5 +285,5 @@ export function createRunTool(executor: GhExecutor) {
           throw new Error(`未知的 Run 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

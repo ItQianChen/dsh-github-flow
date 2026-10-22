@@ -51,6 +51,10 @@ console.log('\n--- 3. repo readme action ---');
   const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000' + '1f15c4890000000a49444154789c6300010000050001', 'hex');
   const mkReadme = '# Title\n<img src="https://img.shields.io/npm/v/x.svg" />\n<img src="./docs/shot.png" />';
   const mock = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     defaultListLimit: 10,
     async run(cmd, opts) {
       if (cmd[0] === 'api' && cmd[1].includes('/readme')) return { ok: true, rawOutput: mkReadme };

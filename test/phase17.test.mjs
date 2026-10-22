@@ -125,6 +125,10 @@ warning\t\tno active tag protection rulesets found`;
   console.log('\n--- 3. github_skill 工具定义与参数路由测试 ---');
   let recordedCmds = [];
   const mockExecutor = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     async run(cmd, opts) {
       recordedCmds.push({ cmd, opts });
       if (cmd[0] === 'skill' && cmd[1] === 'publish') {
@@ -220,6 +224,10 @@ warning\t\tno active tag protection rulesets found`;
 
   // 3.7 CLI 失败退出且输出 TSV 诊断行场景
   const mockFailExecutor = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     async run() {
       return {
         ok: false,

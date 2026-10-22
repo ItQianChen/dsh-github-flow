@@ -1,3 +1,4 @@
+import { prStateBadge, issueStateBadge } from '../shared/state-badges.js';
 declare const React: any;
 declare function renderOctocat(size?: number, color?: string): any;
 declare function formatRelativeTime(iso: any): string;
@@ -417,15 +418,15 @@ export function PrDetailModal(props: PrDetailModalProps) {
                 ? h(
                     "span",
                     {
+                      // 色调来自 shared/state-badges（与右侧栏 / CLI 输出同一份映射）；
+                      // 文案保持原样（Draft 用大驼峰、其余直接展示 GitHub 原始 state）。
+                      // 未知状态沿用旧实现的绿色兜底（旧代码的 else 分支就是 green）。
                       className:
                         "dsh-github-badge " +
-                        (data.isDraft
-                          ? "dsh-badge-yellow"
-                          : data.state === "MERGED"
-                          ? "dsh-badge-purple"
-                          : data.state === "CLOSED"
-                          ? "dsh-badge-red"
-                          : "dsh-badge-green"),
+                        (function () {
+                          var b = prStateBadge(data.state, data.isDraft);
+                          return "dsh-badge-" + (b && b.tone !== "neutral" ? b.tone : "green");
+                        })(),
                       style: { fontSize: "10px", padding: "1px 6px" },
                     },
                     data.isDraft ? "Draft" : data.state

@@ -43,6 +43,10 @@ console.log('\n--- 2. view attaches image list ---');
 {
   const recorded = [];
   const mock = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     defaultListLimit: 20,
     async run(cmd, opts) {
       recorded.push(cmd);
@@ -70,6 +74,10 @@ const crypto = await import('node:crypto');
   const png1x1 = Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080600000' + '01f15c4890000000a49444154789c6300010000050001', 'hex');
   const tmpIssueCalls = [];
   const mock2 = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     defaultListLimit: 20,
     async run(cmd, opts) {
       if (cmd[0] === 'issue' && cmd[1] === 'view') {
@@ -93,6 +101,10 @@ const crypto = await import('node:crypto');
 
   // 3.2 非图片内容被拒
   const mockBad = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     defaultListLimit: 20,
     async run(cmd, opts) {
       if (cmd[0] === 'issue') return { ok: true, data: { body: '<img src="https://github.com/user-attachments/assets/bad" />' } };
@@ -106,6 +118,10 @@ const crypto = await import('node:crypto');
 
   // 3.3 无图片的 issue
   const mockNone = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     defaultListLimit: 20,
     async run(cmd) { return { ok: true, data: { body: '纯文本没有图' } }; },
     async getRepoMetadata() { return { nameWithOwner: 'o/r' }; },
@@ -150,6 +166,10 @@ console.log('\n--- 6. PR view_images ---');
   const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000' + '1f15c4890000000a49444154789c6300010000050001', 'hex');
   const downloaded = [];
   const mock = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     defaultListLimit: 20,
     async run(cmd, opts) {
       if (cmd[0] === 'pr' && cmd[1] === 'view') {
@@ -184,6 +204,10 @@ console.log('\n--- 6. PR view_images ---');
 
   // 6.4 无图 PR 明确提示
   const mockNone = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     defaultListLimit: 20,
     async run(cmd) { return cmd[0] === 'pr' ? { ok: true, data: { body: '纯文本', comments: [] } } : { ok: true, data: {} }; },
     async getRepoMetadata() { return { nameWithOwner: 'cli/cli' }; },
@@ -200,6 +224,9 @@ console.log('\n--- 7. image_urls targeting ---');
 
   function makeMock(issueOrPr) {
     return {
+  resolveExecScope(execContext) {
+    return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId };
+  },
       defaultListLimit: 20,
       async run(cmd, opts) {
         const isIssue = issueOrPr === 'issue';
@@ -280,6 +307,10 @@ console.log('\n--- 7. image_urls targeting ---');
   // 7.7 issue view 清单对齐 comments
   {
     const mockC = {
+      // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+      resolveExecScope(execContext) {
+        return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+      },
       defaultListLimit: 20,
       async run(cmd) {
         if (cmd[0] === 'issue') return { ok: true, data: { number: 1, body: '<img src="https://github.com/user-attachments/assets/a1" />', comments: [{ body: '<img src="https://github.com/user-attachments/assets/c9" />' }] } };

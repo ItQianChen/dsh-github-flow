@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { renderRepoMarkdown } from '../renderers/markdown.js';
 import { extractReadmeImageUrls, downloadImages, buildImageBlocks, filterRequestedUrls } from './image-utils.js';
 
@@ -13,7 +14,7 @@ function normalizeOutput(data: any): Record<string, any> {
 }
 
 export function createRepoTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_repo',
     description: '查看 GitHub 仓库元数据、同步 Fork 仓库主干 (sync) 与跨仓库检索代码。默认查询当前工作区关联的仓库。',
     parameters: {
@@ -75,8 +76,7 @@ export function createRepoTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       // 显式 limit 优先；缺省回退 executor.defaultListLimit（用户可在插件配置中调整）
       const limitStr = String(typeof args.limit === 'number' && args.limit > 0 ? args.limit : Math.min(executor.defaultListLimit ?? 10, 50));
       const runOpts = { cwd, sessionId };
@@ -366,5 +366,5 @@ export function createRepoTool(executor: GhExecutor) {
           throw new Error(`未知的 Repo 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

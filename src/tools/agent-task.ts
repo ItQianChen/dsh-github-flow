@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { renderAgentTaskMarkdown } from '../renderers/markdown.js';
 
 function normalizeOutput(data: any): Record<string, any> {
@@ -14,7 +15,7 @@ function normalizeOutput(data: any): Record<string, any> {
 const AGENT_TASK_JSON_FIELDS = 'completedAt,createdAt,id,name,pullRequestNumber,pullRequestState,pullRequestTitle,pullRequestUrl,repository,state,updatedAt,user';
 
 export function createAgentTaskTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_agent_task',
     description: '管理 GitHub Copilot Coding Agent 云端智能体任务会话：查看已分派任务列表、检视任务状态与会话日志、向云端智能体发起新编码与重构任务。基于 gh CLI preview 特性。',
     parameters: {
@@ -63,8 +64,7 @@ export function createAgentTaskTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       const repoArgs = args.repo ? ['-R', args.repo] : [];
       const runOpts = { cwd, sessionId };
 
@@ -137,5 +137,5 @@ export function createAgentTaskTool(executor: GhExecutor) {
           throw new Error(`未知的 Agent Task 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -11,7 +12,7 @@ function normalizeOutput(data: any): Record<string, any> {
 }
 
 export function createApiTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_api',
     description: '通过 GitHub CLI 认证环境直接调用任意 GitHub REST 或 GraphQL API 端点（兜底逃生门）。支持 --jq 过滤；fields 一律按字面字符串传参，避免 gh 的 -F 类型转换改写请求体。',
     parameters: {
@@ -59,8 +60,7 @@ export function createApiTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
 
       // schema 声明了 required: ['endpoint']，但宿主校验不一定兜住（模型可能传空串）。
       // 不校验时 `gh api ""` 退出码 0 并返回整个 API 索引 JSON，模型会误以为"查到了数据"。
@@ -114,5 +114,5 @@ export function createApiTool(executor: GhExecutor) {
       if (!res.ok) throw new Error(res.error);
       return normalizeOutput(res.data !== undefined ? res.data : res.rawOutput);
     },
-  };
+  });
 }

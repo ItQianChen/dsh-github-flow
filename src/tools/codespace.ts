@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { renderCodespaceMarkdown } from '../renderers/markdown.js';
 import { checkScopeRequired } from './project.js';
 
@@ -16,7 +17,7 @@ const CODESPACE_LIST_FIELDS = 'name,displayName,repository,owner,state,gitStatus
 const CODESPACE_VIEW_FIELDS = 'name,displayName,repository,owner,state,gitStatus,lastUsedAt,createdAt,machineName,devcontainerPath,recentFolders,idleTimeoutMinutes';
 
 export function createCodespaceTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_codespace',
     description: '管理 GitHub Codespaces 云端远程开发环境：查阅实例列表与运行状态、检视实例配置详情、停止运行中的环境防计费、安全销毁实例。未授权时提供平台感知自愈命令。',
     parameters: {
@@ -57,8 +58,7 @@ export function createCodespaceTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       const runOpts = { cwd, sessionId };
 
       switch (args.action) {
@@ -128,14 +128,6 @@ export function createCodespaceTool(executor: GhExecutor) {
           }
           const cleanName = args.codespace.trim();
 
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              warning: `⚠️ 销毁确认拦截：你即将永久删除云端开发环境「${cleanName}」。`,
-              impact: '物理销毁 Codespace 将永久释放云端计算资源，环境中任何未提交并推送到远端 Git 的临时修改都将无法找回。',
-              requiredAction: '如确认销毁该实例，请核对环境名称并在参数中附加 `confirm: true` 重新调用。',
-            };
-          }
 
           const deleteCmd = ['codespace', 'delete', '-c', cleanName, '-f'];
           if (args.org) deleteCmd.push('-o', String(args.org).trim());
@@ -156,5 +148,5 @@ export function createCodespaceTool(executor: GhExecutor) {
           throw new Error(`未知的 Codespace 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

@@ -76,6 +76,10 @@ async function runTests() {
   console.log('\n--- 3. github_label 工具定义与执行 ---');
   let recordedCmds = [];
   const mockExecutor = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     async run(cmd, opts) {
       recordedCmds.push({ cmd, opts });
       if (cmd[0] === 'label' && cmd[1] === 'list') {

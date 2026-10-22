@@ -71,14 +71,9 @@ export declare function createGistTool(executor: GhExecutor): {
         public?: undefined;
         description?: undefined;
         success?: undefined;
+        gist_id?: undefined;
         message?: undefined;
         detail?: undefined;
-        status?: undefined;
-        action?: undefined;
-        gist_id?: undefined;
-        warning?: undefined;
-        impact?: undefined;
-        requiredAction?: undefined;
     } | {
         items?: undefined;
         count?: undefined;
@@ -92,11 +87,6 @@ export declare function createGistTool(executor: GhExecutor): {
         success?: undefined;
         message?: undefined;
         detail?: undefined;
-        status?: undefined;
-        action?: undefined;
-        warning?: undefined;
-        impact?: undefined;
-        requiredAction?: undefined;
     } | {
         items?: undefined;
         count?: undefined;
@@ -110,11 +100,6 @@ export declare function createGistTool(executor: GhExecutor): {
         description: any;
         message: string;
         detail?: undefined;
-        status?: undefined;
-        action?: undefined;
-        warning?: undefined;
-        impact?: undefined;
-        requiredAction?: undefined;
     } | {
         items?: undefined;
         count?: undefined;
@@ -128,28 +113,5 @@ export declare function createGistTool(executor: GhExecutor): {
         gist_id: string;
         message: string;
         detail: string;
-        status?: undefined;
-        action?: undefined;
-        warning?: undefined;
-        impact?: undefined;
-        requiredAction?: undefined;
-    } | {
-        items?: undefined;
-        count?: undefined;
-        rawText?: undefined;
-        filename?: undefined;
-        content?: undefined;
-        url?: undefined;
-        public?: undefined;
-        description?: undefined;
-        success?: undefined;
-        message?: undefined;
-        detail?: undefined;
-        status: string;
-        action: string;
-        gist_id: string;
-        warning: string;
-        impact: string;
-        requiredAction: string;
     }>;
 };

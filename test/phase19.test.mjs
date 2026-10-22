@@ -87,6 +87,10 @@ async function runTests() {
   // 2.2 mockExecutor 与命令断言
   let recordedCmds = [];
   const mockExecutor = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     async run(cmd, opts) {
       recordedCmds.push({ cmd, opts });
       if (cmd[0] === 'project' && cmd[1] === 'list') {
@@ -151,6 +155,10 @@ async function runTests() {
 
   // Scope 拦截自愈
   const mockScopeFailExecutor = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     async run() {
       return { ok: false, error: 'error: your authentication token is missing required scopes [read:project]' };
     },

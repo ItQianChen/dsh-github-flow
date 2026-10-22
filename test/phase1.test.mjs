@@ -6,6 +6,10 @@ async function runTests() {
   // 会切分支的动作（pr checkout / issue develop）都要过它。mock 必须提供。
   let workspaceClean = true;
   const mockExecutor = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     async run(cmd, opts) {
       recorded.push(cmd);
       return { ok: true, data: { success: true }, rawOutput: 'mock-output' };
@@ -115,6 +119,9 @@ async function runTests() {
 
   // log_failed graceful test
   const gracefulExecutor = {
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId };
+    },
     async run() { return { ok: false, error: 'no failed jobs in run 1234' }; },
     async getRepoMetadata() { return { nameWithOwner: 'owner/test-repo' }; }
   };

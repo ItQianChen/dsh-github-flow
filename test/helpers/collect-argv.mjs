@@ -93,6 +93,10 @@ function fallbackValue(spec) {
  */
 function makeMock(recorded) {
   const mock = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     defaultListLimit: 20,
     async run(cmd) {
       recorded.push([...cmd]);

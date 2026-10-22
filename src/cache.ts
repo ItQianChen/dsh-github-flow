@@ -128,39 +128,4 @@ export class TtlCache<T> {
     this.evict(key);
     return true;
   }
-
-  /**
-   * 身份校验：缓存里的「仓库身份」是否仍与当前事实一致。
-   *
-   * @deprecated 自 S1 起由 matchesFingerprint 取代，**当前生产代码与测试均无调用点**。
-   *   保留的唯一目的是 S1 的回滚路径：若指纹方案出问题，把 routes-overview
-   *   的两行调用切回身份比对即可，无需恢复已删除的代码。
-   *   计划在 S2（离线解析对齐 git 规则）完成后连同 getRepoIdentityFromLocal 一并删除。
-   *
-   * 为什么必须取代它：该方法依赖 `.git/config` 的解析结果，而解析器在多 remote
-   * 布局下会取错段（实测），导致身份恒失配 → 缓存永久失效。
-   *
-   * @param key 工作区路径
-   * @param currentNameWithOwner 当前从本地 .git/config 解析出的 owner/repo
-   */
-  matchesIdentity(key: string, currentNameWithOwner: string | null | undefined): boolean {
-    if (!currentNameWithOwner) return true;
-    const cached = this.fallbackStore.get(key) ?? this.store.get(key)?.data;
-    if (!cached) return true;
-    const cachedRepo = (cached as any)?.repo;
-    const cachedName = typeof cachedRepo?.nameWithOwner === 'string' ? cachedRepo.nameWithOwner : '';
-    if (!cachedName) return true;
-    return cachedName.toLowerCase() === currentNameWithOwner.toLowerCase();
-  }
-
-  /**
-   * 仅在身份失配时作废该键。返回是否真的作废。
-   *
-   * @deprecated 同 matchesIdentity，改用 invalidateIfFingerprintChanged。
-   */
-  invalidateIfIdentityChanged(key: string, currentNameWithOwner: string | null | undefined): boolean {
-    if (this.matchesIdentity(key, currentNameWithOwner)) return false;
-    this.evict(key);
-    return true;
-  }
 }

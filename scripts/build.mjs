@@ -113,7 +113,12 @@ function bundleClient() {
   // 1. 前置子模块
   // 顺序即依赖顺序：被依赖者必须排在使用者之前（client.js 的 repoCardEl 调
   // resolveRepoBadges，故 repo-badges.js 要在其之前内联）。
+  //
+  // ../shared/state-badges.js 必须排第一：状态→徽章映射由服务端与 UI 共用，
+  // 它是零依赖模块，先内联才能被后面所有模块引用。改这里之前先确认该文件没有
+  // 任何 import——构建器会剥掉 import 行，被引用的符号在 bundle 作用域里就会是 undefined（白屏）。
   const leadingModules = [
+    '../shared/state-badges.js',
     'styles.js',
     'utils.js',
     'icons.js',
@@ -149,7 +154,7 @@ function bundleClient() {
       code = code.replace(/^\s*import\s+[^;]+;\s*$/gm, '');
       code = code.replace(/\bexport\s+(async\s+)?(function|const|var|let|class)\b/g, '$1$2');
       code = code.replace(/\bexport\s*\{[^}]*\}\s*;?/g, '');
-      leadingCode += `\n// ---- [Bundled: ${mod}] ----\n` + code.trim() + '\n';
+      leadingCode += `\n// ---- [Bundled: ${path.basename(mod)}] ----\n` + code.trim() + '\n';
     }
   }
 
@@ -168,7 +173,9 @@ function bundleClient() {
   }
 
   let mainContent = fs.readFileSync(clientPath, 'utf8');
-  mainContent = mainContent.replace(/^\s*import\s+[^;]+from\s+['"][^'"]*ui\/[^'"]*['"]\s*;?\s*$/gm, '');
+  // 剥掉 client.js 对「会被内联的模块」的 import：ui/ 与 shared/ 两族都要剥，
+  // 否则 shared/state-badges.js 会同时以 import 与内联体存在两份。
+  mainContent = mainContent.replace(/^\s*import\s+[^;]+from\s+['"][^'"]*(?:ui|shared)\/[^'"]*['"]\s*;?\s*$/gm, '');
   mainContent = mainContent.replace(/\bexport\s*\{[\s\S]*?\}\s*;?/g, '');
 
   const reactRequireMarker = 'var React = require("react");';

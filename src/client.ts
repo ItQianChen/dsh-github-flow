@@ -7,6 +7,8 @@ declare global {
 }
 
 import { formatRelativeTime, rollupCiStatus, reviewDecisionBadge, eventLabel, fetchWithRetry, parseGitStatText } from './ui/utils.js';
+// 状态→徽章映射与服务端 CLI 输出共用同一份实现（构建期被内联进本 bundle 的作用域）
+import { prStateBadge, ciBadge, issueStateBadge } from './shared/state-badges.js';
 import { GITHUB_PANEL_CSS, injectStyles } from './ui/styles.js';
 import { renderOctocat, renderGitIcon, renderOctocatBadge, renderPluginBadge } from './ui/icons.js';
 import {
@@ -1216,24 +1218,27 @@ window.__ModuleLoader__.load({
                     "div",
                     { className: "dsh-github-item-meta" },
                     h("span", null, `${pr.headRefName} → ${pr.baseRefName}`),
-                    // 状态徽章：与主面板保持一致，否则同一 PR 在两处显示不同信息
+                    // 状态徽章：与主面板保持一致，否则同一 PR 在两处显示不同信息。
+                    // 状态→色调的映射来自 src/shared/state-badges.ts（服务端 CLI 输出用同一份），
+                    // tone 直接就是 CSS 后缀，这里不再自己判 state。
                     (() => {
-                      var s = String(pr.state || "").toUpperCase();
-                      if (s === "MERGED") return h("span", { className: "dsh-github-badge dsh-badge-purple" }, "MERGED");
-                      if (s === "CLOSED") return h("span", { className: "dsh-github-badge dsh-badge-red" }, "CLOSED");
-                      if (s === "OPEN") return h("span", { className: "dsh-github-badge dsh-badge-green" }, "OPEN");
-                      return null;
+                      var b = prStateBadge(pr.state);
+                      // neutral = 未知状态：旧实现对这些值不渲染徽章，保持一致
+                      if (!b || b.tone === "neutral") return null;
+                      return h("span", { className: "dsh-github-badge dsh-badge-" + b.tone }, b.label);
                     })(),
                     pr.mergeable === "CONFLICTING"
                       ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "代码冲突")
                       : h("span", { className: "dsh-github-badge dsh-badge-green" }, "可合并"),
-                    ci === "fail"
-                      ? h("span", { className: "dsh-github-badge dsh-badge-red" }, "❌ CI 失败")
-                      : ci === "pending"
-                      ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "⏳ CI 运行中")
-                      : ci === "pass"
-                      ? h("span", { className: "dsh-github-badge dsh-badge-green" }, "✅ CI 通过")
-                      : null,
+                    (() => {
+                      // 命中判定保持旧白名单（只有 fail/pending/pass 渲染），
+                      // 色调与文案则复用共享映射，避免同一状态两处颜色不一致
+                      if (ci !== "fail" && ci !== "pending" && ci !== "pass") return null;
+                      var cb = ciBadge(undefined, ci);
+                      if (!cb) return null;
+                      var text = ci === "fail" ? "❌ CI 失败" : ci === "pending" ? "⏳ CI 运行中" : "✅ CI 通过";
+                      return h("span", { className: "dsh-github-badge dsh-badge-" + cb.tone }, text);
+                    })(),
                     rv
                       ? h("span", { className: `dsh-github-badge dsh-badge-${rv.kind}` }, rv.text)
                       : null,

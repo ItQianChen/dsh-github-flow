@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { renderLabelMarkdown } from '../renderers/markdown.js';
 
 /**
@@ -24,7 +25,7 @@ function normalizeOutput(data: any): Record<string, any> {
 }
 
 export function createLabelTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_label',
     description: '管理 GitHub 仓库标签体系 (Labels)：查看标签列表、创建新标签、编辑修改现有标签、克隆跨仓库标签体系 (clone) 以及安全删除标签。删除操作不可逆且会解绑议题，需 confirm: true。',
     parameters: {
@@ -95,8 +96,7 @@ export function createLabelTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
 
       let repoTarget = args.repo;
       if (!repoTarget) {
@@ -200,17 +200,6 @@ export function createLabelTool(executor: GhExecutor) {
           if (!args.name) {
             throw new Error('删除标签时 `name` 参数为必填项。');
           }
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              action: 'delete',
-              name: args.name,
-              repo: repoTarget,
-              warning: `⚠️ 高危破坏性操作：即将删除仓库 ${repoTarget} 的标签 "${args.name}"`,
-              impact: `删除标签不可逆，且会导致目标仓库内所有已打上该标签的 Issue 与 PR 自动解绑该标记。`,
-              requiredAction: `如确认彻底删除，请在参数中附加 \`confirm: true\` 重新调用。示例：\`github_label(action: 'delete', name: '${args.name}', confirm: true)\``,
-            };
-          }
 
           const deleteCmd = ['label', 'delete', args.name, '--yes', ...repoArgs];
           const res = await executor.run(deleteCmd, runOpts);
@@ -247,5 +236,5 @@ export function createLabelTool(executor: GhExecutor) {
           throw new Error(`不支持的 label 操作: "${args.action}"。可选值: list, create, edit, delete, clone。`);
       }
     },
-  };
+  });
 }

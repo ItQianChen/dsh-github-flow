@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { renderRulesetMarkdown } from '../renderers/markdown.js';
 
 export interface ParsedRule {
@@ -58,7 +59,7 @@ export function parseRulesetCheckOutput(output: string): ParsedRulesetCheck {
 }
 
 export function createRulesetTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_ruleset',
     description: '查看与诊断 GitHub 仓库/组织规则集 (Rulesets)：检查分支适用的合并策略规则 (check)、查看规则集列表 (list) 与详情 (view)。是诊断“PR 为什么不能合并”的权威规则策略视角。',
     parameters: {
@@ -107,8 +108,7 @@ export function createRulesetTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
 
       // 解析当前工作区仓库（若未传 org 且需要 repo 维度）
       const resolveRepoTarget = async (): Promise<string> => {
@@ -202,5 +202,5 @@ export function createRulesetTool(executor: GhExecutor) {
           throw new Error(`不支持的 ruleset 操作: "${args.action}"。可选值: check, list, view。`);
       }
     },
-  };
+  });
 }

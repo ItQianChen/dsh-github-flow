@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { renderReleaseMarkdown } from '../renderers/markdown.js';
 
 function normalizeOutput(data: any): Record<string, any> {
@@ -12,7 +13,7 @@ function normalizeOutput(data: any): Record<string, any> {
 }
 
 export function createReleaseTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_release',
     description: '管理 GitHub Releases 版本发布与构建资产：查看发版历史、根据提交自动生成发版说明、创建 Release、上传/下载发布资产（如 npm .tgz 产物）。高危操作（delete、clobber 覆盖上传）需 confirm: true。',
     parameters: {
@@ -94,8 +95,7 @@ export function createReleaseTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       let repoTarget = args.repo;
       if (!repoTarget) {
         const meta = await executor.getRepoMetadata(cwd, sessionId);
@@ -161,14 +161,6 @@ export function createReleaseTool(executor: GhExecutor) {
           if (!Array.isArray(args.assets) || args.assets.length === 0) {
             throw new Error('upload 操作必须提供 assets（文件路径列表）');
           }
-          if (args.clobber === true && args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              warning: `⚠️ 高危操作拦截：你即将覆盖上传 Release ${args.tag} 的同名旧资产（clobber 模式）。`,
-              impact: 'clobber 会先删除既有同名资产再上传；若上传中途失败，旧资产已丢失且无法恢复。',
-              requiredAction: '如确认覆盖，请向用户核实并附加 `confirm: true` 重新调用。',
-            };
-          }
           const uploadCmd = ['release', 'upload', args.tag, ...repoArgs];
           for (const a of args.assets) {
             if (typeof a === 'string' && a.trim()) uploadCmd.push(a);
@@ -194,14 +186,6 @@ export function createReleaseTool(executor: GhExecutor) {
 
         case 'delete': {
           if (!args.tag) throw new Error('delete 操作必须提供 tag');
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              warning: `⚠️ 高危操作拦截：你即将删除 Release ${args.tag}${args.cleanup_tag ? ' 及其 Git Tag' : ''}。`,
-              impact: '删除 Release 不可逆；若同时清理 Tag，引用该 Tag 的历史版本入口将全部失效。',
-              requiredAction: '如确认删除，请向用户核实并附加 `confirm: true` 重新调用。',
-            };
-          }
           const delCmd = ['release', 'delete', args.tag, ...repoArgs, '--yes'];
           if (args.cleanup_tag === true) delCmd.push('--cleanup-tag');
           const res = await executor.run(delCmd, runOpts);
@@ -213,5 +197,5 @@ export function createReleaseTool(executor: GhExecutor) {
           throw new Error(`未知的 Release 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

@@ -51,6 +51,10 @@ a1b2c3d4e5f60718293a4b5c6d7e8f90\tPublic script\t1 file\tpublic\t2026-10-15 12:0
   console.log('\n--- 3. github_cache 工具定义与执行 ---');
   let recordedCmds = [];
   const mockExecutor = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     async run(cmd, opts) {
       recordedCmds.push({ cmd, opts });
       if (cmd[0] === 'cache' && cmd[1] === 'list') {

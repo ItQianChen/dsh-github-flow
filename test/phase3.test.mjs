@@ -4,6 +4,10 @@ async function runTests() {
   const recorded = [];
   let lastOpts = null;
   const mockExecutor = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     async run(cmd, opts) {
       recorded.push(cmd);
       lastOpts = opts;
@@ -111,6 +115,9 @@ async function runTests() {
 
   // org 作用域在无 Git 工作区环境也可用（getRepoMetadata 不应被调用）
   const noGitExecutor = {
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId };
+    },
     async run(cmd, opts) { recorded.push(cmd); lastOpts = opts; return { ok: true, data: {}, rawOutput: 'ok' }; },
     async getRepoMetadata() { throw new Error('should not be called for org scope'); }
   };

@@ -174,9 +174,9 @@ async function runTests() {
   const titleRowBlock = titleRowEnd > titleRowStart
     ? panelPrBlock.slice(titleRowStart, titleRowEnd)
     : panelPrBlock.slice(titleRowStart);
-  ok(titleRowBlock.includes("s === 'MERGED'"), '状态徽章已移入标题行（不再独占一行）');
+  ok(titleRowBlock.includes('prStateBadge(pr.state)'), '状态徽章已移入标题行（不再独占一行；实现改调 shared/state-badges 的 prStateBadge）');
   ok(titleRowBlock.includes('dsh-github-pr-gh-btn'), '标题行内含 GitHub 跳转按钮');
-  const stateIdx = titleRowBlock.indexOf("s === 'MERGED'");
+  const stateIdx = titleRowBlock.indexOf('prStateBadge(pr.state)');
   const btnIdx = titleRowBlock.indexOf('dsh-github-pr-gh-btn');
   ok(stateIdx >= 0 && btnIdx >= 0 && stateIdx < btnIdx, '状态徽章排在按钮左侧（标题 → 状态 → 按钮）');
   // 标题行内各元素顺序：标题 span 在最前
@@ -186,8 +186,8 @@ async function runTests() {
   ok(prBlock.includes('dsh-github-pr-gh-btn') && panelPrBlock.includes('dsh-github-pr-gh-btn'), '侧栏与主面板共用同一按钮类名');
   ok(prBlock.includes('dsh-github-pr-title-row') && panelPrBlock.includes('dsh-github-pr-title-row'), '侧栏与主面板共用同一标题行类名');
   // 状态徽章两处都要有：同一 PR 在侧栏与主面板显示的信息必须一致
-  ok(panelPrBlock.includes("s === 'MERGED'"), '主面板显示 PR 状态徽章');
-  ok(/s === "MERGED"|s === 'MERGED'/.test(prBlock), '右侧栏同样显示 PR 状态徽章（与主面板一致）');
+  ok(panelPrBlock.includes('prStateBadge(pr.state)'), '主面板显示 PR 状态徽章');
+  ok(prBlock.includes('prStateBadge(pr.state)'), '右侧栏同样显示 PR 状态徽章（与主面板一致，同一共享映射）');
 
   // ============================================================
   console.log('\n--- 6. bundle 与样式产物 ---');

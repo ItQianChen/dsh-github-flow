@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { compareGhVersions } from '../executor.js';
 import { renderIssueMarkdown } from '../renderers/markdown.js';
 import { extractImageUrls, downloadImages, buildImageBlocks, filterRequestedUrls, validateAttachPaths } from './image-utils.js';
@@ -17,7 +18,7 @@ function normalizeOutput(data: any): Record<string, any> {
 export { extractImageUrls as extractIssueImageUrls, validateAttachPaths } from './image-utils.js';
 
 export function createIssueTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_issue',
     description: '管理 GitHub Issues。支持查看 Issue 列表、详情、创建新 Issue、追加评论、关闭 Issue、编辑 Issue 以及关联创建本地开发分支 (develop)。',
     parameters: {
@@ -112,8 +113,7 @@ export function createIssueTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       let repoTarget = args.repo;
       if (!repoTarget) {
         const meta = await executor.getRepoMetadata(cwd, sessionId);
@@ -311,14 +311,6 @@ export function createIssueTool(executor: GhExecutor) {
 
         case 'close': {
           if (!args.issue_number) throw new Error('close 操作必须提供 issue_number');
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              warning: `⚠️ 高危操作拦截：你即将关闭 Issue #${args.issue_number}。`,
-              impact: '关闭后该议题状态将变更为 CLOSED，请与用户确认是否确实已解决或需要关闭。',
-              requiredAction: '如确认关闭，请在参数中附加 `confirm: true` 重新调用。',
-            };
-          }
           const res = await executor.run(['issue', 'close', String(args.issue_number), ...repoArgs], runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: `Issue #${args.issue_number} 已成功关闭` };
@@ -361,14 +353,6 @@ export function createIssueTool(executor: GhExecutor) {
         case 'delete': {
           if (!args.issue_number) throw new Error('delete 操作必须提供 issue_number');
           // 物理删除 > close 的拦截级别：issue 编号永久消失、评论湮灭、GraphQL 无法恢复
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              warning: `⚠️ 高危操作拦截：你即将**物理删除** Issue #${args.issue_number}（非 close，不可恢复）。`,
-              impact: 'Issue 编号将永久消失，全部评论与附件随之湮灭，GraphQL 层无法恢复——这与 close（可 reopen 逆转）有本质区别。',
-              requiredAction: '如确认删除，请与用户核实后附加 `confirm: true` 重新调用。',
-            };
-          }
           // 非 TTY 下 gh issue delete 会挂起等待 prompt，--yes 是非交互执行的唯一途径
           const res = await executor.run(['issue', 'delete', String(args.issue_number), ...repoArgs, '--yes'], runOpts);
           if (!res.ok) throw new Error(res.error);
@@ -382,14 +366,6 @@ export function createIssueTool(executor: GhExecutor) {
             throw new Error(`transfer 目标仓库 (${args.target_repo}) 与当前仓库相同，迁移无意义。`);
           }
           // 跨仓库迁移：原 URL 301 但归属改变，不可静默撤回——与 delete 同级 confirm
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              warning: `⚠️ 高危操作拦截：你即将把 Issue #${args.issue_number} 从 ${repoTarget} 迁移到 ${args.target_repo}。`,
-              impact: `迁移后 Issue 归属 ${args.target_repo}（原 URL 301 重定向），标签/里程碑不随迁，操作不可静默撤回。需要目标仓库的写权限。`,
-              requiredAction: '如确认迁移，请与用户核实后附加 `confirm: true` 重新调用。',
-            };
-          }
           const res = await executor.run(['issue', 'transfer', String(args.issue_number), args.target_repo, ...repoArgs], runOpts);
           if (!res.ok) throw new Error(res.error);
           return { message: `Issue #${args.issue_number} 已迁移至 ${args.target_repo}`, url: res.rawOutput };
@@ -406,5 +382,5 @@ export function createIssueTool(executor: GhExecutor) {
           throw new Error(`未知的 Issue 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

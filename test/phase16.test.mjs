@@ -101,6 +101,10 @@ user/tool#5\topened PR\tAdd new module`;
 
   let recordedCmds = [];
   const mockExecutor = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     currentVersion: '2.96.0',
     async getGhVersion() {
       return this.currentVersion;

@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { renderDiscussionMarkdown } from '../renderers/markdown.js';
 
 function normalizeOutput(data: any): Record<string, any> {
@@ -15,7 +16,7 @@ const DISCUSSION_LIST_FIELDS = 'number,title,body,category,author,closed,created
 const DISCUSSION_VIEW_FIELDS = 'number,title,body,category,author,state,createdAt,updatedAt,url,labels,answered,comments';
 
 export function createDiscussionTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_discussion',
     description: '管理 GitHub Discussions 讨论区：浏览社区讨论、检视讨论详情与回复楼层、发起新讨论议题、编辑现有讨论以及追加评论回复。基于 gh CLI preview 特性。',
     parameters: {
@@ -78,8 +79,7 @@ export function createDiscussionTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       const repoArgs = args.repo ? ['-R', args.repo] : [];
       const runOpts = { cwd, sessionId };
 
@@ -199,5 +199,5 @@ export function createDiscussionTool(executor: GhExecutor) {
           throw new Error(`未知的 Discussion 操作: ${args.action}`);
       }
     },
-  };
+  });
 }

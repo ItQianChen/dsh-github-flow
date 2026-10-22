@@ -1,4 +1,5 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 
 const KNOWLEDGE_BASE: Record<string, string> = {
   overview: `### 🧭 DSH GitHub Flow 工具箱全景导航
@@ -498,7 +499,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 };
 
 export function createHelpTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_help',
     description: 'GitHub 工具箱使用指南与官方命令手册。当你不确定该用哪个工具、需要特定操作的高级语法与示例、或排查 GitHub 报错时调用。',
     parameters: {
@@ -548,8 +549,7 @@ export function createHelpTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
 
       // 1. 若显式指定了 gh_command，直接透传查询官方离线手册
       if (args.gh_command && typeof args.gh_command === 'string') {
@@ -582,5 +582,5 @@ export function createHelpTool(executor: GhExecutor) {
         result: `未找到主题「${rawTopic}」的指南。可用主题：${Object.keys(KNOWLEDGE_BASE).join(', ')}。`,
       };
     },
-  };
+  });
 }

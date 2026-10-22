@@ -55,6 +55,34 @@ export declare class GhExecutor {
      */
     resolveWorkspaceCwd(explicitCwd?: string, explicitSessionId?: string): string;
     /**
+     * 18 个工具的唯一工作区入口：把 execContext 归一成 `{ cwd, sessionId }`。
+     *
+     * 为什么必须走这里而不是各工具写 `execContext?.cwd || process.cwd()`：
+     * 三级解析里第 1 级是「显式 cwd 且磁盘存在即原样返回」，而 `process.cwd()`
+     * 恒满足该条件——于是第 2 级「按 sessionId 反查真实工作区」**永远不会触发**。
+     * 工具层把 `process.cwd()` 当兜底传下去，等于把整个会话亲和机制架空。
+     *
+     * ⚠️ 刻意**不复用** `resolveWorkspaceCwd` 的第 3 级（`findMostRecentWorkspacePath`）：
+     * 那一级是给「完全无上下文的 CLI 场景」用的，会把目录定到**最近活跃的任意仓库**。
+     * 工具调用的默认目录必须可预测——落到一个与本会话无关的仓库意味着读错库、
+     * 更糟的是写到错库（merge / release create / label delete 都会打错地方）。
+     * 实测：抹掉 DSH_SESSION_ID 后 `resolveWorkspaceCwd(undefined, undefined)` 返回的是
+     * 一个与本会话无关的仓库路径，而 `process.cwd()` 是当前进程目录。
+     *
+     * 解析顺序：显式 cwd（原样透传，含不存在的情况，与旧行为一致）→ session 反查 →
+     * process.cwd()。三级都拿不到时才回到进程目录，与 s5 之前的兜底完全一致。
+     */
+    resolveExecScope(execContext?: {
+        cwd?: string;
+        sessionId?: string;
+        session?: {
+            id?: string;
+        };
+    }): {
+        cwd: string;
+        sessionId?: string;
+    };
+    /**
      * 安全执行 gh 命令
      * 采用 execFile 参数数组隔离，彻底杜绝 Shell 字符串拼接注入漏洞
      */

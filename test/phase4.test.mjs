@@ -54,6 +54,10 @@ async function runTests() {
   // 3.4 工具真实消费（mock 捕获 argv）
   const recorded = [];
   const mockExec = {
+    // 18 个工具统一经 resolveExecScope 归一工作区；测试替身必须实现同一接口
+    resolveExecScope(execContext) {
+      return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId || execContext?.session?.id };
+    },
     defaultListLimit: 7,
     async run(cmd, opts) { recorded.push(cmd); return { ok: true, data: {}, rawOutput: 'ok' }; },
     async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
@@ -96,6 +100,9 @@ async function runTests() {
 
   // 3.6 未配置 defaultListLimit 的旧式 executor（无该字段）兜底 20/10
   const legacyMock = {
+  resolveExecScope(execContext) {
+    return { cwd: execContext?.cwd || process.cwd(), sessionId: execContext?.sessionId };
+  },
     async run(cmd) { recorded.push(cmd); return { ok: true, data: {}, rawOutput: 'ok' }; },
     async getRepoMetadata() { return { nameWithOwner: 'owner/test' }; }
   };
@@ -129,8 +136,9 @@ async function runTests() {
   console.log('\n--- 6. Fuzz-input regression ---');
   const { createHelpTool } = await import('../lib/tools/help.js');
   const { createRunTool: createRunToolForFuzz } = await import('../lib/tools/run.js');
-  const helpTool = createHelpTool({ async run() { return { ok: true, rawOutput: '' }; } });
+  const helpTool = createHelpTool({ resolveExecScope: (e) => ({ cwd: e?.cwd || process.cwd(), sessionId: e?.sessionId }), async run() { return { ok: true, rawOutput: '' }; } });
   const runTool2 = createRunToolForFuzz({
+    resolveExecScope: (e) => ({ cwd: e?.cwd || process.cwd(), sessionId: e?.sessionId }),
     defaultListLimit: 10,
     async getRepoMetadata() { return { nameWithOwner: 'o/r' }; },
     async run(cmd, opts) {

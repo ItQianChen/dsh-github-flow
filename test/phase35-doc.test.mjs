@@ -30,11 +30,10 @@ function ok(cond, name, extra) {
 }
 
 // ---- 1. 从代码派生：工具数 ----
-// 只数「把工具工厂产物注册进去」的语句：tools.register(createXxxTool(…))。
-// 不用裸 `ctx.tools.register(`：main.ts 已改为经 inject 声明后局部取 tools 服务，
-// 裸模式会静默变成 0，而 0 会让「=== 18」失败得莫名其妙。
+// 只数「工具工厂实例化」语句（main.ts 的 allTools 数组）。注册点已收敛为一条 for 循环，
+// 按 register 数会永远得到 1；按工厂调用数才与「注册多少工具」真实对应。
 const mainSrc = readFileSync(path.join(ROOT, 'src/main.ts'), 'utf8');
-const toolCount = (mainSrc.match(/tools\.register\(\s*create[A-Z]\w*Tool\(/g) || []).length;
+const toolCount = (mainSrc.match(/^\s*create[A-Z]\w*Tool\(/gm) || []).length;
 
 // ---- 2. 从产物派生：每个工具的 action enum 长度 ----
 const LIB_TOOLS = path.join(ROOT, 'lib/tools');

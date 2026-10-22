@@ -1,8 +1,9 @@
 import type { GhExecutor } from '../executor.js';
+import { wrapWithGate } from '../destructive.js';
 import { renderGistMarkdown, parseGistListOutput } from '../renderers/markdown.js';
 
 export function createGistTool(executor: GhExecutor) {
-  return {
+  return wrapWithGate({
     name: 'github_gist',
     description: '管理 GitHub Gist 代码片段与诊断留痕：查看 Gist 列表、检视代码正文 (view)、通过文本内容或本地文件创建新 Gist (create，默认安全 secret 模式)、编辑以及安全删除。删除操作不可逆，需 confirm: true。',
     parameters: {
@@ -60,8 +61,7 @@ export function createGistTool(executor: GhExecutor) {
       },
     },
     async execute(args: any, execContext: any) {
-      const cwd = execContext?.cwd || process.cwd();
-      const sessionId = execContext?.sessionId || execContext?.session?.id || process.env.DSH_SESSION_ID;
+      const { cwd, sessionId } = executor.resolveExecScope(execContext);
       const runOpts = { cwd, sessionId, rawText: true };
 
       switch (args.action) {
@@ -173,16 +173,6 @@ export function createGistTool(executor: GhExecutor) {
           if (!args.gist_id) {
             throw new Error('删除 Gist 时 `gist_id` 参数为必填项。');
           }
-          if (args.confirm !== true) {
-            return {
-              status: 'AWAITING_CONFIRMATION',
-              action: 'delete',
-              gist_id: String(args.gist_id),
-              warning: `⚠️ 高危破坏性操作：即将永久删除 Gist 代码片段 "${args.gist_id}"`,
-              impact: `删除 Gist 为物理删除，无法通过 GitHub API 恢复，所有引用该 Gist URL 的外部链接将失效并返回 404。`,
-              requiredAction: `如确认彻底删除，请在参数中附加 \`confirm: true\` 重新调用。示例：\`github_gist(action: 'delete', gist_id: '${args.gist_id}', confirm: true)\``,
-            };
-          }
 
           const delCmd = ['gist', 'delete', String(args.gist_id), '--yes'];
           const res = await executor.run(delCmd, runOpts);
@@ -199,5 +189,5 @@ export function createGistTool(executor: GhExecutor) {
           throw new Error(`不支持的 gist 操作: "${args.action}"。可选值: list, view, create, edit, delete。`);
       }
     },
-  };
+  });
 }

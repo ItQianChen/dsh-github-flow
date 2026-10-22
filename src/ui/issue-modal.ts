@@ -1,3 +1,4 @@
+import { prStateBadge, issueStateBadge } from '../shared/state-badges.js';
 declare const React: any;
 declare function renderOctocat(size?: number, color?: string): any;
 declare function formatRelativeTime(iso: any): string;
@@ -256,14 +257,16 @@ export function IssueDetailModal(props: IssueDetailModalProps) {
 
   var stateBadge = function (d: any) {
     if (!d) return null;
-    var isOpen = String(d.state).toUpperCase() === "OPEN";
+    // 状态→色调来自 shared/state-badges（与右侧栏 / CLI 输出同一份映射）
+    var b = issueStateBadge(d.state);
+    if (!b) return null;
     return h(
       "span",
       {
-        className: "dsh-github-badge " + (isOpen ? "dsh-badge-green" : "dsh-badge-red"),
+        className: "dsh-github-badge dsh-badge-" + b.tone,
         style: { fontSize: "10px", padding: "1px 6px", flexShrink: 0 },
       },
-      isOpen ? "OPEN" : "CLOSED"
+      b.label
     );
   };
 

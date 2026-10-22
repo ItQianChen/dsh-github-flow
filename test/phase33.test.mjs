@@ -34,11 +34,17 @@ async function runTests() {
   // ============================================================
   console.log('\n--- 1. 工具数量与代码事实对账 ---');
   // ============================================================
-  // 只数「把工具工厂产物注册进去」的语句：ctx.tools.register(createXxxTool(…))
-  // 不用裸 `ctx.tools.register(` 是因为 tools 服务可能经局部别名（const tools = …）调用，
-  // 裸模式一旦别名化就静默变成 0，而 0 恰好会让「== 18」失败得莫名其妙。
-  const registered = (mainSrc.match(/tools\.register\(\s*create[A-Z]\w*Tool\(/g) || []).length;
-  ok(registered === 18, '代码中注册 18 个 Agent 工具', String(registered));
+  // 只数「工具工厂实例化」语句：main.ts 里 18 个 createXxxTool(executor) 组成 allTools 数组，
+  // 统一过 applyTier / wrapWithGate 后再注册。数工厂调用而不是 register 调用，
+  // 是因为注册点已收敛成一条 for 循环——按 register 数会永远得到 1。
+  const registered = (mainSrc.match(/^\s*create[A-Z]\w*Tool\(/gm) || []).length;
+  ok(registered === 18, '代码中实例化 18 个 Agent 工具', String(registered));
+  // 实例化 ≠ 注册：只数工厂调用的话，把下面的注册循环删掉这行仍然绿。
+  // 这里显式钉住「档位过滤后逐个注册」这条语句（真正的注册点已收敛为一条 for）。
+  ok(
+    /for \(const tool of tier\.kept\) tools\.register\(/.test(mainSrc),
+    'main.ts 保留「按档位过滤后逐个注册」的循环'
+  );
 
   // 指南里声明的工具数量必须与实际一致
   ok(helpSrc.includes('18 大工具'), '指南标题声明「18 大工具」');
