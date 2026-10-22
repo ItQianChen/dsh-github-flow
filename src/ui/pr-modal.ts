@@ -443,7 +443,29 @@ export function PrDetailModal(props: PrDetailModalProps) {
                     "span",
                     { style: { fontFamily: "monospace", opacity: 0.85 } },
                     `(${data.headRefName} → ${data.baseRefName})`
-                  )
+                  ),
+                  /*
+                   * 审查锚点：分支名会移动，SHA 不会。
+                   * 点开这个弹窗时先看这一枚 chip，就能确认「我看到的是不是最新一次推送」；
+                   * title 里放完整 SHA，方便复制去精确引用。老服务端没有该字段时不渲染。
+                   */
+                  typeof data.headRefOid === "string" && data.headRefOid.length >= 7
+                    ? h(
+                        "span",
+                        {
+                          title: `headRefOid: ${data.headRefOid}`,
+                          style: {
+                            fontFamily: "monospace",
+                            fontSize: "10px",
+                            padding: "1px 6px",
+                            borderRadius: "10px",
+                            border: "1px solid var(--dsw-alias-border-l2, rgba(31,35,40,0.15))",
+                            opacity: 0.9,
+                          },
+                        },
+                        `🔖 ${data.headRefOid.slice(0, 7)}`
+                      )
+                    : null
                 )
               : null
           )
@@ -532,7 +554,9 @@ export function PrDetailModal(props: PrDetailModalProps) {
                   className: `dsh-github-pr-tab-btn ${activeTab === "files" ? "active" : ""}`,
                   onClick: () => setActiveTab("files"),
                 },
-                `📁 变动文件 (${data.files ? data.files.length : 0} 文件 · +${data.additions || 0} / -${data.deletions || 0})`
+                // 截断时显示 N/M：M 来自 changedFiles（权威总数），N 是 gh 实际返回的条数。
+                // 只显示 N 会让「被截断」看起来像「就这么多」——这是 cli/cli#12522 的静默截断。
+                `📁 变动文件 (${data.files ? data.files.length : 0}${data.filesTruncated && data.changedFiles ? '/' + data.changedFiles : ''} 文件 · +${data.additions || 0} / -${data.deletions || 0})${data.filesTruncated ? ' ⚠️' : ''}`
               )
             ),
 
@@ -707,7 +731,8 @@ export function PrDetailModal(props: PrDetailModalProps) {
                                     style: { padding: "2px 8px", fontSize: "10px", flexShrink: 0 },
                                     title: "展开左侧文件列表",
                                   },
-                                  `📁 文件列表 (${(data.files && data.files.length) || 0})`
+                                  // 折叠态同样要透出截断事实（N/M），否则展开前的第一眼就被骗了
+                                  `📁 文件列表 (${(data.files && data.files.length) || 0}${data.filesTruncated && data.changedFiles ? '/' + data.changedFiles : ''})`
                                 )
                               : null,
                             h("span", { style: { fontFamily: "monospace", fontWeight: 600, fontSize: "11px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, selectedFilePath),
@@ -726,7 +751,9 @@ export function PrDetailModal(props: PrDetailModalProps) {
                           h(
                             "div",
                             { style: { flex: 1, overflowY: "auto", minHeight: 0 } },
-                            // 截断警告必须显式呈现：否则用户会把「拿不到 diff」误读成「代码没改动」
+                            // 两种「看不到 diff」的原因必须分开说，否则用户不知道该做什么：
+                            // ① diffTruncated：整段 diff 被输出阈值裁掉（去 GitHub 看完整内容）
+                            // ② diffIncomplete：这个文件在清单里但没取到切片（换一个文件/重试）
                             data.diffTruncated
                               ? h(
                                   "div",
@@ -743,6 +770,24 @@ export function PrDetailModal(props: PrDetailModalProps) {
                                     },
                                   },
                                   "⚠️ 该 PR 的 diff 体量过大已触达输出上限，部分文件可能无法展示差异。可点击右上角「↗ 浏览器打开」查看完整内容。"
+                                )
+                              : null,
+                            data.diffIncomplete
+                              ? h(
+                                  "div",
+                                  {
+                                    style: {
+                                      margin: "8px",
+                                      padding: "8px 12px",
+                                      borderRadius: "6px",
+                                      fontSize: "11px",
+                                      lineHeight: 1.5,
+                                      background: "rgba(210, 153, 34, 0.12)",
+                                      border: "1px solid rgba(210, 153, 34, 0.35)",
+                                      color: "var(--dsw-alias-state-attention-primary, #9a6700)",
+                                    },
+                                  },
+                                  "⚠️ 有文件未能取到 diff 正文（二进制、重命名或超出切片范围）。这些文件显示为空不代表没有改动，请到 GitHub 核对。"
                                 )
                               : null,
                             data.fileDiffs && data.fileDiffs[selectedFilePath]

@@ -19,6 +19,7 @@ import type {
   AssociatedRepoItem,
   AssociatedRepoRole,
   PrDetailData,
+  PrFileItem,
   PrLineCommentItem,
   IssueDetailData,
 } from './types.js';
@@ -31,6 +32,7 @@ import { extractImageUrls } from './tools/image-utils.js';
 // 子模块纯函数解耦导入并对外部 Re-export 保证 100% 向后兼容
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
+import { buildPrReviewPayload, foldCommentsIntoBody, isLineCommentRejected, type PrReviewResult } from './executor/pr-review.js';
 import {
   parseGitStatusOutput,
   parseGitLogLines,
@@ -1122,7 +1124,10 @@ export class GhExecutor {
       'view',
       String(num),
       '--json',
-      'number,title,state,isDraft,url,createdAt,updatedAt,author,baseRefName,headRefName,body,reviewDecision,statusCheckRollup,comments,reviews,files,additions,deletions',
+      // headRefOid/baseRefOid：分支会移动，SHA 才是可钉住的审查锚点（s7 §2.1）
+      // changedFiles：`--json files` 在 100 条处静默截断，只有这个数字能判定「清单被截了」
+      // headRepositoryOwner：`prDetail.headRepoOwner` 的取值来源（此前恒 undefined）
+      'number,title,state,isDraft,url,createdAt,updatedAt,author,baseRefName,headRefName,headRefOid,baseRefOid,changedFiles,headRepositoryOwner,body,reviewDecision,statusCheckRollup,comments,reviews,files,additions,deletions',
     ];
     if (cleanRepo) viewArgs.push('-R', cleanRepo);
 
@@ -1192,6 +1197,24 @@ export class GhExecutor {
 
     const fullDiff = rDiff.ok ? (typeof rDiff.data === 'string' ? rDiff.data : rDiff.rawOutput || '') : '';
     const fileDiffs = splitUnifiedDiff(fullDiff);
+    const files: PrFileItem[] = Array.isArray(raw.files)
+      ? raw.files.map((f: any) => ({
+          path: String(f.path || ''),
+          additions: Number(f.additions) || 0,
+          deletions: Number(f.deletions) || 0,
+          changeType: String(f.changeType || 'MODIFIED'),
+        }))
+      : [];
+    /*
+     * 三个截断字段各自回答一个不同问题，缺一不可（s7 §2.5）：
+     * - changedFiles   ：仓库里这个 PR 到底改了多少个文件（权威总数）
+     * - filesTruncated ：清单被 gh 的 100 条上限裁掉了吗（cli/cli#12522 静默截断）
+     * - diffIncomplete ：清单里有、但切片里没有对应 diff 的文件（数据缺失，不是「没改动」）
+     * 把三者混成一个布尔值，界面就只能说「可能不全」，用户无法判断该去做什么。
+     */
+    const changedFiles = Number(raw.changedFiles) || files.length;
+    const filesTruncated = files.length < changedFiles;
+    const diffIncomplete = files.some((f) => !fileDiffs[f.path]);
     const prDetail: PrDetailData = {
       number: Number(raw.number) || num,
       title: String(raw.title || ''),
@@ -1206,20 +1229,18 @@ export class GhExecutor {
       },
       headRefName: String(raw.headRefName || ''),
       baseRefName: String(raw.baseRefName || ''),
+      headRefOid: raw.headRefOid ? String(raw.headRefOid) : undefined,
+      baseRefOid: raw.baseRefOid ? String(raw.baseRefOid) : undefined,
       headRepoOwner: raw.headRepositoryOwner?.login ? String(raw.headRepositoryOwner.login) : undefined,
       body: String(raw.body || ''),
       reviewDecision: raw.reviewDecision ? String(raw.reviewDecision) : undefined,
       statusCheckRollup: raw.statusCheckRollup,
       additions: Number(raw.additions) || 0,
       deletions: Number(raw.deletions) || 0,
-      files: Array.isArray(raw.files)
-        ? raw.files.map((f: any) => ({
-            path: String(f.path || ''),
-            additions: Number(f.additions) || 0,
-            deletions: Number(f.deletions) || 0,
-            changeType: String(f.changeType || 'MODIFIED'),
-          }))
-        : [],
+      files,
+      changedFiles,
+      ...(filesTruncated ? { filesTruncated: true } : {}),
+      ...(diffIncomplete ? { diffIncomplete: true } : {}),
       comments: Array.isArray(raw.comments)
         ? raw.comments.map((c: any) => ({
             id: String(c.id || ''),
@@ -1248,6 +1269,105 @@ export class GhExecutor {
     };
 
     return { ok: true, data: prDetail };
+  }
+
+  /**
+   * 提交带行级评注的 PR review（REST 通道）。
+   *
+   * 为什么必须走 REST：`gh pr review` 只有 `--approve/--request-changes/--comment`，
+   * 没有任何行级参数（`gh pr review --help` 里 line/side/path 零命中）。行级评注
+   * 的唯一入口是 `POST /repos/{owner}/{repo}/pulls/{n}/reviews` 的 `comments[]`。
+   *
+   * 为什么一次 review 一个请求（而不是逐条 `POST /pulls/{n}/comments`）：
+   * 通知只发一轮，也避开 secondary rate limit 的「创建内容过快」判定。
+   *
+   * 422 降级：行级评注被拒（典型原因：该行不在 diff 的可评论侧，如纯删除行）
+   * 时，把评注折叠进 review 正文重试一次。内容不能丢，但降级必须显式可见。
+   */
+  async createPrReview(
+    cwd: string | undefined,
+    repo: string | undefined,
+    prNumber: number | string,
+    input: { event?: unknown; body?: unknown; comments?: unknown; commit_id?: unknown }
+  ): Promise<PrReviewResult> {
+    const targetCwd = this.resolveWorkspaceCwd(cwd);
+    const num = Number(prNumber);
+    if (!num || isNaN(num) || num <= 0) {
+      return { ok: false, error: '缺少有效 PR 编号（必须为正整数）' };
+    }
+
+    // 仓库名优先用显式参数；缺省时从本地 git remote 推导（与 getPrDetail 同一套规则）
+    const cleanRepo = typeof repo === 'string' ? repo.trim() : '';
+    if (cleanRepo && !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(cleanRepo)) {
+      return { ok: false, error: '非法仓库全名参数（仅允许 owner/repo 格式）' };
+    }
+    const fullName = cleanRepo || this.getRepoIdentityFromLocal(targetCwd)?.nameWithOwner || '';
+    if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(fullName)) {
+      return { ok: false, error: '无法确定仓库全名：请传 repo 参数，或在 Git 仓库目录下调用' };
+    }
+
+    const built = buildPrReviewPayload(input);
+    if (!built.ok || !built.payload) {
+      return { ok: false, error: `评注参数校验未通过：\n- ${(built.errors || ['未知错误']).join('\n- ')}` };
+    }
+    const payload = built.payload;
+    const endpoint = `repos/${fullName}/pulls/${num}/reviews`;
+
+    const post = (body: unknown) =>
+      this.run<any>(['api', '--method', 'POST', endpoint, '--input', '-'], {
+        cwd: targetCwd,
+        timeoutMs: 20_000,
+        stdin: JSON.stringify(body),
+      });
+
+    const first = await post(payload);
+    if (first.ok) {
+      const data = first.data as any;
+      return {
+        ok: true,
+        data: {
+          id: data?.id,
+          htmlUrl: data?.html_url,
+          state: data?.state,
+          submittedAt: data?.submitted_at,
+          // 逐条回传评论地址，供人复核「到底挂到了哪一行」
+          comments: Array.isArray(data?.comments)
+            ? data.comments.map((c: any) => ({
+                path: String(c?.path || ''),
+                line: typeof c?.line === 'number' ? c.line : undefined,
+                htmlUrl: c?.html_url ? String(c.html_url) : undefined,
+              }))
+            : [],
+        },
+      };
+    }
+
+    // 只在「行级评注被拒」时降级；403/404/网络错误原样抛出（降级也没用）
+    const hasComments = Array.isArray(payload.comments) && payload.comments.length > 0;
+    if (hasComments && isLineCommentRejected(first.error || '')) {
+      const folded = foldCommentsIntoBody(payload.comments!, payload.body);
+      const retry = await post({ ...payload, body: folded, comments: undefined });
+      // 把 GitHub 的原始拒绝原因带进说明里：否则用户只看到「已折叠进正文」，
+      // 却不知道是「行不在 diff 可评论侧」还是「path 根本不存在」——两者处置完全不同。
+      const why = String(first.error || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      if (retry.ok) {
+        const data = retry.data as any;
+        return {
+          ok: true,
+          degraded: true,
+          degradedReason: `行级评注被 GitHub 拒绝（${why}），已折叠进 review 正文提交，内容未丢失。`,
+          data: { id: data?.id, htmlUrl: data?.html_url, state: data?.state, submittedAt: data?.submitted_at, comments: [] },
+        };
+      }
+      return {
+        ok: false,
+        degraded: true,
+        degradedReason: `行级评注被拒（${why}）后降级重试仍失败。`,
+        error: retry.error || first.error,
+      };
+    }
+
+    return { ok: false, error: first.error };
   }
 
   /**

@@ -44,6 +44,49 @@ export declare function createPrTool(executor: GhExecutor): {
                 enum: string[];
                 description: string;
             };
+            /**
+             * 行级评注（review 动作使用）。
+             *
+             * 为什么必须单独一个参数而不是塞进 body：`gh pr review` 没有行级参数
+             * （`gh pr review --help` 里 line/side/path 零命中），只能走
+             * `POST /pulls/{n}/reviews` 的 `comments[]`。一次 review 一个请求 =
+             * 通知只发一轮，也避开 secondary rate limit 的「创建内容过快」。
+             */
+            comments: {
+                type: string;
+                items: {
+                    type: string;
+                    properties: {
+                        path: {
+                            type: string;
+                            description: string;
+                        };
+                        line: {
+                            type: string;
+                            description: string;
+                        };
+                        side: {
+                            type: string;
+                            enum: string[];
+                            description: string;
+                        };
+                        start_line: {
+                            type: string;
+                            description: string;
+                        };
+                        body: {
+                            type: string;
+                            description: string;
+                        };
+                    };
+                    required: string[];
+                };
+                description: string;
+            };
+            commit_id: {
+                type: string;
+                description: string;
+            };
             merge_method: {
                 type: string;
                 enum: string[];

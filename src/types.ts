@@ -391,6 +391,15 @@ export interface PrDetailData {
   author: { login: string; avatarUrl?: string };
   headRefName: string;
   baseRefName: string;
+  /**
+   * 分支尖端的 commit SHA。
+   *
+   * 为什么必须透出：分支名会移动（force-push / 新提交），拿它当审查锚点等于
+   * 「我审的到底是哪一版」永远说不清。SHA 是不可移动的事实源，也是行级评注
+   * 写入时 `commit_id` 的取值来源。
+   */
+  headRefOid?: string;
+  baseRefOid?: string;
   headRepoOwner?: string;
   body: string;
   reviewDecision?: string;
@@ -421,6 +430,25 @@ export interface PrDetailData {
    * 静默展示「该文件无差异」会让用户误以为代码没改动——必须显式提示。
    */
   diffTruncated?: boolean;
+  /**
+   * PR 实际变更的文件总数（来自 `gh pr view --json changedFiles`）。
+   *
+   * 为什么必须与 `files.length` 分开：`gh pr view --json files` 在 100 条处
+   * **静默截断**（cli/cli#12522），`files.length` 只是「返回了几条」。
+   * 把两者混为一谈，界面就会把「被截断」说成「就这么多」。
+   */
+  changedFiles?: number;
+  /** `files` 清单是否被 gh 的 100 条上限截断（`files.length < changedFiles`） */
+  filesTruncated?: boolean;
+  /**
+   * 是否有文件**没拿到 diff 正文**（该文件在 `files` 里但 `fileDiffs` 无对应切片）。
+   *
+   * 与 `diffTruncated` 是并列而非同一概念：
+   * - `diffTruncated`：整个 diff 输出被阈值裁掉（原因在传输层）；
+   * - `diffIncomplete`：清单里有这个文件、但切片里没有它（原因在数据缺失）。
+   * 两者处置不同（一个是「去看完整 diff」，一个是「这个文件没取到」），不能合并。
+   */
+  diffIncomplete?: boolean;
 }
 
 /**

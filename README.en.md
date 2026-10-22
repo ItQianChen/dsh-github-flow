@@ -93,6 +93,18 @@ Consolidates scattered GitHub endpoints into **18 core domain tools (103 actions
   * `checkout`: 🆕 Check out PR code to a local branch so the Agent can run tests in the local workspace (requires a clean working tree; an existing branch is not reset unless `force: true` + `confirm: true` are passed);
   * `status`: 🆕 Inspect merge conflict status (`CLEAN` / `CONFLICT`) for the current branch's PR;
   * `review`: Submit code reviews (`APPROVE`, `REQUEST_CHANGES`, `COMMENT`);
+  * 🆕 **`review` + `comments` (line-level review comments, new in v0.7.0)**: `gh pr review` has no line-level flags, so this version adds a `comments` array backed by `POST /pulls/{n}/reviews`, posting multiple comments anchored to specific code lines in one request. **Without `comments` the behaviour is byte-for-byte identical to previous versions** (still `gh pr review`) — no write-back by default.
+
+    ```jsonc
+    // github_pr(action:'review', pr_number:12, review_decision:'COMMENT',
+    //            body:'summary', comments:[{ path:'src/a.ts', line:42, body:'needs a lock here' }])
+    // optional: side('LEFT'|'RIGHT', default RIGHT), start_line (multi-line), commit_id (pin to a SHA)
+    ```
+
+    Three boundaries: ① max **50** comments per review; ② `path`/`body` required and `line` must be a positive integer — validation reports **all** problems at once; ③ if a line is not on the commentable side of the diff (pure deletions, etc.) and GitHub returns **422**, the comments are **folded into the review body** (prefixed with `path:line`), retried once, and explicitly marked `degraded` — no content is lost.
+  * 🆕 **Severity prefixes `[P0]` / `[P1]` / `[P2]` (new in v0.7.0)**: review bodies and every line comment pass through severity normalization before submission — **existing prefixes are preserved, a missing one gets `[P2]`, and `[P0]`/`[P1]` are never downgraded**. The goal is to keep a pile of P2s from drowning out the P0; the plugin only adds labels, it never rewrites your judgement.
+  * 🆕 **Repository review rules from `AGENTS.md` (new in v0.7.0)**: `view` reads `AGENTS.md` from the workspace (repo root plus the nearest file in each changed file's directory, ≤8KB per file / ≤16KB total), extracts the `## Code Review Rules` section (falls back to the whole file when that heading is absent), returns it as `reviewRules`, and renders a "Repository review rules" section at the end of the Markdown output. **When no `AGENTS.md` exists the key is absent entirely** — "no rules" and "empty rules" stay distinguishable. Rules enter context only through tool output; nothing is injected into the system prompt.
+  * 🆕 **Review anchors & visible truncation (new in v0.7.0)**: `view` now returns `headRefOid` / `baseRefOid` / `changedFiles`, and the Markdown branch line renders as `feat/x@a1b2c3d` (branch names move, SHAs don't); when the `files` list hits gh's 100-item cap it says so explicitly ("only the first N / M listed").
   * `merge`: Merge pull requests (`squash` / `merge` / `rebase`, optional `delete_branch`; requires `confirm: true`);
   * `ready`: 🆕 Toggle Draft ↔ Ready (`undo: true` converts back to Draft — fully reversible);
   * `revert`: 🆕 Create a revert commit (generates a new revert PR on the remote; requires `confirm: true`);
@@ -136,6 +148,8 @@ Consolidates scattered GitHub endpoints into **18 core domain tools (103 actions
   * `list`: Query workflow runs by branch or status;
   * `view`: Inspect step breakdown and conclusion states;
   * `log_failed`: **🔥 Troubleshooting Swiss Army Knife**! Pinpoints exact failing jobs and steps, extracting only the critical failure lines;
+  * 🆕 **Framework-aware anchor extraction (new in v0.7.0)**: the whole log is no longer dumped at the model. Failure markers from common frameworks (pytest `FAILED`, node `AssertionError`, Go `panic:`, tsc `error TSxxxx`, `npm ERR!`, …) are used to slice the log into **failure blocks** (each with a start line and following context; adjacent markers are merged), then trimmed to a character budget; when blocks exceed the cap it states "N blocks omitted (M total)". **If no known anchor matches it falls back to the last 200 lines** and says why (failures are concluded at the end of a log; the head is mostly environment setup).
+  * For this, `log_failed`'s output budget is raised to **2MB chars / 8MB bytes** — otherwise the default 24K truncation happens *before* extraction and later failures never reach the context.
   * `rerun`: Re-trigger failed workflows with one click;
   * `cancel`: Cancel in-progress or queued runs;
   * `trigger`: Manually dispatch `workflow_dispatch` workflows with custom parameters;

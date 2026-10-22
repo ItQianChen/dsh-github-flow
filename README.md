@@ -93,6 +93,18 @@ dsh plugin --profile web add dsh-github-flow
   * `checkout`：🆕 把 PR 代码检出到本地分支，Agent 可直接在本地工作区跑测试验证改动（检出前校验工作区干净度；默认不重置已有同名分支，需要重置须显式传 `force: true` + `confirm: true`）；
   * `status`：🆕 查看当前分支关联 PR 的合并冲突状态（`CLEAN` / `CONFLICT`）；
   * `review`：提交代码审查意见（`APPROVE`, `REQUEST_CHANGES`, `COMMENT`）；
+  * 🆕 **`review` + `comments`（行级评注写入，v0.7.0 新增）**：`gh pr review` 本身没有行级参数，本版本新增 `comments` 数组走 `POST /pulls/{n}/reviews`，一次提交多条挂在具体代码行上的评注。**不传 `comments` 时行为与旧版逐字节一致**（仍走 `gh pr review`），默认零写回。
+
+    ```jsonc
+    // github_pr(action:'review', pr_number:12, review_decision:'COMMENT',
+    //            body:'整体说明', comments:[{ path:'src/a.ts', line:42, body:'这里要加锁' }])
+    // 可选字段：side('LEFT'|'RIGHT'，默认 RIGHT)、start_line(多行评注)、commit_id(钉在指定 SHA)
+    ```
+
+    三条边界：① 单次最多 **50 条**；② `path`/`body` 必填、`line` 必须是正整数，校验不通过时**一次列出所有问题**而不是改一条试一次；③ 若某行不在 diff 的可评论侧（纯删除行等）导致 GitHub 返回 **422**，评注会**自动折叠进 review 正文**（带 `path:line` 前缀）重试一次并显式标记 `degraded`，内容不丢失。
+  * 🆕 **严重度前缀 `[P0]` / `[P1]` / `[P2]`（v0.7.0 新增）**：`review` 的正文与每条行级评注在提交前会统一过一遍严重度归一化——**已有前缀原样保留，缺失才补 `[P2]`，永不降级 `[P0]`/`[P1]`**。目的是让一堆 P2 别把 P0 淹没；插件只补标签，不改写你的判断。
+  * 🆕 **仓库审查规则注入（`AGENTS.md`，v0.7.0 新增）**：`view` 会读取工作区的 `AGENTS.md`（根目录 + 变更文件所在目录的就近文件，单文件 ≤8KB、合计 ≤16KB），把 `## Code Review Rules` 段（整文件没有该标题时退化为全文）作为 `reviewRules` 随结果返回，并在 Markdown 输出末尾渲染成「仓库审查规则」一节。**工作区没有 `AGENTS.md` 时输出不含该键**——「没有规则」与「规则为空」在结果里可区分。规则只经工具输出这一条通道进入上下文，不注入系统提示。
+  * 🆕 **审阅锚点与截断可见性（v0.7.0 新增）**：`view` 现在返回 `headRefOid` / `baseRefOid` / `changedFiles`，Markdown 的分支行渲染为 `feat/x@a1b2c3d`（分支名会移动，SHA 不会）；`files` 清单被 gh 的 100 条上限截断时会显式说明「仅列出前 N / M 个」。
   * `merge`：自动执行合并（支持 `squash` / `merge` / `rebase`，可指定 `delete_branch`；需 `confirm: true` 二次确认）；
   * `ready`：🆕 Draft ↔ Ready 切换（附 `undo: true` 可转回 Draft，完整可逆）；
   * `revert`：🆕 创建反向提交（远端生成新 revert PR，需 `confirm: true`）；
@@ -136,6 +148,8 @@ dsh plugin --profile web add dsh-github-flow
   * `list`：列出指定分支或状态的 CI 构建记录；
   * `view`：查看工作流运行详情与各步骤状态；
   * `log_failed`：**🔥 排障神器**！自动精准定位失败的 Job 与 Step，仅提取报错那几十行核心日志，告别人工翻几万行日志；
+    * 🆕 **按测试框架锚点萃取（v0.7.0 新增）**：不再把整段日志丢给模型。先按各框架的失败标记（pytest `FAILED`、node `AssertionError`、Go `panic:`、tsc `error TSxxxx`、`npm ERR!` 等）切出**失败块**（每块含起始行号与后续上下文，相邻标记自动合并），再按字符预算二次裁剪；块数超上限时显式写明「已省略 N 个失败块（共 M 个）」。**匹配不到已知锚点时回退尾部 200 行**并注明原因（失败结论在日志末尾，头部基本只有环境准备信息）。
+    * 为此 `log_failed` 的输出预算放宽到 **2MB 字符 / 8MB 字节**——否则默认 24K 截断会发生在萃取**之前**，后面的失败根本进不了上下文。
   * `rerun`：一键重新运行失败的构建；
   * `cancel`：取消正在排队或执行的构建；
   * `trigger`：手动触发 `workflow_dispatch` 工作流，支持自定义入参；

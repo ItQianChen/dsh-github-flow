@@ -2,6 +2,7 @@ import type { GhExecutionOptions, GhResult, AuthStatus, RepoMetadata, PluginConf
 import type { ProxyManager } from './proxy.js';
 import { parseGhVersion, compareGhVersions } from './executor/version-utils.js';
 import { spawnWithStdin, safeSlice, cutByUtf8Bytes, truncateOutput } from './executor/process-utils.js';
+import { type PrReviewResult } from './executor/pr-review.js';
 import { parseGitStatusOutput, parseGitLogLines, parseGitBranchLines, parseUncommittedDiff, parseGitStatText, parseRemoteUrls, parseGitConfig, resolveRemoteTarget, parseGithubUrl, parseRemoteHost, classifyRepoLayout, pickGithubRemote, splitUnifiedDiff } from './executor/git-parser.js';
 import type { ParsedGitConfig, ParsedRemote } from './executor/git-parser.js';
 import { getPlatformInstallGuide, getGhUpgradeHint } from './executor/platform-guide.js';
@@ -266,6 +267,25 @@ export declare class GhExecutor {
         data?: PrDetailData;
         error?: string;
     }>;
+    /**
+     * 提交带行级评注的 PR review（REST 通道）。
+     *
+     * 为什么必须走 REST：`gh pr review` 只有 `--approve/--request-changes/--comment`，
+     * 没有任何行级参数（`gh pr review --help` 里 line/side/path 零命中）。行级评注
+     * 的唯一入口是 `POST /repos/{owner}/{repo}/pulls/{n}/reviews` 的 `comments[]`。
+     *
+     * 为什么一次 review 一个请求（而不是逐条 `POST /pulls/{n}/comments`）：
+     * 通知只发一轮，也避开 secondary rate limit 的「创建内容过快」判定。
+     *
+     * 422 降级：行级评注被拒（典型原因：该行不在 diff 的可评论侧，如纯删除行）
+     * 时，把评注折叠进 review 正文重试一次。内容不能丢，但降级必须显式可见。
+     */
+    createPrReview(cwd: string | undefined, repo: string | undefined, prNumber: number | string, input: {
+        event?: unknown;
+        body?: unknown;
+        comments?: unknown;
+        commit_id?: unknown;
+    }): Promise<PrReviewResult>;
     /**
      * 获取 Issue 完整详情（供 IssueDetailModal 在线查看消费）。
      *
