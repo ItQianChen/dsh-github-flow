@@ -542,7 +542,14 @@ dsh plugin --profile web add dsh-github-flow
     updateCheckIntervalMs: 86400000 # 检查更新间隔（毫秒，默认 24 小时）
     registryUrl: ''           # 自定义私有 npm 镜像地址（留空走「更新设置」所选源，界面设置优先）
     proxyUrl: ''              # 代理地址预置默认值（如 'http://127.0.0.1:7890'；仅未在驾驶舱设置过时生效，界面设置优先）
+    toolsets: ['core']        # 工具档位：留空/full = 18 个全量；core=5 / ci=7 / maintain=8；也可混写工具名如 github_pr
+    read_only: true           # 只读档位：写 action 在注册期就从工具 schema 中剔除，github_api 整体不注册
 ```
+
+> `toolsets` 决定的不是「运行时允许什么」，而是**注册给模型的工具面本身**：不填 = 18 个工具全量常驻（约 24,000 字符 schema），`core` 只有 5 个（约 8,500 字符，**省 65%**）。填错档位名会 `console.warn` 打出可用档位清单，不会静默把工具清空。
+> `read_only` 是硬语义，两层生效：① 注册期把写 action 从参数 `enum` 里剪掉（模型在 schema 层看不到）；② **执行入口再拦一次**——本插件用的是手写 descriptor，宿主不会替我们做参数校验，所以被剪掉的 action 即使带着 `confirm: true` 也会在到达 `gh` 之前被拒绝并抛出「只读模式」。`github_api` 因端点与 method 均可任意而无法降级，只读模式下整体不注册。
+> 边界说明：`github_help` 的帮助文本是一份**文档**，只读模式下仍会列出全部能力（含写操作的用法），它不构成可执行的契约——真正拦住写操作的是上面那两层。
+
 
 > 配置由 Schemastery Schema 校验：类型写错（例如把 `maxOutputChars: '24000'` 写成字符串）会**直接报错**，不再静默回落到默认值。
 > `maxOutputChars` / `defaultTimeoutMs` / `defaultListLimit` 是**热更新字段**——改这几项时 loader 只把新值热提交进运行中的实例，不触发插件整体重载；改动其余字段（含 `checkUpdate`）仍会重载插件。

@@ -536,7 +536,13 @@ Fine-tune options via DSH config:
     updateCheckIntervalMs: 86400000 # Update check interval in ms (default 24h)
     registryUrl: ''           # Custom npm registry (defaults to Update Source setting)
     proxyUrl: ''              # Default proxy URL (overridden by UI settings)
+    toolsets: ['core']        # Tool tier: unset/full = all 18; core=5 / ci=7 / maintain=8; bare tool names allowed
+    read_only: true           # Read-only tier: write actions pruned from the schema at registration; github_api not registered
 ```
+
+> `toolsets` controls **which tools get registered to the model**, not a runtime permission check: unset = all 18 resident (~24,000 chars of schema), `core` = 5 (~8,500 chars, **65% smaller**). A misspelled tier name logs a `console.warn` listing the available tiers instead of silently dropping every tool.
+> `read_only` is a hard semantic enforced in two layers: (1) write actions are removed from the argument `enum` at registration time (invisible at the schema layer); (2) **the execution entry rejects them again** — this plugin ships hand-rolled descriptors, so the host does not validate arguments on our behalf; a pruned action is refused before it ever reaches `gh`, even with `confirm: true`. `github_api` accepts any endpoint and method, so it cannot be degraded — it is simply not registered.
+> Boundary note: `github_help` output is **documentation**, so it still lists every capability (including write usage) in read-only mode. It is not an executable contract — what actually blocks writes is the two layers above.
 
 > Config is validated by a Schemastery schema: a wrong type (e.g. `maxOutputChars: '24000'` as a string) now **fails loudly** instead of silently falling back to the default.
 > `maxOutputChars` / `defaultTimeoutMs` / `defaultListLimit` are **volatile fields** — editing only these hot-commits the new values into the running instance without reloading the plugin; editing any other field (including `checkUpdate`) still triggers a plugin reload.
