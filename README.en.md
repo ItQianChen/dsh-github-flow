@@ -570,6 +570,35 @@ export async function apply(ctx: Context) {
 
 ---
 
+## 🛠️ Local Development & Debugging
+
+When contributing or customizing the plugin locally, follow this workflow:
+
+### 1. Link Plugin to DSH (Directory Junction)
+By default, DSH profiles copy local `file:` dependencies as static snapshots and may ignore build lifecycle scripts. To achieve instant reflection of your builds, use a native Directory Junction (Windows):
+
+```powershell
+# Windows PowerShell
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-github-flow" -Target "D:\Desktop\AgentWork\DSHQuestion\dsh-github-flow" -Force
+```
+
+> ⚠️ **Notice**: Do not run `dsh plugin ... install/add` or `pnpm install` inside the profile directory, as pnpm will replace the Junction with a static snapshot.
+
+### 2. Applying Code Changes
+
+Once the Junction is established, you do not need to reinstall:
+
+1. **Build outputs**: Run in workspace root:
+   ```bash
+   pnpm run build
+   ```
+   > Outputs are compiled into `lib/`, immediately visible to DSH via the Junction.
+2. **Reload**:
+   - **Frontend UI & Styles** (`src/client.ts`, `src/ui/*`): Press **Ctrl + F5** in browser to hard refresh. **No DSH restart required**.
+   - **Backend Engine & API Routes** (`src/tools/*`, `src/api/*`, `src/executor.ts`, `src/main.ts`): **Restart DSH** to reload cached in-memory modules.
+
+---
+
 ## 📚 Documentation & Technical References
 
 - [npm Publishing & Automated CI Guide](./docs/npm-publish-guide.md)

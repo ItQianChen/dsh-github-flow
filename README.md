@@ -577,6 +577,35 @@ export async function apply(ctx: Context) {
 
 ---
 
+## 🛠️ 本地开发与联调热重载 (Local Development)
+
+若需要基于源码进行二次开发或定制调试，请遵循以下联调规范：
+
+### 1. 链接工作区到 DSH 环境（创建目录联接）
+DSH 的 Profile 默认会将 `file:` 依赖打包拷贝为静态快照，且受 pnpm 构建安全策略拦截。为了让源码构建后**即时生效**，推荐使用原生目录联接（Junction）直通工作区：
+
+```powershell
+# Windows PowerShell（将 Profile 内部插件路径直连到本地开发仓库根目录）
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\web\node_modules\dsh-github-flow" -Target "D:\Desktop\AgentWork\DSHQuestion\dsh-github-flow" -Force
+```
+
+> ⚠️ **避坑说明**：建立联接后，**请勿在 Profile 目录下执行** `dsh plugin ... install/add` 或 `pnpm install`，以防包管理器抹除联接并退化为静态快照。
+
+### 2. 源码修改后的生效工作流
+
+修改 `src/` 源码后，无需重新挂载或拷贝文件：
+
+1. **编译产物**：在工作区根目录执行：
+   ```bash
+   pnpm run build
+   ```
+   > 产物自动编译并聚合至 `lib/`，Junction 会使宿主环境立即读取到最新文件。
+2. **触发刷新**：
+   - **前端界面与样式**（`src/client.ts`、`src/ui/*`）：直接在浏览器中按 **Ctrl + F5 强制刷新**页面即可预览最新视图，**无需重启 DSH 软件**。
+   - **后端引擎与接口路由**（`src/tools/*`、`src/api/*`、`src/executor.ts`、`src/main.ts`）：**重启 DSH 软件**以重载 Node.js 内存中的常驻模块。
+
+---
+
 ## 📚 相关开发文档
 
 - [npm 发布与自动化 CI 发版指南](./docs/npm-publish-guide.md)

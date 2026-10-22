@@ -94,3 +94,4 @@ git push origin master --tags
 | gh --json 字段集漂移 | Unknown JSON field 直接报错 | 新增字段前用 `gh <cmd> --json zzz` 探测合法集；不跨域复制字段名（checks≠run） |
 | PowerShell 5.1 默认策略 | 唤起终端报 profile 禁止运行红错 | 唤起命令带 -NoProfile（Windows 自带基线优先） |
 | 浏览器单文件脚本环境 | 客户端产物带未剥除的 export/import 导致语法报错白屏 | build.mjs 聚合器自动剔除 export/import 并将子模块内联注入单一闭包 |
+| pnpm `file:` 快照与构建拦截 | 本地开发修改代码并重启 DSH，页面和接口依然为旧版本 | DSH 内置 pnpm 对 `file:` 依赖强制做快照缓存并拦截未经批准的构建脚本。本地二次开发必须通过原生 Junction 目录联接直连工作区（见 architecture.md §3.6） |
