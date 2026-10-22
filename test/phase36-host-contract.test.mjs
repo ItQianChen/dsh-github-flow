@@ -84,6 +84,15 @@ ok(bundledCount === 19, '19 个 Bundle 子模块已内联（18 UI + 1 shared）'
 // 子模块被内联进闭包后不得残留 ESM 导出语法，否则整段在浏览器里语法错误
 ok(!/^export\s+(const|function|class|default)\s/m.test(bundle), 'Bundle 内无残留 ESM export 语句');
 
+// 侧栏入口的「样式主权」回归（issue #9）：
+// 宿主的 .panelGlyph 是 flex:none 且不设宽高，宽度由内容决定；我们一旦给图标套
+// 固定宽高的盒子，图标格就会被撑开、整行标签右移（历史值 28px vs 同级 16px = 12px）。
+// 这条断言盯的是「别再把侧栏图标的样式主权抢回来」。
+const stylesSrc = readFileSync(path.join(ROOT, 'src/ui/styles.ts'), 'utf8');
+ok(!/\.dsh-github-icon-inner/.test(stylesSrc), '侧栏图标不再有固定宽高的内层盒子（.dsh-github-icon-inner 已移除）');
+ok(!/\.dsh-github-icon\b/.test(stylesSrc), '侧栏图标不再覆盖宿主行样式（.dsh-github-icon 已移除）');
+ok(!/\.dsh-github-icon-inner/.test(bundle) && !/\.dsh-github-icon\b/.test(bundle), '构建产物中同样不含这两个类名');
+
 // ============================================================
 console.log('\n--- 2. 插件元数据（cordis loader 消费面）---');
 // ============================================================

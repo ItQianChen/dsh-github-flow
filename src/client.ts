@@ -2422,23 +2422,19 @@ window.__ModuleLoader__.load({
       return renderOctocatBadge(32);
     }
 
-    // 4. 左侧栏全局入口与中央大面板
+    // 4. 左侧栏全局入口
+    //
+    // 宿主的 sidebar.panellist 行渲染器会向本组件注入 { size, active }：
+    //   renderSlot("sidebar.panellist", { size: wide ? 16 : 18, active }, { only: id })
+    // 且图标格 .panelGlyph 是 flex:none、不设宽高——宽度完全由内容决定。
+    // 因此这里必须：① 用宿主给的 size；② 不再套任何固定宽高的盒子。
+    // 早期版本套了 28px 内层盒子 + 深色渐变发光，结果是图标格被撑到 28px
+    // （同级 16px）、标签右移 12px、选中态多出一块发光底（issue #9）。
     function GithubSidebarIcon(props: any) {
-      const active = Boolean(props && props.active);
-      return React.createElement(
-        "div",
-        {
-          className: "dsh-github-icon" + (active ? " active" : ""),
-          title: "GitHub 全景驾驶舱（dsh-github-flow 插件）",
-        },
-        React.createElement(
-          "div",
-          {
-            className: "dsh-github-icon-inner" + (active ? " active" : "")
-          },
-          renderOctocat(18, "currentColor")
-        )
-      );
+      var size = props && typeof props.size === "number" ? props.size : 16;
+      // 选中态由宿主 .panelRow.panelActive 负责（行背景 + label-primary），这里不重复绘制；
+      // 也不设 title：宿主已提供 aria-label 与 Tooltip，叠加会出现双提示。
+      return renderOctocat(size, "currentColor");
     }
 
     var inject = ["slots", "sidebarRightTabs", "sessions", "layout", "theme", "sidebarRight"];

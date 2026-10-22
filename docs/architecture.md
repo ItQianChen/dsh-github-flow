@@ -201,7 +201,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **40 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
+项目配备了 **41 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
 - 阶段数与 `test/run-all.mjs` 的 `phases` 数组由 `test/phase35-doc.test.mjs` 对账，改一处漏一处会直接红；
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
@@ -242,3 +242,4 @@
 - `phase37`：**工具档位契约测试**（`applyTier` 纯函数：默认零破坏——18 工具 / 24,043 字符实测不变；`core` 5 / 8,534（−64.5%）、`ci` 7 / 9,943、`maintain` 8 / 13,274；裸工具名与预设可混用、未知档位 `console.warn` 一次后忽略而非静默清空；`read_only` 17 / 22,761——`github_api` 整体剔除、14 个混合工具剪 action enum 且**交集为空**、description 前置 `[只读模式]`；纯函数性质：`Object.freeze` 入参不抛错、重复调用结果一致、剪枝产物与入参解引用）。
 - `phase38`：**破坏性操作闸门契约测试**（声明表覆盖 16 个 `(tool, action)`；`cache delete` 五条分支真值表——`all`/`cache_id`/`key` 三条都拦、无选择器不拦仍抛精确错、`list` 不误伤；条件闸门不**过度**拦截——`release upload` 不带 clobber、`skill publish` 带 `dry_run`/`fix`、`pr checkout` 不带 force、`issue transfer` 缺 `target_repo` 全部放行；9 条主文案逐字快照；`wrapWithGate` 只替换 `execute`，`name`/`parameters`/`output` 保持同一引用，拦截时**零副作用**不触达工具本体）。
 - `phase39`：**状态徽章共享映射契约测试**（`src/shared/state-badges.ts` 必须零 import——构建期会被整体内联，有依赖就会在 bundle 作用域里变 undefined 导致白屏；六个纯函数的状态→图标/色调覆盖表；服务端 `format*Badge` 22 条输出与旧实现**逐字一致**；`lib/client.js` 内每个共享函数恰好 1 份定义、无残留 `shared/` import；`build.mjs` 把共享模块排在内联顺序最前且剥 import 的正则覆盖 `ui|shared` 两族）。
+- `phase41`：**侧栏入口图标契约测试**（issue #9 回归网：宿主 `renderSlot("sidebar.panellist", { size: wide ? 16 : 18, active })` 注入的 `size` 必须被透传——从 `lib/client.js` 抽出 `GithubSidebarIcon` 函数体、在沙箱里真调，断言 16/18 两档尺寸、根节点必须是裸 `svg`（有 wrapper 就会把图标格撑宽、标签右移 12px）、`fill` 用 `currentColor` 继承行颜色、缺省/非数字 `size` 兜底 16、`active` 不改变输出结构）。
