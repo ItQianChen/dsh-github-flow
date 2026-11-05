@@ -5,6 +5,7 @@ import { renderPrMarkdown } from '../renderers/markdown.js';
 import { assertPositionArg } from '../executor/args-guard.js';
 import { extractImageUrls, downloadImages, buildImageBlocks, filterRequestedUrls, validateAttachPaths } from './image-utils.js';
 import { readReviewRules, summarizeSeverity } from '../review-rules.js';
+import { resolveBodySource, type BodySource } from './body-input.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -45,7 +46,11 @@ export function createPrTool(executor: GhExecutor) {
         },
         body: {
           type: 'string',
-          description: '创建 PR 或提交 Review 时的内容描述。',
+          description: '创建 PR 或提交 Review 时的内容描述（create, comment, edit, review 时使用）。与 body_file 二选一。',
+        },
+        body_file: {
+          type: 'string',
+          description: '正文来源：本地 Markdown 文件路径（相对路径按当前工作区解析）。与 body 二选一；长正文用本参数，无需把全文读进上下文。',
         },
         base: {
           type: 'string',
@@ -175,6 +180,8 @@ export function createPrTool(executor: GhExecutor) {
 
       const repoArgs = ['-R', repoTarget];
       const runOpts = { cwd, sessionId };
+      // 正文来自本地文件时经 stdin 注入（`--body-file -`）：绕开 Windows 约 32K 的命令行上限
+      const stdinPatch = (body: BodySource) => (body.stdin === undefined ? {} : { stdin: body.stdin });
 
       const appendAttachFlags = async (cmd: string[], attachImages: unknown) => {
         const attachPaths = validateAttachPaths(attachImages, cwd);
@@ -404,7 +411,10 @@ export function createPrTool(executor: GhExecutor) {
         }
 
         case 'create': {
-          const createCmd = ['pr', 'create', ...repoArgs, '--title', args.title || '', '--body', args.body || ''];
+          // keepEmptyInline：无正文时仍要下发 `--body ''`，否则 gh 会打开编辑器等交互输入，
+          // 在非 TTY 环境下直接挂起。正文来源与位置保持在 `--title` 之后，老调用 argv 逐字节不变。
+          const body = resolveBodySource({ inline: args.body, file: args.body_file }, { cwd, keepEmptyInline: true });
+          const createCmd = ['pr', 'create', ...repoArgs, '--title', args.title || '', ...body.argv];
           if (args.base) createCmd.push('--base', args.base);
           // 跨 fork 提 PR 必须显式给出 --head（形如 forkOwner:branch）。
           // 为什么不能省：当 -R 指向的仓库不是当前 origin 时，gh 无法推断拿哪个分支开 PR，
@@ -414,7 +424,7 @@ export function createPrTool(executor: GhExecutor) {
           const dryRun = args.dry_run === true;
           if (dryRun) createCmd.push('--dry-run');
           await appendAttachFlags(createCmd, args.attach_images);
-          const res = await executor.run(createCmd, runOpts);
+          const res = await executor.run(createCmd, { ...runOpts, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return dryRun
             ? { message: 'PR 预演完成（未真正创建）', detail: res.rawOutput }
@@ -425,6 +435,13 @@ export function createPrTool(executor: GhExecutor) {
           if (!args.pr_number) throw new Error('review 操作必须提供 pr_number');
 
           /*
+           * 正文在分支判定之前解析：带 comments 时走的是 REST reviews 通道，那条路没有任何
+           * `--body-file` 可用，正文只能由插件读出来塞进 JSON。若把解析放在 gh 分支里，
+           * 「带 comments + body_file」就会静默丢正文——所以两条通道共用这一份结果。
+           */
+          const body = resolveBodySource({ inline: args.body, file: args.body_file }, { cwd });
+
+          /*
            * 行级评注分支：只有显式传了非空 comments 才走 REST reviews 通道。
            * 不传 → 下面的原 gh pr review 路径一字不动（默认行为零变化，这是本改动的
            * 首要约束：老调用方的 argv 必须逐字节一致）。
@@ -433,7 +450,8 @@ export function createPrTool(executor: GhExecutor) {
           if (lineComments.length > 0) {
             const res = await executor.createPrReview(cwd, args.repo, args.pr_number, {
               event: args.review_decision,
-              body: args.body,
+              // createPrReview 侧按 trim 归一，空串与 undefined 等价，直接给权威正文即可
+              body: body.text,
               comments: lineComments,
               commit_id: args.commit_id,
             });
@@ -446,7 +464,7 @@ export function createPrTool(executor: GhExecutor) {
              * 目的是让调用方一眼看到「这轮意见里有没有 P0」，而不是自己数。
              */
             const severity = summarizeSeverity(
-              [args.body, ...lineComments.map((c: any) => (c && typeof c.body === 'string' ? c.body : ''))].filter(
+              [body.text, ...lineComments.map((c: any) => (c && typeof c.body === 'string' ? c.body : ''))].filter(
                 (b: any) => typeof b === 'string' && b.trim()
               )
             );
@@ -477,8 +495,9 @@ export function createPrTool(executor: GhExecutor) {
           if (args.review_decision === 'APPROVE') reviewCmd.push('--approve');
           else if (args.review_decision === 'REQUEST_CHANGES') reviewCmd.push('--request-changes');
           else reviewCmd.push('--comment');
-          if (args.body) reviewCmd.push('--body', args.body);
-          const res = await executor.run(reviewCmd, runOpts);
+          // 位置与旧代码一致：`--body` 紧跟判定 flag，老调用 argv 逐字节不变
+          reviewCmd.push(...body.argv);
+          const res = await executor.run(reviewCmd, { ...runOpts, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return { message: 'Review 提交成功', detail: res.rawOutput };
         }
@@ -528,21 +547,25 @@ export function createPrTool(executor: GhExecutor) {
         }
 
         case 'comment': {
-          if (!args.pr_number || !args.body) throw new Error('comment 必须提供 pr_number 和 body');
-          const commentCmd = ['pr', 'comment', String(args.pr_number), ...repoArgs, '--body', args.body];
+          if (!args.pr_number) throw new Error('comment 操作必须提供 pr_number');
+          const body = resolveBodySource({ inline: args.body, file: args.body_file }, { cwd });
+          // 判空看解析后的权威正文字符数：文件来源时 `args.body` 恒为空，不能拿它做必填判定
+          if (body.chars === 0) throw new Error('comment 必须提供 body 或 body_file（评论正文）');
+          const commentCmd = ['pr', 'comment', String(args.pr_number), ...repoArgs, ...body.argv];
           await appendAttachFlags(commentCmd, args.attach_images);
-          const res = await executor.run(commentCmd, runOpts);
+          const res = await executor.run(commentCmd, { ...runOpts, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return { message: 'PR 评论发布成功', output: res.rawOutput };
         }
 
         case 'edit': {
           if (!args.pr_number) throw new Error('edit 操作必须提供 pr_number');
+          const body = resolveBodySource({ inline: args.body, file: args.body_file }, { cwd });
           const editCmd = ['pr', 'edit', String(args.pr_number), ...repoArgs];
           if (args.title) editCmd.push('--title', args.title);
-          if (args.body) editCmd.push('--body', args.body);
+          editCmd.push(...body.argv);
           await appendAttachFlags(editCmd, args.attach_images);
-          const res = await executor.run(editCmd, runOpts);
+          const res = await executor.run(editCmd, { ...runOpts, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return { message: `PR #${args.pr_number} 更新成功`, output: res.rawOutput };
         }

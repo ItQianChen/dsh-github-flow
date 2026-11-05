@@ -27,6 +27,10 @@ export declare function createPrTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            body_file: {
+                type: string;
+                description: string;
+            };
             base: {
                 type: string;
                 description: string;
