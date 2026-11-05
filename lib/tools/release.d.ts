@@ -26,6 +26,10 @@ export declare function createReleaseTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            notes_file: {
+                type: string;
+                description: string;
+            };
             generate_notes: {
                 type: string;
                 description: string;

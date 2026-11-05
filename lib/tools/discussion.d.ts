@@ -26,6 +26,10 @@ export declare function createDiscussionTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            body_file: {
+                type: string;
+                description: string;
+            };
             category: {
                 type: string;
                 description: string;

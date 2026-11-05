@@ -2,6 +2,7 @@ import type { GhExecutor } from '../executor.js';
 import { wrapWithGate } from '../destructive.js';
 import { renderReleaseMarkdown } from '../renderers/markdown.js';
 import { assertPositionArg } from '../executor/args-guard.js';
+import { resolveBodySource, type BodySource } from './body-input.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -39,7 +40,11 @@ export function createReleaseTool(executor: GhExecutor) {
         },
         notes: {
           type: 'string',
-          description: 'Release 说明正文（create 动作使用）。留空且 generate_notes 为 true 时将自动由 GitHub 根据提交记录生成。',
+          description: 'Release 说明正文（create 动作使用）。留空且 generate_notes 为 true 时将自动由 GitHub 根据提交记录生成。与 notes_file 二选一。',
+        },
+        notes_file: {
+          type: 'string',
+          description: '发版说明来源：本地 Markdown 文件路径（相对路径按当前工作区解析）。与 notes 二选一。',
         },
         generate_notes: {
           type: 'boolean',
@@ -114,6 +119,8 @@ export function createReleaseTool(executor: GhExecutor) {
 
       const repoArgs = ['-R', repoTarget];
       const runOpts = { cwd, sessionId };
+      // 说明来自本地文件时经 stdin 注入（`--notes-file -`）：绕开 Windows 约 32K 的命令行上限
+      const stdinPatch = (body: BodySource) => (body.stdin === undefined ? {} : { stdin: body.stdin });
 
       switch (args.action) {
         case 'list': {
@@ -149,12 +156,19 @@ export function createReleaseTool(executor: GhExecutor) {
           }
           if (args.title) createCmd.push('--title', args.title);
           // notes 与 generate_notes 可共存：gh 会在自动生成的说明前 prepend 手写正文
-          if (args.notes) createCmd.push('--notes', args.notes);
+          const notes = resolveBodySource(
+            { inline: args.notes, file: args.notes_file },
+            // maxChars: 0 —— Release 说明的 GitHub 上限比 Issue/评论正文（65,536）宽得多，
+            // 套用正文口径会把合法的长发版说明先拦下来；这里只保留 4MB 字节护栏，
+            // 真正超限由 GitHub 侧报错（错误信息带字段名，可定位）。
+            { cwd, flag: '--notes', fileFlag: '--notes-file', inlineField: 'notes', fileField: 'notes_file', maxChars: 0 }
+          );
+          createCmd.push(...notes.argv);
           if (args.generate_notes !== false) createCmd.push('--generate-notes');
           if (args.draft === true) createCmd.push('--draft');
           if (args.prerelease === true) createCmd.push('--prerelease');
           if (args.target) createCmd.push('--target', args.target);
-          const res = await executor.run(createCmd, runOpts);
+          const res = await executor.run(createCmd, { ...runOpts, ...stdinPatch(notes) });
           if (!res.ok) throw new Error(res.error);
           return { message: `Release ${args.tag} 创建成功`, url: res.rawOutput };
         }

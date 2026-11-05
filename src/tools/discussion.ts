@@ -1,6 +1,7 @@
 import type { GhExecutor } from '../executor.js';
 import { wrapWithGate } from '../destructive.js';
 import { renderDiscussionMarkdown } from '../renderers/markdown.js';
+import { resolveBodySource, type BodySource } from './body-input.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -41,7 +42,11 @@ export function createDiscussionTool(executor: GhExecutor) {
         },
         body: {
           type: 'string',
-          description: '讨论正文或评论正文（create, comment 必需，edit 动作修改正文时可选）。',
+          description: '讨论正文或评论正文（create, comment 必需，edit 动作修改正文时可选）。与 body_file 二选一。',
+        },
+        body_file: {
+          type: 'string',
+          description: '正文来源：本地 Markdown 文件路径（相对路径按当前工作区解析）。与 body 二选一；长正文用本参数，无需把全文读进上下文。',
         },
         category: {
           type: 'string',
@@ -82,6 +87,14 @@ export function createDiscussionTool(executor: GhExecutor) {
       const { cwd, sessionId } = executor.resolveExecScope(execContext);
       const repoArgs = args.repo ? ['-R', args.repo] : [];
       const runOpts = { cwd, sessionId };
+      // 正文来自本地文件时经 stdin 注入（`--body-file -`）：绕开 Windows 约 32K 的命令行上限
+      const stdinPatch = (body: BodySource) => (body.stdin === undefined ? {} : { stdin: body.stdin });
+      /*
+       * 内联正文沿用改造前的 trim 口径（旧代码是 `-b args.body.trim()`）：discussion 历史上
+       * 就按去空白下发，改成原样会动到既有调用方的 argv。文件来源不 trim——那是用户排好版的
+       * Markdown，首尾空行/缩进可能有意义，strip 掉等于替用户改稿。
+       */
+      const trimInline = (v: unknown) => (typeof v === 'string' ? v.trim() : v);
 
       switch (args.action) {
         case 'list': {
@@ -130,8 +143,13 @@ export function createDiscussionTool(executor: GhExecutor) {
           if (!args.title || typeof args.title !== 'string' || !args.title.trim()) {
             throw new Error('create 操作必须提供 title（讨论标题）');
           }
-          if (!args.body || typeof args.body !== 'string' || !args.body.trim()) {
-            throw new Error('create 操作必须提供 body（讨论正文）');
+          const body = resolveBodySource(
+            { inline: trimInline(args.body), file: args.body_file },
+            { cwd, flag: '-b' }
+          );
+          // 判空只看解析后的权威正文：文件来源时 args.body 恒为空，拿它判定会误杀
+          if (body.chars === 0) {
+            throw new Error('create 操作必须提供 body 或 body_file（讨论正文）');
           }
           if (!args.category || typeof args.category !== 'string' || !args.category.trim()) {
             throw new Error('create 操作必须提供 category（讨论分类，例如 "General"、"Q&A"、"Ideas"）');
@@ -140,12 +158,12 @@ export function createDiscussionTool(executor: GhExecutor) {
           const createCmd = [
             'discussion', 'create',
             '-t', args.title.trim(),
-            '-b', args.body.trim(),
+            ...body.argv,
             '-c', args.category.trim(),
             ...repoArgs,
           ];
 
-          const res = await executor.run(createCmd, { ...runOpts, rawText: true, timeoutMs: 60_000 });
+          const res = await executor.run(createCmd, { ...runOpts, rawText: true, timeoutMs: 60_000, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return {
             message: '讨论已成功发起',
@@ -157,15 +175,19 @@ export function createDiscussionTool(executor: GhExecutor) {
           if (!args.discussion_number || typeof args.discussion_number !== 'number') {
             throw new Error('edit 操作必须提供 discussion_number（讨论数字编号）');
           }
-          if (!args.title && !args.body) {
+          const body = resolveBodySource(
+            { inline: trimInline(args.body), file: args.body_file },
+            { cwd, flag: '-b' }
+          );
+          if (!args.title && body.chars === 0) {
             throw new Error('edit 操作至少需提供 title 或 body 中的一项进行修改');
           }
 
           const editCmd = ['discussion', 'edit', String(args.discussion_number), ...repoArgs];
           if (args.title) editCmd.push('-t', String(args.title).trim());
-          if (args.body) editCmd.push('-b', String(args.body).trim());
+          editCmd.push(...body.argv);
 
-          const res = await executor.run(editCmd, { ...runOpts, rawText: true, timeoutMs: 60_000 });
+          const res = await executor.run(editCmd, { ...runOpts, rawText: true, timeoutMs: 60_000, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return {
             message: `讨论 #${args.discussion_number} 已更新成功`,
@@ -177,17 +199,21 @@ export function createDiscussionTool(executor: GhExecutor) {
           if (!args.discussion_number || typeof args.discussion_number !== 'number') {
             throw new Error('comment 操作必须提供 discussion_number（讨论数字编号）');
           }
-          if (!args.body || typeof args.body !== 'string' || !args.body.trim()) {
-            throw new Error('comment 操作必须提供 body（评论正文）');
+          const body = resolveBodySource(
+            { inline: trimInline(args.body), file: args.body_file },
+            { cwd, flag: '-b' }
+          );
+          if (body.chars === 0) {
+            throw new Error('comment 操作必须提供 body 或 body_file（评论正文）');
           }
 
           const commentCmd = [
             'discussion', 'comment', String(args.discussion_number),
-            '-b', args.body.trim(),
+            ...body.argv,
             ...repoArgs,
           ];
 
-          const res = await executor.run(commentCmd, { ...runOpts, rawText: true, timeoutMs: 60_000 });
+          const res = await executor.run(commentCmd, { ...runOpts, rawText: true, timeoutMs: 60_000, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return {
             message: `已向讨论 #${args.discussion_number} 成功发表评论`,
