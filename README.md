@@ -132,6 +132,7 @@ summary（结论，≤1.5KB） + facts（结构化事实） + nextActions（可�
   * `update_branch`：🆕 将基准分支最新提交同步进 PR 分支——「分支落后需更新」CI 门禁失败的自愈动作；
   * `view_images`：🆕 下载 PR 讨论截图（正文+评论，支持 `image_urls` 精准提取与触顶续传清单）；
   * `attach_images`（参数）：🆕 上传本地图片/附件至 PR（单批上限 50 个本地文件，与 `view_images` 形成对称闭环，需 gh ≥ 2.99）。
+  * `body_file`（参数）：🆕 PR 正文/评论正文可直接来自本地 md 文件（`create` / `edit` / `comment` / `review` 均适用），与 `body` 二选一；相对路径按当前工作区解析，文件须为合法 UTF-8（GBK/ANSI 会明确报错），正文上限 65,536 字符——长正文不必读进上下文。
 
 ---
 
@@ -156,6 +157,7 @@ summary（结论，≤1.5KB） + facts（结构化事实） + nextActions（可�
   * `status`：🆕 检索指派给当前登录用户的待办议题全景面板；
   * `view_images`：🆕 下载 Issue 报障截图（正文+评论全量识别并转为本地图片块，Agent 直接"看"截图）；落地目录 `~/.dsh/data/dsh-github-flow/images/`（内容寻址去重），**超 15MB 时按 mtime 自动 LRU 淘汰至 10MB 低水位**，并保护当前批次已写入的文件；测试可用 `DSH_IMAGE_DIR` 重定向该目录；
   * `attach_images`（参数）：🆕 支持本地文件/截图直接作为附件随 Issue 发布（单批上限 50 个文件，需 gh ≥ 2.99）。
+  * `body_file`（参数）：🆕 Issue 正文/评论正文可直接来自本地 md 文件，与 `body` 二选一；相对路径按当前工作区解析，文件须为合法 UTF-8，正文上限 65,536 字符，长正文不必读进上下文。
 
 ---
 
@@ -211,6 +213,7 @@ summary（结论，≤1.5KB） + facts（结构化事实） + nextActions（可�
   * `list`：查看历史 Release 版本清单；
   * `view`：查看指定 Tag 的发布说明与附属构建资产清单；
   * `create`：创建新版本 Release（支持 `generate_notes` 自动从 commit 生成说明，支持 `draft` / `prerelease` / 预置资产上传）；
+  * `notes_file`（参数）：🆕 发版说明可直接来自本地 md 文件（替代 `notes`，映射 `--notes-file -`），与 `notes` 二选一；相对路径按当前工作区解析，文件须为合法 UTF-8（发版说明不套用正文的 65,536 字符上限，只有 4MB 文件字节护栏），长说明不必读进上下文；
   * `upload`：向已有 Release 追加上传本地资产（支持 `clobber: true` 覆盖上传，需 `confirm: true`）；
   * `download`：下载 Release 产物文件（支持 `pattern` glob 模式过滤）；
   * `delete`：删除 Release（支持 `cleanup_tag: true` 连同 Git Tag 一并清理，需 `confirm: true`）。

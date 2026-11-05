@@ -29,6 +29,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_help\` | 路由导航、官方语法速查与故障自愈 | 遇到不确定的操作、搜索语法或接口报错时查询用法与诊断配方 |
 
 💡 **使用准则**：优先调用高层语义工具（pr / issue / run / repo / release / secret）；当高层工具无法满足特殊接口需求时，再降级使用 \`github_api\`。
+📄 **长正文走文件，别塞进 body**：正文/发版说明/请求体/prompt 若已经写成本地 md 文件，直接用 \`body_file\` / \`notes_file\` / \`input_file\` / \`prompt_file\` 指向它，不要把全文内联——插件读文件、正文经 stdin 交给 gh，既不占模型上下文，也不会撞上 Windows 的命令行长度上限。
 📊 **规模口径**：19 个工具 / 106 个业务 action（不含 \`github_help\` 的 22 个查询主题与 \`github_api\` 的 4 个 HTTP method——它们不是业务动作）。
 💬 **人类指令**：聊天框支持 \`/gh status\`（大盘看板）、\`/gh upgrade\`（一键升级插件）、\`/gh help\`（快捷帮助）。
 🖥️ **可视化工作台**：最左侧 Octocat 图标打开全景驾驶舱（4 标签：本地工作区 / 我的仓库 / Pull Requests / 待办 Issues）；每个会话右侧栏有 5 个 Tab（Git / 未提交 / PR / Issues / Actions）。PR、Issue、Actions 三类卡片点击均可在线查看详情（Actions 为 job / step 树 + 按需失败日志），无需跳浏览器。
@@ -55,6 +56,8 @@ const KNOWLEDGE_BASE: Record<string, string> = {
   - 将基准分支最新提交同步进 PR 分支，解决「分支落后需更新」的 CI 门禁失败。
 - **上传本地附件/图片**: \`github_pr(action: 'create', title: 'UI 重构', body: '对比图如下', attach_images: ['./before.png', './after.png'])\`
   - 需 gh ≥ 2.99；支持 create/edit/comment 动作，单批上限 50 个文件，禁止网络 URL，与 view_images 对称闭环。
+- **长正文走本地文件**: \`github_pr(action: 'create', title: '重构方案', body_file: './PR_BODY.md')\`
+  - \`body_file\` 与 \`body\` 二选一，适用于 create/edit/comment/review 四个动作（review 的行级评注走 REST，正文同样可由文件提供）；相对路径按当前工作区解析，文件必须是合法 UTF-8（GBK/ANSI 会明确报错），正文上限 65,536 字符；插件读文件后经 \`--body-file -\` 走 stdin，正文不进模型上下文。
 - **追加评论与编辑**: \`github_pr(action: 'comment', pr_number: 123, body: 'LGTM'); github_pr(action: 'edit', pr_number: 123, body: '更新后的描述')\`
   - 两者同样支持 \`attach_images\` 附件通道。`,
 
@@ -69,6 +72,8 @@ const KNOWLEDGE_BASE: Record<string, string> = {
   - 触达目录上限时返回 \`remaining\` 结构化清单，直接作为下一批 image_urls 续传即可。
 - **上传本地附件/图片**: \`github_issue(action: 'comment', issue_number: 42, body: '复现证据', attach_images: ['./bug.png'])\`
   - 需 gh ≥ 2.99；支持 create/edit/comment 动作，单批上限 50 个本地文件（绝对路径或工作区相对路径，禁止网络 URL）。
+- **长正文走本地文件**: \`github_issue(action: 'create', title: '周报：本周修复清单', body_file: './report.md')\`
+  - \`body_file\` 与 \`body\` 二选一（同时给出会直接报错，不做静默优先级）；相对路径按当前工作区解析，文件必须是合法 UTF-8（GBK/ANSI 会明确报错），正文上限 65,536 字符；插件读文件后经 \`--body-file -\` 走 stdin，正文不进模型上下文。
 - **关联开发分支**: \`github_issue(action: 'develop', issue_number: 42, branch_name: 'fix-login-bug')\`
   - 自动在远端和本地创建带有官方关联关系的开发分支并切换过去，实现“读需求 -> 开分支写代码”的无缝衔接。
 - **编辑 Issue**: \`github_issue(action: 'edit', issue_number: 42, title: '新标题', add_labels: ['p1'], remove_labels: ['triage'])\`
@@ -132,6 +137,9 @@ const KNOWLEDGE_BASE: Record<string, string> = {
   - 附加 \`Accept: application/vnd.github.raw\`，返回纯文本而非 base64 包装。
 - **全量聚合翻页**:
   \`github_api(endpoint: 'repos/owner/repo/commits', paginate: true)\`
+- **长请求体走本地文件**:
+  \`github_api(endpoint: 'repos/owner/repo/issues', method: 'POST', input_file: './payload.json')\`
+  - 映射 \`--input -\`（插件读文件后经 stdin 交给 gh，省去把 JSON 塞进参数）；与 \`fields\` **不互斥**：两者同时给出时 \`fields\` 作为 URL 查询参数、文件内容作为请求体；请求体不是 GitHub 正文，不受 65,536 字符的正文口径约束。
 - **GraphQL 请求**:
   \`github_api(endpoint: 'graphql', fields: { query: 'query { viewer { login } }' })\``,
 
@@ -142,6 +150,8 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **创建 Release（自动生成说明）**:
   \`github_release(action: 'create', tag: 'v0.1.9', generate_notes: true, prerelease: false)\`
   - 若远端尚无该 Tag，gh 会自动从 target 分支（默认主分支）最新提交打 Tag。
+- **用本地 md 作为发版说明**: \`github_release(action: 'create', tag: 'v0.1.9', notes_file: './RELEASE_NOTES.md')\`
+  - \`notes_file\` 与 \`notes\` 二选一（映射 \`--notes-file -\`）；相对路径按当前工作区解析，文件必须是合法 UTF-8、不超过 4MB；**发版说明不套用正文的 65,536 字符口径**（GitHub 对 Release 说明的上限宽得多），长说明写进文件即可，不必先读进上下文再原样回填。
 - **上传构建资产**:
   \`github_release(action: 'upload', tag: 'v0.1.9', assets: ['./dsh-github-flow-0.1.9.tgz'])\`
   - 覆盖同名旧资产必须附加 \`clobber: true, confirm: true\`（旧资产删除后不可恢复）。
@@ -272,6 +282,8 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **检视讨论正文与回复楼层**: \`github_discussion(action: 'view', discussion_number: 123, comments: true)\`
 - **发起新讨论**: \`github_discussion(action: 'create', title: 'RFC: 架构演进方案', category: 'Ideas', body: '详细方案...')\`
   - \`title\`、\`category\` 与 \`body\` 均为必填项。
+- **长正文走本地文件**: \`github_discussion(action: 'create', title: 'RFC: 架构演进方案', category: 'Ideas', body_file: './rfc.md')\`
+  - \`body_file\` 与 \`body\` 二选一（\`title\` / \`category\` 仍必填，映射 \`--body-file -\`）；相对路径按当前工作区解析，文件必须是合法 UTF-8，正文上限 65,536 字符；RFC 动辄数千字，写进文件比塞进参数更省上下文。
 - **编辑讨论**: \`github_discussion(action: 'edit', discussion_number: 123, title: '新标题', body: '修正后的正文')\`
 - **发表讨论回复**: \`github_discussion(action: 'comment', discussion_number: 123, body: '赞同该方案！')\`
 - 💡 **提示**：若报错「discussions disabled」，说明目标仓库未在 GitHub 仓库「Settings -> General -> Features」中启用 Discussions 社区功能。`,
@@ -309,7 +321,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **审一个 PR**: \`github_task(action: 'review_pr', pr_number: 123)\`
   - 一次拿齐：PR 元数据 + head SHA + 变动文件 diff（按 \`budget_chars\` 裁剪）+ CI 结论 + 仓库 \`AGENTS.md\` 审查规则 + 既有行级评论数。
   - \`focus: 'security' | 'correctness' | 'perf' | 'style'\` 只影响 summary 的提示语，不改变取数。
-  - **写回**（默认关闭）: \`github_task(action: 'review_pr', pr_number: 123, write: true, confirm: true, body: '…', comments: [{path, line, body}])\`，字段语义与 \`github_pr(action: 'review')\` 完全一致。
+  - **写回**（默认关闭）: \`github_task(action: 'review_pr', pr_number: 123, write: true, confirm: true, body: '…', comments: [{path, line, body}])\`，字段语义与 \`github_pr(action: 'review')\` 完全一致；整体审阅说明若已写成本地 md，改用 \`body_file\`（与 \`body\` 二选一，写回走 REST 请求体）。
 - **诊断一次 CI 失败**: \`github_task(action: 'diagnose_ci', run_id: 456)\` 或 \`github_task(action: 'diagnose_ci', pr_number: 123)\`
   - 定位失败 job/step → 萃取失败日志锚点（pytest / node / Go / tsc / npm）→ 汇总疑似相关文件。
   - 日志被截断时 \`truncated.totalUnknown = true\`：**不要据此判断「就这些失败」**。
@@ -472,6 +484,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - 人类侧在线查看（PR / Issue / Actions Run 详情弹窗）由插件 HTTP 路由提供（\`/api/github/pr-detail\`、\`/api/github/issue-detail\`、\`/api/github/run-detail\`、\`/api/github/run-logs\`），**不是工具 action**；Agent 侧对应能力分别是 \`github_pr(action:'view')\`、\`github_issue(action:'view')\`、\`github_run(action:'view')\`
 - 图片查看：\`github_issue\`/\`github_pr\` 的 \`view_images\`、\`github_repo\` 的 \`readme\` + image_urls（插件独有能力，gh 无对应命令）
 - 附件上传：\`github_issue\`/\`github_pr\` 的 \`attach_images\` 映射 gh ≥2.99 原生可重复 \`--attach\` flag（支持 create/edit/comment）
+- 本地文件正文：\`gh issue create -F report.md\` 的等价写法是 \`github_issue(action:'create', body_file:'report.md')\`——「本地 md → Issue/PR/讨论/发版说明/请求体/任务 prompt」这条通道已由插件覆盖，文件由插件读取、正文经 stdin 交给 gh，**不经过模型上下文**；对应参数分别是 \`body_file\`（issue / pr / discussion / task）、\`notes_file\`（release）、\`input_file\`（api）、\`prompt_file\`（agent_task），相对路径按当前工作区解析
 
 #### 三、未覆盖域引导（经 github_api 调用）
 

@@ -130,6 +130,13 @@
 - **低版本安全提示而非硬拒绝**：gh <2.102 时下载仍可执行，但返回值携带 `securityNote` 升级指引；需要自定义落盘位置的场景显式引导经 `github_api` 手动拉取；
 - **下载后零本地符号化操作**：插件对落盘产物仅做递归枚举（相对路径 + 大小清单），不执行链接、移动或执行类操作。
 
+### 2.3.3 本地文件入参 (Local File Inputs)
+- **与 §2.3.2 方向相反，但不放松那条防线**：§2.3.2 管的是**产出写盘**——落盘路径由插件派生、绝不接受调用方给的路径（GHSA-39wj-f2f4-978v 防线）；本节管的是**输入读盘**——路径由调用方显式给出，插件只读。两条控制流不共享任何代码路径：读进来的字节只进正文，不落盘、不回写、不参与任何目录派生，因此不会把「路径参数」重新引进下载/写盘通道；
+- **统一入口与统一校验**：`src/tools/body-input.ts` 的 `resolveBodySource` 是唯一实现（纯函数、零 gh 依赖），issue / pr / discussion / release / task / api / agent-task 只传各自的 flag 与字段名，杜绝「某条通道忘了校验」。相对路径按当前工作区解析、绝对路径原样使用；文件必须存在且是普通文件、不超过 4MB、严格 UTF-8 解码（GBK/ANSI 存的中文 md 直接报错而不是产出乱码）、含 NUL 字节视为二进制拒绝、BOM 剥除；
+- **长度口径分层**：GitHub 正文（Issue / PR / 评论 / 讨论）统一 65,536 字符上限，超限显式拒绝并提示拆分；**发版说明（`notes_file`）与 `github_api` 的 `input_file` 不套用这条口径**——前者在 GitHub 侧的上限宽得多，后者是请求体不是正文，两者都只保留 4MB 字节护栏，真正超限交由 GitHub 报错（错误信息带字段名，可定位）；
+- **二选一而非优先级**：`body` 与 `body_file`（`notes` 与 `notes_file`、`prompt` 与 `prompt_file`）同时出现即报错，不做静默覆盖——模型拿到一次明确失败，远好过「不知道哪一份真正生效」；空文件等同于没有正文。内联旧路径的 argv 与引入本能力前**逐字节一致**，新通道只在真的传了 `*_file` 时才改变 argv；
+- **为什么不让 gh 自己读文件**：`gh pr review` 没有行级参数，行级评注的唯一通道是 `POST /pulls/{n}/reviews`（REST），那条链路根本没有 `--body-file` 一类 flag，只能插件侧读文件后写进 JSON 请求体。若 CLI 走 `--body-file -`、REST 各写一份，必然漂移成「带 comments 时 body_file 静默失效」；因此统一为**插件读一次** → CLI 通道 `[fileFlag, '-']` + stdin、REST/GraphQL 通道直接用文本。
+
 ---
 
 ## 3. 工程解耦与单文件瘦身规范 (Modularization Specs)
@@ -141,7 +148,8 @@
 - [src/executor/git-parser.ts](../src/executor/git-parser.ts)：纯文本解析器（`status -sb`、`log`、`branch -a`），无 I/O、无副作用；
 - [src/executor/version-utils.ts](../src/executor/version-utils.ts)：语义化版本数值分段比对纯算法；
 - [src/executor/process-utils.ts](../src/executor/process-utils.ts)：`spawnWithStdin` 进程管道流控与 UTF-8 字符边界截断算法；
-- [src/executor/platform-guide.ts](../src/executor/platform-guide.ts)：跨平台 CLI 安装引导与升级命令文本生成。
+- [src/executor/platform-guide.ts](../src/executor/platform-guide.ts)：跨平台 CLI 安装引导与升级命令文本生成；
+- [src/tools/body-input.ts](../src/tools/body-input.ts)：正文入参解析纯函数（工具层共享，非执行引擎模块）——`resolveBodySource` 与 `GITHUB_BODY_MAX_CHARS` / `BODY_FILE_MAX_BYTES`，供 issue / pr / discussion / release / task / api / agent-task 复用，零 gh 依赖、无副作用，纪律见 §2.3.3。
 
 ### 3.2 渲染层领域化细分 (`src/renderers/`)
 - [src/renderers/markdown.ts](../src/renderers/markdown.ts)：门面出口，统一聚合 Re-export 全部领域子模块；
@@ -201,7 +209,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **47 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
+项目配备了 **48 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
 - 阶段数与 `test/run-all.mjs` 的 `phases` 数组由 `test/phase35-doc.test.mjs` 对账，改一处漏一处会直接红；
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
@@ -249,3 +257,4 @@
 - `phase46`：**任务级原语契约测试**（s8：`classifyCommits` 的 `feat!:` 必须归 breaking（否则版本少跳一级）；`suggestVersion` 的 auto 推导（breaking→major / feat→minor / 其余→patch）与无 tag 时从 0.1.0 起步；`selectFilesByBudget` 超预算只给元信息不硬塞；`finalizeEnvelope` 的 `cost.chars` 由信封体积计算而非手写；`github_task` 三个原语的端到端行为（review_pr 读模式零写回、写模式必须 confirm 且 commit_id 钉在 head SHA、diagnose_ci 只挑失败 job 并在日志截断时 `totalUnknown=true`、prepare_release **绝不自动发版**）；档位层面 core=3 个工具、只读模式剪掉 review_pr 保留另两个原语）。
 - `phase47`：**Actions Run 在线详情契约测试**（`getRunDetail` 的 `run_id` 只认纯数字——它是 `gh run view` 的位置参数，`--force`/`--web` 必须在触达子进程前拒绝且 argv 零产出；repo 白名单额外拒 `-` 开头与 `..`；`--json` 字段集含 `jobs` 且预算 2MB/8MB；缺 `steps` 归一化为空数组、`failedJobs`/`failedSteps` 只在服务端算一次；`truncated` 或解析缺失显式失败并给浏览器直达；`Unknown JSON field` 走 BASE 字段集重试且只重试一次；`getRunLogExcerpts` 用 `-j <jobId> --log-failed` **定向**拉取、最多 3 个 job、绝不使用 `--log` 整包、单 job 失败进 `errors[]` 而整体仍 `ok:true`；`run-log.ts` 的纯文本摘要（锚点块 / 尾部 200 行回退 / 两道截断声明 / 不产生 Markdown 围栏）；`/api/github/run-detail` 与 `/api/github/run-logs` 的 200/400/405/500 与 `job_id` 逗号/重复参数两种写法；前端 `onSelectRun` 追加在形参末尾、Actions 卡片标题行拆分 + 外跳 `stopPropagation` + 禁内联 `display:flex`；弹窗 Hook 先于 early return、日志必须走 `<pre>` 且不接 markdown-lite；bundle 内联顺序 `issue-modal → run-modal` 与 20 个子模块计数）。
 - `phase41`：**侧栏入口图标契约测试**（issue #9 回归网：宿主 `renderSlot("sidebar.panellist", { size: wide ? 16 : 18, active })` 注入的 `size` 必须被透传——从 `lib/client.js` 抽出 `GithubSidebarIcon` 函数体、在沙箱里真调，断言 16/18 两档尺寸、根节点必须是裸 `svg`（有 wrapper 就会把图标格撑宽、标签右移 12px）、`fill` 用 `currentColor` 继承行颜色、缺省/非数字 `size` 兜底 16、`active` 不改变输出结构）。
+- `phase48`：**本地文件入参契约测试**（`resolveBodySource` 的语义表逐行对账：文件来源走 `[fileFlag, '-']` + stdin、内联来源的 argv 与改造前**逐字节一致**、`body` 与 `body_file` 同时给出直接报错而不是静默选一个、空文件等同无正文；相对路径按工作区解析、严格 UTF-8 拒绝 GBK/ANSI 与 NUL 二进制、BOM 剥除、4MB 字节与 65,536 字符双上限（`input_file` 与 `notes_file` 关闭字符校验）；七个工具的 flag 接线——`--body-file -` / `--notes-file -` / `--input -` / `--from-file -`，`review` 写回走 REST 请求体而非 flag）。

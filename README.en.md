@@ -132,6 +132,7 @@ summary (≤1.5KB) + facts (structured) + nextActions (concrete next steps) + co
   * `update_branch`: 🆕 Sync the latest base-branch commits into the PR branch — the self-healing action for "branch is out-of-date" CI gate failures;
   * `view_images`: 🆕 Download PR discussion screenshots (body + comments; `image_urls` targeting with budget-overflow resume list);
   * `attach_images` (param): 🆕 Upload local images/attachments to PRs (up to 50 files/batch, symmetric with view_images, requires gh ≥ 2.99).
+  * `body_file` (param): 🆕 PR and comment bodies can come straight from a local markdown file (`create` / `edit` / `comment` / `review`), mutually exclusive with `body`; relative paths resolve against the current workspace, the file must be valid UTF-8 (GBK/ANSI fails loudly), and bodies are capped at 65,536 characters — long bodies never enter the model context.
 
 ---
 
@@ -156,6 +157,7 @@ summary (≤1.5KB) + facts (structured) + nextActions (concrete next steps) + co
   * `status`: 🆕 Retrieve a comprehensive dashboard of issues assigned to the active user;
   * `view_images`: 🆕 Download screenshot attachments from issue descriptions and comments into local image blocks;
   * `attach_images` (param): 🆕 Upload local file screenshots alongside issues (up to 50 local files/batch, requires gh ≥ 2.99).
+  * `body_file` (param): 🆕 Issue and comment bodies can come straight from a local markdown file, mutually exclusive with `body`; relative paths resolve against the current workspace, the file must be valid UTF-8, and bodies are capped at 65,536 characters.
 
 ---
 
@@ -211,6 +213,7 @@ summary (≤1.5KB) + facts (structured) + nextActions (concrete next steps) + co
   * `list`: Query release history;
   * `view`: Inspect notes and asset manifests for a given tag;
   * `create`: Publish releases (supports `generate_notes`, drafts, prereleases, and asset attachments);
+  * `notes_file` (param): 🆕 Release notes can come straight from a local markdown file (replaces `notes`, maps to `--notes-file -`), mutually exclusive with `notes`; relative paths resolve against the current workspace, the file must be valid UTF-8 (release notes do not use the 65,536-character body cap — only the 4MB file-size guard applies);
   * `upload`: Attach build assets to an existing release (`clobber: true` requires `confirm: true`);
   * `download`: Download release artifacts with glob pattern filters;
   * `delete`: Delete releases (`cleanup_tag: true` deletes associated Git tag; requires `confirm: true`).
