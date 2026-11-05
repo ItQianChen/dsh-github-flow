@@ -1,5 +1,6 @@
 import type { GhExecutor } from '../executor.js';
 import { wrapWithGate } from '../destructive.js';
+import { resolveBodySource, type BodySource } from './body-input.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -25,7 +26,7 @@ export function createApiTool(executor: GhExecutor) {
         method: {
           type: 'string',
           enum: ['GET', 'POST', 'PATCH', 'DELETE'],
-          description: 'HTTP 方法，默认为 GET（GraphQL 端点默认 POST）。',
+          description: 'HTTP 方法，默认为 GET（GraphQL 端点或提供 input_file 时默认 POST）。',
         },
         jq: {
           type: 'string',
@@ -33,7 +34,11 @@ export function createApiTool(executor: GhExecutor) {
         },
         fields: {
           type: 'object',
-          description: '请求参数或请求体键值对。所有值按字面字符串（gh -f）发送，不做布尔/数字类型转换；嵌套对象请先在端点里用 JSON 字段或改用 raw 模式。',
+          description: '请求参数或请求体键值对。所有值按字面字符串（gh -f）发送，不做布尔/数字类型转换；嵌套结构无法作为表单参数，请把完整请求体写入本地文件后用 input_file 传入。',
+        },
+        input_file: {
+          type: 'string',
+          description: '请求体来源：本地文件路径（相对路径按当前工作区解析）。映射 gh api --input，文件内容原样作为请求体（GraphQL 需写 {"query":...} 形式的 JSON）；与 fields 并用时 gh 会把 fields 追加为查询参数。',
         },
         raw: {
           type: 'boolean',
@@ -76,11 +81,32 @@ export function createApiTool(executor: GhExecutor) {
       }
       const cmd = ['api', endpoint];
 
+      /*
+       * 请求体可来自本地文件（`--input -` + stdin）。
+       *
+       * 只接文件、不接内联：`fields` 就是内联通道，二者按契约可共存（gh 把 fields 追加为
+       * 查询参数），所以这里不传 inline——传了会被 helper 判成互斥而误拒合法调用。
+       * `maxChars: 0`：`--input` 的请求体是 JSON/GraphQL，不受 GitHub「正文 65536 字符」
+       * 口径约束，套用正文上限会把合法的大 mutation 拦死。
+       */
+      const inputFileGiven = typeof args.input_file === 'string' && args.input_file.trim().length > 0;
+      const body = resolveBodySource(
+        { file: args.input_file },
+        { cwd, flag: '--input', fileFlag: '--input', inlineField: 'fields', fileField: 'input_file', maxChars: 0 }
+      );
+      // 空文件若静默放过，发出去的是一个没有请求体的请求——服务端报的错与真实原因无关，极难排查
+      if (inputFileGiven && body.chars === 0) {
+        throw new Error(`input_file 内容为空：指向的文件没有任何内容（"${args.input_file}"）。请写入完整请求体后重试，或改用 fields。`);
+      }
+      // 请求体来自文件时经 stdin 注入（`--input -`）：绕开 Windows 约 32K 的命令行上限
+      const stdinPatch = (b: BodySource) => (b.stdin === undefined ? {} : { stdin: b.stdin });
+
       // gh api 默认在提供 -f/-F 时会自动将 HTTP 方法隐式切换为 POST。
       // 若调用方未指定 method，且 endpoint 不是以 graphql 开头，则按契约默认为 GET。
       // 必须显式传入 -X，防止带有 fields 参数的 GET 请求被 gh 自动改写为 POST 导致 422 报错。
       const isGraphql = endpoint.toLowerCase().startsWith('graphql');
-      const method = args.method || (isGraphql ? 'POST' : 'GET');
+      // 带了 `--input` 却不给 -X 时，gh 仍按 GET 发出，请求体会被服务端静默丢弃——有正文即 POST
+      const method = args.method || (isGraphql || body.chars > 0 ? 'POST' : 'GET');
       cmd.push('-X', method);
       if (args.jq) {
         cmd.push('--jq', args.jq);
@@ -99,9 +125,9 @@ export function createApiTool(executor: GhExecutor) {
           if (v === undefined || v === null) continue;
           if (typeof v === 'object') {
             // 不把嵌套结构 JSON.stringify 后塞进 -F：gh 侧解析结果不可预期，且会静默产出错误请求体。
-            // 宁可显式报错，让调用方改用 raw 模式或把结构放进端点自身的 JSON 字段。
+            // 宁可显式报错，让调用方改用 input_file 传完整请求体，或把结构序列化后作为字符串字段。
             throw new Error(
-              `github_api 的字段 "${k}" 是嵌套结构，无法作为表单参数发送。请改用 raw 模式传原始 JSON 请求体，或先把该结构序列化后作为字符串字段传入。`
+              `github_api 的字段 "${k}" 是嵌套结构，无法作为表单参数发送。请把完整请求体写入本地 JSON 文件后用 input_file 传入（映射 gh api --input），或先把该结构序列化后作为字符串字段传入。`
             );
           }
           // 用 -f（字面字符串）而非 -F：-F 会做 "true"→布尔、"1"→数字的类型转换，
@@ -109,8 +135,10 @@ export function createApiTool(executor: GhExecutor) {
           cmd.push('-f', `${k}=${String(v)}`);
         }
       }
+      // 与 fields 并用时 gh 会把 fields 追加为查询参数，两者不互斥
+      cmd.push(...body.argv);
 
-      const res = await executor.run(cmd, { cwd, sessionId, rawText: args.raw === true });
+      const res = await executor.run(cmd, { cwd, sessionId, rawText: args.raw === true, ...stdinPatch(body) });
       if (!res.ok) throw new Error(res.error);
       return normalizeOutput(res.data !== undefined ? res.data : res.rawOutput);
     },
