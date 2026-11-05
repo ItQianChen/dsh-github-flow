@@ -79,6 +79,17 @@ export function CommitDetailModal(props: {
     return function () { window.removeEventListener("keydown", onKeyDown); };
   }, [props.onClose, selectedFile]);
 
+  /**
+   * 换提交时清空上一份补丁与选中文件。
+   * 当前调用方在关闭时卸载组件（状态自然复位），但组件一旦被复用（不 key、不卸载），
+   * 残留的 patch 会把 A 提交的差异套到 B 提交的文件路径上——这类错配极难排查，先兜住。
+   */
+  React.useEffect(function () {
+    setPatchState(null);
+    setPatchError(null);
+    setSelectedFile(null);
+  }, [c.sha]);
+
   React.useEffect(function () {
     setFetchedDetail(null);
     if (c.body || c.stat) return;
@@ -102,6 +113,14 @@ export function CommitDetailModal(props: {
   var parsedStat = React.useMemo(() => {
     return effectiveStat && typeof parseGitStatText === "function" ? parseGitStatText(effectiveStat) : null;
   }, [effectiveStat]);
+
+  /**
+   * 切段结果必须缓存：大提交的整包 patch 可达 400k 字符，而本组件在弹窗生命周期里
+   * 会因 selectedFile / patchError 等状态多次重渲染——每次重渲染都重新切一遍是纯浪费。
+   */
+  var patchSections = React.useMemo(function () {
+    return patchState ? splitUnifiedPatch(patchState.patch) : [];
+  }, [patchState]);
 
   return h(
     "div",
@@ -409,9 +428,7 @@ export function CommitDetailModal(props: {
           file: selectedFile,
           cwd: props.cwd,
           // 传字符串而不是 null：null 会被组件当成「未提供正文 → 自己去拉未提交 diff」
-          diffText: patchState
-            ? (findPatchSection(splitUnifiedPatch(patchState.patch), normalizeRenamePath(selectedFile.path)) || { text: "" }).text
-            : "",
+          diffText: (findPatchSection(patchSections, normalizeRenamePath(selectedFile.path)) || { text: "" }).text,
           subtitle: String(c.fullSha || c.sha || "").slice(0, 7),
           loading: patchLoading,
           error: patchError,

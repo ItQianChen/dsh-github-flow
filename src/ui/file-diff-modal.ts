@@ -124,15 +124,19 @@ export function FileDiffModal(props: {
 
   var renderLines = function () {
     var lines = diffText.split("\n");
+    /**
+     * hunk 状态位：`--- ` / `+++ ` 既是文件头，也可能是正文（Markdown 的 `---` 分隔线
+     * 被删时补丁行是 `----`）。只按行首前缀判断会把正文染成灰色小字，且与真实增删不符。
+     * git 保证文件头只出现在第一个 `@@` 之前，据此切分才可靠。
+     */
+    var inHunk = false;
     return lines.map(function (line: string, idx: number) {
-      var isAdd = line.charAt(0) === "+" && line.indexOf("+++") !== 0;
-      var isDel = line.charAt(0) === "-" && line.indexOf("---") !== 0;
+      if (line.indexOf("diff --git") === 0) inHunk = false;
       var isHunk = line.indexOf("@@") === 0;
-      var isHeader = line.indexOf("diff --git") === 0 || line.indexOf("index ") === 0
-        || line.indexOf("---") === 0 || line.indexOf("+++") === 0
-        || line.indexOf("new file mode") === 0 || line.indexOf("deleted file mode") === 0
-        || line.indexOf("similarity index") === 0 || line.indexOf("rename from") === 0
-        || line.indexOf("rename to") === 0 || line.indexOf("Binary files") === 0;
+      if (isHunk) inHunk = true;
+      var isAdd = inHunk && !isHunk && line.charAt(0) === "+";
+      var isDel = inHunk && !isHunk && line.charAt(0) === "-";
+      var isHeader = !inHunk && !isHunk;
 
       var lineStyle: any = { display: "flex", padding: "0 8px", whiteSpace: "pre", minWidth: "100%", boxSizing: "border-box" };
       if (isAdd) {
