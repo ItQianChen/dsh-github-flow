@@ -318,6 +318,20 @@ export function registerActionRoutes(
               sendJson(res, 200, { ok: r.ok, data: r, error: r.error });
               break;
             }
+            case 'commit_diff':
+            case 'get_commit_diff': {
+              // 与 get_file_diff 同构：只读查询走 POST 是为了让 Agent/脚本复用同一个
+              // action 通道，外层形状保持一致（ok/data/error），调用方不必区分两套契约
+              const commitSha = typeof payload.sha === 'string' ? payload.sha.trim() : '';
+              if (!commitSha) {
+                sendJson(res, 400, { ok: false, error: '缺少必需的 sha 参数' });
+                return;
+              }
+              const resolvedCwd = executor.resolveWorkspaceCwd(cwd);
+              const r = await executor.getCommitDiff(resolvedCwd, commitSha);
+              sendJson(res, 200, { ok: r.ok, data: r, error: r.error });
+              break;
+            }
             case 'uncommitted_files':
             case 'get_uncommitted_files': {
               const limit = Math.min(Math.max(1, Number(payload.limit) || 15), 100);
@@ -670,7 +684,45 @@ export function registerActionRoutes(
     },
   });
 
-  // 10. 本地未提交文件列表轻量流式分页查询（供右侧栏滑动加载调用）
+  // 10. 单次提交的完整补丁（提交详情弹窗点某个文件后，前端按 `diff --git` 切段预览）
+  // 与 file-diff 的分工：那条读「工作区未提交改动」，这条读「历史某次提交」，
+  // 两者都只读、都走同一套 cwd 解析 + hasGitDir 前置门禁。
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/commit-diff',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, message: '仅支持 GET 请求' });
+        return;
+      }
+      try {
+        const url = new URL(req.url || '', 'http://127.0.0.1');
+        const cwd = url.searchParams.get('cwd') || undefined;
+        const sha = url.searchParams.get('sha');
+        if (!sha || !sha.trim()) {
+          sendJson(res, 400, { ok: false, error: '缺少必需的 sha 参数' });
+          return;
+        }
+
+        const resolvedCwd = executor.resolveWorkspaceCwd(cwd);
+        if (!hasGitDir(resolvedCwd)) {
+          sendJson(res, 400, { ok: false, error: '当前工作区不是 Git 仓库' });
+          return;
+        }
+
+        const diffResult = await executor.getCommitDiff(resolvedCwd, sha.trim());
+        if (!diffResult.ok) {
+          sendJson(res, 400, { ok: false, error: diffResult.error || '获取提交补丁失败' });
+          return;
+        }
+        sendJson(res, 200, { ok: true, data: diffResult });
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, error: err?.message || '获取提交补丁失败' });
+      }
+    },
+  });
+
+  // 11. 本地未提交文件列表轻量流式分页查询（供右侧栏滑动加载调用）
   bindRoute({
     kind: 'exact',
     path: '/api/github/uncommitted-files',

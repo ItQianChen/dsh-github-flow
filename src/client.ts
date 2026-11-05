@@ -40,6 +40,7 @@ import { NetworkAlertBanner, RepoNoticeBar } from './ui/network-banner.js';
 import { resolveRepoBadges } from './ui/repo-badges.js';
 import { SyncStatusBadge } from './ui/sync-status-badge.js';
 import { CommitDetailModal } from './ui/commit-modal.js';
+import { FileDiffModal } from './ui/file-diff-modal.js';
 import { PrDetailModal } from './ui/pr-modal.js';
 import { IssueDetailModal } from './ui/issue-modal.js';
 import { RunDetailModal } from './ui/run-modal.js';
@@ -126,307 +127,6 @@ window.__ModuleLoader__.load({
       });
     }
 
-    /**
-     * 未提交文件原生二级 Git Diff 下钻视图组件（右侧栏内就地渲染，零模态遮罩）
-     */
-    function UncommittedDiffView(props: {
-      file: { status: string; path: string };
-      onBack: () => void;
-      cwd?: string | null;
-      onOpenInDsh?: (filePath: string) => void;
-    }) {
-      var f = props.file;
-      var h = React.createElement;
-      var [diffData, setDiffData] = React.useState(null as any);
-      var [loading, setLoading] = React.useState(true);
-      var [error, setError] = React.useState(null as string | null);
-      var [copied, setCopied] = React.useState(false);
-
-      React.useEffect(function () {
-        var onKeyDown = function (e: any) {
-          if (e.key === "Escape" || e.keyCode === 27) {
-            props.onBack();
-          }
-        };
-        window.addEventListener("keydown", onKeyDown);
-        return function () { window.removeEventListener("keydown", onKeyDown); };
-      }, [props.onBack]);
-
-      React.useEffect(function () {
-        setLoading(true);
-        setError(null);
-        setDiffData(null);
-
-        var fetchDiff = async function () {
-          var primaryUrl = "/api/github/file-diff?file=" + encodeURIComponent(f.path) + (props.cwd ? "&cwd=" + encodeURIComponent(props.cwd) : "");
-
-          var tryParseResponse = async function (res: any) {
-            var text = await res.text().catch(function () { return ""; });
-            var json: any = null;
-            if (text && (text.trim().startsWith("{") || text.trim().startsWith("["))) {
-              try { json = JSON.parse(text); } catch (e) {}
-            }
-            return { ok: res.ok, status: res.status, text: text, json: json };
-          };
-
-          try {
-            var r1 = await fetch(primaryUrl);
-            var p1 = await tryParseResponse(r1);
-
-            if (p1.ok && p1.json && p1.json.ok && p1.json.data) {
-              setDiffData(p1.json.data);
-              setLoading(false);
-              return;
-            }
-
-            // 若主路由遇到 404 (后端常驻进程未重启)，自动降级请求常驻的 /api/github/action 端点
-            if (p1.status === 404) {
-              var r2 = await fetch("/api/github/action", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  action: "get_file_diff",
-                  file: f.path,
-                  cwd: props.cwd || undefined,
-                }),
-              }).catch(function () { return null; });
-
-              if (r2) {
-                var p2 = await tryParseResponse(r2);
-                if (p2.ok && p2.json && p2.json.data) {
-                  setDiffData(p2.json.data);
-                  setLoading(false);
-                  return;
-                }
-              }
-
-              setLoading(false);
-              setError("后端对比接口未激活 (404)。请重启 DSH 桌面主程序以载入最新对比引擎；您也可点击上方「在 DSH 中打开」直接预览文件源码。");
-              return;
-            }
-
-            setLoading(false);
-            setError(p1.json?.error || p1.text || ("查询差异失败 (HTTP " + p1.status + ")"));
-          } catch (err: any) {
-            setLoading(false);
-            setError(err?.message || "网络请求异常");
-          }
-        };
-
-        fetchDiff();
-      }, [f.path, props.cwd]);
-
-      var copyDiff = function () {
-        if (!diffData?.diff) return;
-        if (navigator?.clipboard?.writeText) {
-          navigator.clipboard.writeText(diffData.diff).then(function () {
-            setCopied(true);
-            setTimeout(function () { setCopied(false); }, 2000);
-          }).catch(function () {});
-        }
-      };
-
-      var statusColor = f.status === "??" ? "var(--dsw-alias-state-success-primary, #1a7f37)"
-        : f.status.indexOf("D") >= 0 ? "var(--dsw-alias-state-error-primary, #cf222e)"
-        : "var(--dsw-alias-state-attention-primary, #9a6700)";
-
-      var statusText = f.status === "??" ? "未跟踪新增"
-        : f.status.indexOf("D") >= 0 ? "已删除"
-        : f.status.indexOf("R") >= 0 ? "已重命名"
-        : "已修改";
-
-      return h(
-        "div",
-        {
-          className: "dsh-github-inline-diff-view",
-          style: {
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-            minHeight: "260px",
-            padding: "4px 0",
-          },
-        },
-        // 顶部操作与状态栏
-        h(
-          "div",
-          {
-            style: {
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: "6px",
-              paddingBottom: "8px",
-              borderBottom: "1px solid var(--dsw-alias-border-subtle, rgba(0,0,0,0.1))",
-            },
-          },
-          h(
-            "div",
-            { style: { display: "flex", alignItems: "center", gap: "6px" } },
-            h(
-              "button",
-              {
-                className: "dsh-github-btn-sm",
-                style: { padding: "3px 8px", cursor: "pointer", fontWeight: 600, fontSize: "11px" },
-                onClick: props.onBack,
-                title: "返回未提交文件清单 (Esc)",
-              },
-              "← 返回列表"
-            ),
-            h(
-              "span",
-              {
-                className: "dsh-github-badge",
-                style: {
-                  backgroundColor: statusColor + "22",
-                  color: statusColor,
-                  fontWeight: 600,
-                  fontSize: "11px",
-                },
-              },
-              `${f.status} ${statusText}`
-            ),
-            diffData && diffData.additions !== undefined
-              ? h(
-                  "div",
-                  { style: { display: "flex", gap: "4px", fontSize: "11px", fontFamily: "monospace" } },
-                  h("span", { style: { color: "var(--dsw-alias-state-success-primary, #1a7f37)", fontWeight: 600 } }, `+${diffData.additions}`),
-                  h("span", { style: { color: "var(--dsw-alias-state-error-primary, #cf222e)", fontWeight: 600 } }, `-${diffData.deletions}`)
-                )
-              : null
-          ),
-          h(
-            "div",
-            { style: { display: "flex", alignItems: "center", gap: "6px" } },
-            diffData?.diff
-              ? h(
-                  "button",
-                  {
-                    className: "dsh-github-btn-sm",
-                    style: { padding: "3px 8px", fontSize: "11px", cursor: "pointer" },
-                    onClick: copyDiff,
-                    title: "复制 Unified Diff 原文",
-                  },
-                  copied ? "✓ 已复制" : "📋 复制 Diff"
-                )
-              : null,
-            props.onOpenInDsh
-              ? h(
-                  "button",
-                  {
-                    className: "dsh-github-btn-sm",
-                    style: { padding: "3px 8px", fontSize: "11px", cursor: "pointer" },
-                    onClick: function () {
-                      if (props.onOpenInDsh) props.onOpenInDsh(f.path);
-                    },
-                    title: "在 DSH 侧边栏打开查看该文件完整源码",
-                  },
-                  "📄 在 DSH 中打开"
-                )
-              : null
-          )
-        ),
-        // 文件路径栏
-        h(
-          "div",
-          {
-            style: {
-              fontSize: "11px",
-              fontFamily: "monospace",
-              color: "var(--dsw-alias-label-secondary, #656d76)",
-              wordBreak: "break-all",
-              padding: "3px 6px",
-              backgroundColor: "var(--dsw-alias-bg-subtle, rgba(0,0,0,0.03))",
-              borderRadius: "4px",
-            },
-            title: f.path,
-          },
-          f.path
-        ),
-        // Diff 主体内容
-        loading
-          ? h(
-              "div",
-              { style: { padding: "32px 0", textAlign: "center", opacity: 0.65, fontSize: "12px" } },
-              "⏳ 正在计算 Git 代码比对差异..."
-            )
-          : error
-          ? h(
-              "div",
-              {
-                style: {
-                  padding: "16px",
-                  color: "var(--dsw-alias-label-primary, #1f2328)",
-                  fontSize: "12px",
-                  lineHeight: "1.6",
-                  backgroundColor: "var(--dsw-alias-bg-subtle, rgba(0,0,0,0.03))",
-                  borderRadius: "6px",
-                },
-              },
-              h("div", { style: { color: "var(--dsw-alias-state-error-primary, #cf222e)", fontWeight: 600, marginBottom: "6px" } }, `⚠️ ${error}`),
-              h("div", { style: { fontSize: "11px", opacity: 0.75 } }, "💡 提示：重启 DSH 桌面主程序即可激活本地比对路由；在此期间您也可点击上方「📄 在 DSH 中打开」直接预览文件源码。")
-            )
-          : diffData?.isBinary
-          ? h(
-              "div",
-              { style: { padding: "32px 0", textAlign: "center", opacity: 0.8, fontSize: "12px" } },
-              "📦 该文件为二进制格式（图片或编译产物），无法直接展示文本差异。"
-            )
-          : h(
-              "div",
-              {
-                className: "dsh-github-inline-diff-content",
-                style: {
-                  margin: 0,
-                  padding: "4px 0",
-                  fontFamily: "ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace",
-                  fontSize: "11px",
-                  lineHeight: "1.5",
-                  overflowX: "auto",
-                  maxHeight: "68vh",
-                  borderRadius: "6px",
-                  border: "1px solid var(--dsw-alias-border-subtle, rgba(0,0,0,0.08))",
-                  backgroundColor: "var(--dsw-alias-bg-canvas, #ffffff)",
-                },
-              },
-              (diffData?.diff || "").split("\n").map(function (line: string, idx: number) {
-                var isAdd = line.startsWith("+") && !line.startsWith("+++");
-                var isDel = line.startsWith("-") && !line.startsWith("---");
-                var isHunk = line.startsWith("@@");
-                var isHeader = line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++");
-
-                var lineStyle: any = {
-                  display: "flex",
-                  padding: "0 8px",
-                  whiteSpace: "pre",
-                  minWidth: "100%",
-                  boxSizing: "border-box",
-                };
-
-                if (isAdd) {
-                  lineStyle.backgroundColor = "var(--dsw-alias-state-success-subtle, rgba(46,160,67,0.15))";
-                  lineStyle.color = "var(--dsw-alias-state-success-primary, #1a7f37)";
-                } else if (isDel) {
-                  lineStyle.backgroundColor = "var(--dsw-alias-state-error-subtle, rgba(248,81,73,0.15))";
-                  lineStyle.color = "var(--dsw-alias-state-error-primary, #cf222e)";
-                } else if (isHunk) {
-                  lineStyle.backgroundColor = "var(--dsw-alias-bg-subtle, rgba(0,0,0,0.04))";
-                  lineStyle.color = "var(--dsw-alias-label-secondary, #656d76)";
-                  lineStyle.fontWeight = 600;
-                  lineStyle.margin = "2px 0";
-                } else if (isHeader) {
-                  lineStyle.color = "var(--dsw-alias-label-muted, #8c959f)";
-                  lineStyle.fontSize = "10px";
-                } else {
-                  lineStyle.color = "var(--dsw-alias-label-primary, #1f2328)";
-                }
-
-                return h("div", { key: idx, style: lineStyle }, line || " ");
-              })
-            )
-      );
-    }
     /** 列表分页步长：与服务端 parseListLimit 的默认页大小保持一致（15） */
   var OVERVIEW_PAGE_SIZE = 15;
 
@@ -1017,14 +717,12 @@ window.__ModuleLoader__.load({
         ? `📁 未提交清单 (${displayedDirty.length} / ${totalDirtyCount})`
         : `📁 未提交清单 (${gitSt ? gitSt.dirtyCount : 0})`;
 
-      var dirtySectionEl = activeDiffFile
-        ? h(UncommittedDiffView, {
-            file: activeDiffFile,
-            onBack: onCloseDiff || (() => {}),
-            cwd: cwd,
-            onOpenInDsh: onOpenInDsh,
-          })
-        : h(
+      // 清单常驻 + 弹窗叠加：原先 activeDiffFile 会把整个 section 换成二级视图，
+      // 观感等同「另开一页」；改成 overlay 后关闭弹窗即回原位，列表滚动位置也不丢。
+      var dirtySectionEl = h(
+        "div",
+        { className: "dsh-github-dirty-host" },
+        h(
             "div",
             { className: "dsh-github-section" },
             h("div", { className: "dsh-github-section-header" }, h("h3", null, dirtyHeaderTitle)),
@@ -1107,7 +805,16 @@ window.__ModuleLoader__.load({
                       )
                     : null
                 )
-          );
+          ),
+        activeDiffFile
+          ? h(FileDiffModal, {
+              file: activeDiffFile,
+              cwd: cwd,
+              onClose: onCloseDiff || (() => {}),
+              onOpenInDsh: onOpenInDsh,
+            })
+          : null
+      );
 
       // 快捷操作栏 (仅在检测到关联仓库时展示，未绑定仓库时不展示虚假按钮)
       var actionsBarEl = repo ? h(

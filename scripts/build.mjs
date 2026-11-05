@@ -132,6 +132,10 @@ function bundleClient() {
     'sync-status-badge.js',
     // markdown-lite 必须早于 pr-modal：后者要用 renderMarkdownBlocks 渲染描述与评论
     'markdown-lite.js',
+    // diff-utils / file-diff-modal 必须早于 commit-modal：后者要用前者的补丁切分函数与
+    // 弹窗组件。漏登记不会报错，只会在浏览器里表现为 undefined（白屏），顺序必须显式维护。
+    'diff-utils.js',
+    'file-diff-modal.js',
     'commit-modal.js',
     'pr-modal.js',
     // issue-modal 依赖 pr-modal 里的 CollapsibleBody（长正文/长评论折叠）与

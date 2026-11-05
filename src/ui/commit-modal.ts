@@ -2,6 +2,9 @@ declare const React: any;
 declare function renderGitIcon(size?: number, color?: string): any;
 declare function parseGitStatText(statText: string): any;
 
+import { FileDiffModal } from './file-diff-modal.js';
+import { splitUnifiedPatch, findPatchSection, normalizeRenamePath } from './diff-utils.js';
+
 /**
  * 提交详情模态弹窗组件（与设置弹窗同构）
  */
@@ -15,14 +18,66 @@ export function CommitDetailModal(props: {
   var h = React.createElement;
   var [fetchedDetail, setFetchedDetail] = React.useState(null as string | null);
   var [fetchingDetail, setFetchingDetail] = React.useState(false);
+  /**
+   * 点某个文件后的 diff 预览状态。
+   *
+   * 为什么补丁要懒加载而不是随弹窗一起取：多数时候用户只想看提交说明，
+   * 大提交的整包 patch 可以到几百 KB；只在真的点开某个文件时才拉一次，且整个
+   * 弹窗生命周期内复用同一份 patch（点第二个文件零延迟）。
+   */
+  var [patchState, setPatchState] = React.useState(null as { patch: string; truncated: boolean } | null);
+  var [patchLoading, setPatchLoading] = React.useState(false);
+  var [patchError, setPatchError] = React.useState(null as string | null);
+  var [selectedFile, setSelectedFile] = React.useState(null as any);
+
+  var loadPatch = function () {
+    if (patchState || patchLoading) return;
+    setPatchLoading(true);
+    setPatchError(null);
+    var url = "/api/github/commit-diff?sha=" + encodeURIComponent(c.sha) + (props.cwd ? "&cwd=" + encodeURIComponent(props.cwd) : "");
+    fetch(url)
+      .then(function (r: any) {
+        if (r.status === 404) {
+          setPatchLoading(false);
+          setPatchError("后端未提供提交补丁接口 (404)。请重启 DSH 桌面主程序以载入最新对比引擎。");
+          return null;
+        }
+        return r.json().catch(function () { return null; });
+      })
+      .then(function (j: any) {
+        if (!j) return;
+        setPatchLoading(false);
+        if (j.ok && j.data && typeof j.data.patch === "string") {
+          setPatchState({ patch: j.data.patch, truncated: Boolean(j.data.truncated) });
+        } else {
+          setPatchError((j && j.error) || "获取提交补丁失败");
+        }
+      })
+      .catch(function (err: any) {
+        setPatchLoading(false);
+        setPatchError("网络请求异常：" + ((err && err.message) || "未知错误"));
+      });
+  };
+
+  var openFileDiff = function (f: any) {
+    setSelectedFile(f);
+    loadPatch();
+  };
 
   React.useEffect(function () {
     var onKeyDown = function (e: any) {
-      if (e.key === "Escape" || e.keyCode === 27) props.onClose();
+      if (e.key === "Escape" || e.keyCode === 27) {
+        // 逐层关闭：先收内层 diff 预览，再按一次才关整个提交详情
+        if (selectedFile) {
+          setSelectedFile(null);
+          return;
+        }
+        props.onClose();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return function () { window.removeEventListener("keydown", onKeyDown); };
-  }, [props.onClose]);
+  }, [props.onClose, selectedFile]);
 
   React.useEffect(function () {
     setFetchedDetail(null);
@@ -226,6 +281,18 @@ export function CommitDetailModal(props: {
                         {
                           key: idx,
                           className: "dsh-github-stat-row",
+                          // 可点击 + 可键盘操作：文件行是入口而不是纯展示，缺 aria/键盘会让
+                          // 只用 Tab 的人根本发现不了「能点开看 diff」
+                          role: "button",
+                          tabIndex: 0,
+                          "aria-label": "查看 " + f.path + " 的差异",
+                          onClick: function () { openFileDiff(f); },
+                          onKeyDown: function (e: any) {
+                            if (e.key === "Enter" || e.key === " " || e.keyCode === 13 || e.keyCode === 32) {
+                              e.preventDefault();
+                              openFileDiff(f);
+                            }
+                          },
                           style: {
                             display: "flex",
                             alignItems: "center",
@@ -235,8 +302,10 @@ export function CommitDetailModal(props: {
                             lineHeight: "1.4",
                             borderBottom: idx < parsedStat.files.length - 1 ? "1px solid var(--dsw-alias-border-subtle, rgba(0,0,0,0.06))" : "none",
                             gap: "8px",
+                            cursor: "pointer",
+                            userSelect: "none",
                           },
-                          title: f.path + (f.isBinary ? " (二进制文件)" : ` (+${f.additions}, -${f.deletions})`),
+                          title: f.path + (f.isBinary ? " (二进制文件)" : ` (+${f.additions}, -${f.deletions})`) + "\n点击查看该文件的代码改动",
                         },
                         h(
                           "div",
@@ -298,6 +367,7 @@ export function CommitDetailModal(props: {
                                       ...diffBlocks
                                     )
                                   : null,
+                                h("span", { key: "chev", style: { opacity: 0.4, marginLeft: "2px", fontSize: "12px" }, "aria-hidden": "true" }, "›"),
                               ]
                         )
                       );
@@ -331,6 +401,26 @@ export function CommitDetailModal(props: {
               : h("div", { style: { fontSize: "11px", opacity: 0.6, fontStyle: "italic", padding: "6px 0" } }, "（该提交未包含多行正文；重启 DSH 桌面端可同步最新格式并直接呈现变更统计）"))
           : null
       )
-    )
+    ),
+    // 内层 diff 预览：作为 overlay 的兄弟节点而非 dialog 的子节点，
+    // 这样它是独立的一层遮罩（zIndex 更高），点遮罩只关它自己
+    selectedFile
+      ? h(FileDiffModal, {
+          file: selectedFile,
+          cwd: props.cwd,
+          // 传字符串而不是 null：null 会被组件当成「未提供正文 → 自己去拉未提交 diff」
+          diffText: patchState
+            ? (findPatchSection(splitUnifiedPatch(patchState.patch), normalizeRenamePath(selectedFile.path)) || { text: "" }).text
+            : "",
+          subtitle: String(c.fullSha || c.sha || "").slice(0, 7),
+          loading: patchLoading,
+          error: patchError,
+          note: patchState && patchState.truncated
+            ? "该提交差异过大，预览只覆盖补丁被截断前的文件；其余文件请用命令行查看。"
+            : null,
+          zIndex: 100001,
+          onClose: function () { setSelectedFile(null); },
+        })
+      : null
   );
 }

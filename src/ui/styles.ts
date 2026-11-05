@@ -1510,6 +1510,12 @@ body[data-ds-dark-theme] .dsh-github-stat-list {
 
 .dsh-github-stat-row {
   transition: background-color 0.15s ease;
+  cursor: pointer;
+}
+/* 键盘可达性：文件行是「打开 diff」的入口，纯 hover 反馈对 Tab 用户不可见 */
+.dsh-github-stat-row:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-accent-primary, #1296db);
+  outline-offset: -2px;
 }
 .dsh-github-stat-row:hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));

@@ -141,7 +141,7 @@ index 1234567..89abcdef 100644
   const clientBundle = fs.readFileSync(path.resolve('lib/client.js'), 'utf8');
   assert(clientBundle.includes('parseGitStatText'), 'Bundle 产物包含 parseGitStatText 统计解析函数');
   assert(clientBundle.includes('dsh-github-stat-list'), 'Bundle 产物包含 dsh-github-stat-list 容器类');
-  assert(clientBundle.includes('UncommittedDiffView'), 'Bundle 产物包含 UncommittedDiffView 原生二级下钻视图');
+  assert(clientBundle.includes('FileDiffModal'), 'Bundle 产物包含 FileDiffModal 文件 Diff 弹窗组件');
   assert(clientBundle.includes('activeDiffFile'), 'Bundle 产物维护 activeDiffFile 状态');
   assert(clientBundle.includes('dsh-github-inline-diff-view'), 'Bundle 产物包含二级下钻容器类');
   assert(clientBundle.includes('openFileInDsh'), 'Bundle 产物包含 openFileInDsh DSH 原生查看文件函数');

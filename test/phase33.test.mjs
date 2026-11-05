@@ -120,7 +120,7 @@ async function runTests() {
     { name: 'Markdown 渲染', pattern: /Markdown/, code: fs.existsSync(path.join(__dirname, '../src/ui/markdown-lite.ts')) },
     { name: '仓库切换/Fork 血缘', pattern: /血缘行|基准仓库/, code: clientSrc.includes('associatedRepos') },
     { name: '提交详情弹窗', pattern: /Commit 详情/, code: fs.existsSync(path.join(__dirname, '../src/ui/commit-modal.ts')) },
-    { name: '未提交文件 Diff 下钻', pattern: /Unified Diff/, code: clientSrc.includes('UncommittedDiffView') },
+    { name: '未提交文件 Diff 下钻', pattern: /Unified Diff/, code: clientSrc.includes('FileDiffModal') },
     { name: 'view_images 看图', pattern: /view_images/, code: fs.existsSync(path.join(__dirname, '../src/tools/image-utils.ts')) },
     { name: '仓库切换器', pattern: /RepoSelectorDropdown/, code: fs.existsSync(path.join(__dirname, '../src/ui/repo-selector.ts')) },
   ];

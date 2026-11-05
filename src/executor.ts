@@ -948,6 +948,81 @@ export class GhExecutor {
   }
 
   /**
+   * 某次提交的完整补丁（提交详情弹窗里点单个文件时，前端按 `diff --git` 切分后取对应段）。
+   *
+   * 为什么整包取一次，而不是按文件逐个 `git show <sha> -- <path>`：
+   * 用户点哪个文件是未知的，逐个文件来一次就是 N 次进程启动（Windows 上每次几十毫秒），
+   * 同一提交内多个文件还要重复解析。一次拿全量交给前端切分，把延迟从「每次点击」
+   * 摊到「打开弹窗一次」。
+   *
+   * 白名单纪律延续 getGitCommitDetail：sha 先过 `/^[0-9a-f]{4,40}$/i` 才拼接，
+   * 值域锁死为纯十六进制，注入面为零；命令形态整体常量硬编码。各选项为什么存在：
+   * - `--format=`：清空提交头。默认输出前半截是 commit/Author/Date/message，
+   *   前端按 `diff --git` 切片时会把这段脏头当成第一个文件的内容；
+   * - `--no-ext-diff`：用户一旦配置 `diff.external`，git 会去执行任意外部程序。
+   *   这是本地服务，不能因为一条读请求就把用户的外部工具跑起来；
+   * - `--no-color`：用户若设了 `color.ui=always`，patch 里会混进 ANSI 转义序列，
+   *   前端按行首 `+`/`-` 判定增删行的逻辑会直接判错；
+   * - `core.quotepath=false`：quotepath 为 true（git 内建默认）时非 ASCII 路径被转义成
+   *   `\344\270\255` 并包上双引号（实测），前端按 `a/` 前缀切出的文件名与真实路径对不上；
+   * - `--src-prefix=a/ --dst-prefix=b/`：用户全局开 `diff.noprefix=true` 时路径没有
+   *   `a/`/`b/` 前缀，切分与还原文件名的逻辑全部错位，这里强制钉死前缀；
+   * - 末尾 `--`：关死 sha 之后的参数位，避免可被解释成 pathspec 的输入混进命令。
+   *
+   * 体积护栏：大提交的 patch 可达数十 MB，整包透传给 WebView 会卡死渲染。超过
+   * 400_000 字符时在**最后一个 `\ndiff --git ` 边界**处截断——绝不切在 hunk 中间，
+   * 否则前端拿到半截 hunk 会渲染出错行；只有找不到边界（极端单文件巨型 diff）
+   * 才硬切到上限，此时 truncated 标记让前端给出「已截断」提示。
+   *
+   * 空 patch 是正常结果而非错误：合并提交默认不展开 diff、空提交也没有内容，
+   * 两者都返回 ok:true + 空字符串，由 UI 决定怎么展示。
+   */
+  async getCommitDiff(cwd: string | undefined, sha: string): Promise<{
+    ok: boolean;
+    sha?: string;
+    patch?: string;
+    chars?: number;
+    truncated?: boolean;
+    error?: string;
+  }> {
+    if (typeof sha !== 'string' || !/^[0-9a-f]{4,40}$/i.test(sha)) {
+      return { ok: false, error: `非法的提交 SHA: "${sha}"（只允许十六进制短/全 SHA）` };
+    }
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        [
+          '-c', 'core.quotepath=false',
+          'show',
+          '--format=',
+          '--no-color',
+          '--no-ext-diff',
+          '--src-prefix=a/',
+          '--dst-prefix=b/',
+          sha,
+          '--',
+        ],
+        { cwd: cwd || undefined, timeout: 8_000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }
+      );
+      const raw = String(stdout);
+      const MAX = 400_000;
+      let patch = raw;
+      let truncated = false;
+      if (patch.length > MAX) {
+        truncated = true;
+        const boundary = patch.lastIndexOf('\ndiff --git ', MAX);
+        patch = boundary > 0 ? patch.slice(0, boundary) : patch.slice(0, MAX);
+      }
+      return { ok: true, sha, patch, chars: patch.length, truncated };
+    } catch (err: any) {
+      // 优先回 stderr：sha 不存在（bad object）、不是本仓库等真实原因只在 stderr 里，
+      // execFile 的 message 只是 "Command failed: git show …" 的包装
+      const stderr = typeof err?.stderr === 'string' ? err.stderr.trim() : '';
+      return { ok: false, error: stderr || err?.message || '获取提交补丁失败' };
+    }
+  }
+
+  /**
    * 纯本地读取工作区的所有 Git 分支（按提交时间倒序）。
    * 包含当前 HEAD 分支标记、关联 upstream、最新提交简述与相对时间。
    * 零网络往返，毫秒级本地管道输出。
