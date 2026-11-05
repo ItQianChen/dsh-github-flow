@@ -52,6 +52,11 @@ const SAMPLE = {
   inputs: { k: 'v' }, fields: { state: 'closed' },
   // —— 刻意留空：--attach 需要真实文件且受 gh 版本门禁，走 SKIP 白名单 ——
   attach_images: [], image_urls: [],
+  // —— 本地文件入参：显式 undefined = 「这条样例不走文件通道」——
+  // 为什么必须显式写：下方兜底会给未声明的参数按类型补 'x'，而这四个参数会真的去读本地
+  // 文件，'x' 不存在 → 工具抛错 → 该 action 采不到 argv → phase34 覆盖完整性必红。
+  // collect-argv 只会删除显式写成 undefined 的键（见下方 delete 循环），故这是官方 opt-out。
+  body_file: undefined, notes_file: undefined, prompt_file: undefined, input_file: undefined,
   // —— 布尔：一律 true 以打开可选分支 ——
   all: true, confirm: true, force: true, clobber: true, cleanup_tag: true, closed: true,
   comments: true, default_branch: false, delete_branch: true, draft: true, dry_run: false,

@@ -67,11 +67,14 @@ ok(all.length === 19, '工具工厂实例化出 19 个工具', String(all.length
 // 这不是回归：新增能力必然占 schema，仍远低于 s5 定下的 25K 常驻红线
 // s8 加入 github_task（3 个任务原语）后基线 24,726 → 27,016。这不是回归：core 档同步从
 // 5 个工具 9,217 字符收缩到 3 个工具 4,412 字符（−83.7%），「加一个工具」与「减表面积」是同一个动作
-ok(size(all) === 27016, '全量 schema 字符数 == 27,016（s8 新增 github_task 后的新基线）', String(size(all)));
+// phase48 加入 7 个本地文件入参（body_file×4 / notes_file / input_file / prompt_file，各约 115-160 字符）
+// 后基线 27,016 → 28,007（+991）。这不是回归：换来的是「长正文不必进上下文」，即把每次调用要付的
+// 正文 token 成本换成了常驻 schema 的固定成本，量级上仍然是省。
+ok(size(all) === 28007, '全量 schema 字符数 == 28,007（phase48 七个文件入参后的新基线）', String(size(all)));
 {
   const r = applyTier(all, {});
   ok(r.kept.length === 19, '不配置 toolsets → 保留全部 19 个');
-  ok(size(r.kept) === 27016, '不配置 toolsets → 字符数不变');
+  ok(size(r.kept) === 28007, '不配置 toolsets → 字符数不变');
   ok(r.dropped.length === 0, '不配置 toolsets → 不剔除任何工具');
   ok(Object.keys(r.pruned).length === 0, '不配置 read_only → 不剪任何 action');
 }
@@ -81,10 +84,11 @@ ok(size(all) === 27016, '全量 schema 字符数 == 27,016（s8 新增 github_ta
 }
 
 console.log('\n--- 2. 预设档位 ---');
+// phase48 的七个文件入参按工具落点分摊进各档（core +131 / ci +293 / maintain +537）
 const presets = [
-  ['core', 3, 4412],
-  ['ci', 7, 10633],
-  ['maintain', 8, 13964],
+  ['core', 3, 4543],
+  ['ci', 7, 10926],
+  ['maintain', 8, 14501],
 ];
 for (const [name, count, chars] of presets) {
   const r = applyTier(all, { toolsets: [name] });
@@ -119,7 +123,7 @@ console.log('\n--- 4. read_only 硬语义：写 action 在注册期被剪掉 ---
   const r = applyTier(all, { read_only: true });
   ok(r.dropped.includes('github_api'), 'github_api 在只读模式下整体剔除（端点/method 任意，无法降级）');
   ok(r.kept.length === 18, '只读模式保留 18 个工具（github_api 整体剔除）', String(r.kept.length));
-  ok(size(r.kept) === 25729, '只读模式 schema 25,729 字符（github_task 的 review_pr 被剪掉 5 字符）', String(size(r.kept)));
+  ok(size(r.kept) === 26515, '只读模式 schema 26,515 字符（github_task 的 review_pr 被剪掉 5 字符）', String(size(r.kept)));
 
   let violations = [];
   for (const tool of r.kept) {
