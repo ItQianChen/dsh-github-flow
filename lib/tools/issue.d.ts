@@ -36,6 +36,10 @@ export declare function createIssueTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            body_file: {
+                type: string;
+                description: string;
+            };
             labels: {
                 type: string;
                 items: {

@@ -4,6 +4,7 @@ import { compareGhVersions } from '../executor.js';
 import { renderIssueMarkdown } from '../renderers/markdown.js';
 import { extractImageUrls, downloadImages, buildImageBlocks, filterRequestedUrls, validateAttachPaths } from './image-utils.js';
 import { assertPositionArg } from '../executor/args-guard.js';
+import { resolveBodySource, type BodySource } from './body-input.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -53,7 +54,11 @@ export function createIssueTool(executor: GhExecutor) {
         },
         body: {
           type: 'string',
-          description: 'Issue 描述正文或追加评论内容（create, comment, edit 时使用）。',
+          description: 'Issue 描述正文或追加评论内容（create, comment, edit 时使用）。与 body_file 二选一。',
+        },
+        body_file: {
+          type: 'string',
+          description: '正文来源：本地 Markdown 文件路径（相对路径按当前工作区解析）。与 body 二选一；长正文用本参数，无需把全文读进上下文。',
         },
         labels: {
           type: 'array',
@@ -133,6 +138,8 @@ export function createIssueTool(executor: GhExecutor) {
 
       const repoArgs = ['-R', repoTarget];
       const runOpts = { cwd, sessionId };
+      // 正文来自本地文件时经 stdin 注入（`--body-file -`）：绕开 Windows 约 32K 的命令行上限
+      const stdinPatch = (body: BodySource) => (body.stdin === undefined ? {} : { stdin: body.stdin });
 
       const appendAttachFlags = async (cmd: string[], attachImages: unknown) => {
         const attachPaths = validateAttachPaths(attachImages, cwd);
@@ -251,7 +258,8 @@ export function createIssueTool(executor: GhExecutor) {
         }
 
         case 'create': {
-          const cmd = ['issue', 'create', ...repoArgs, '--title', args.title || '', '--body', args.body || ''];
+          const body = resolveBodySource({ inline: args.body, file: args.body_file }, { cwd, keepEmptyInline: true });
+          const cmd = ['issue', 'create', ...repoArgs, '--title', args.title || '', ...body.argv];
           if (args.labels && Array.isArray(args.labels) && args.labels.length > 0) {
             cmd.push('--label', args.labels.join(','));
           }
@@ -259,16 +267,17 @@ export function createIssueTool(executor: GhExecutor) {
             cmd.push('--assignee', args.assignees.join(','));
           }
           await appendAttachFlags(cmd, args.attach_images);
-          const res = await executor.run(cmd, runOpts);
+          const res = await executor.run(cmd, { ...runOpts, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return { message: 'Issue 创建成功', url: res.rawOutput };
         }
 
         case 'edit': {
           if (!args.issue_number) throw new Error('edit 操作必须提供 issue_number');
+          const body = resolveBodySource({ inline: args.body, file: args.body_file }, { cwd });
           const editCmd = ['issue', 'edit', String(args.issue_number), ...repoArgs];
           if (args.title) editCmd.push('--title', args.title);
-          if (args.body) editCmd.push('--body', args.body);
+          editCmd.push(...body.argv);
           if (args.add_labels && Array.isArray(args.add_labels) && args.add_labels.length > 0) {
             for (const l of args.add_labels) editCmd.push('--add-label', l);
           }
@@ -276,7 +285,7 @@ export function createIssueTool(executor: GhExecutor) {
             for (const l of args.remove_labels) editCmd.push('--remove-label', l);
           }
           await appendAttachFlags(editCmd, args.attach_images);
-          const res = await executor.run(editCmd, runOpts);
+          const res = await executor.run(editCmd, { ...runOpts, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return { message: `Issue #${args.issue_number} 更新成功`, output: res.rawOutput };
         }
@@ -304,10 +313,12 @@ export function createIssueTool(executor: GhExecutor) {
         }
 
         case 'comment': {
-          if (!args.issue_number || !args.body) throw new Error('comment 必须提供 issue_number 和 body');
-          const commentCmd = ['issue', 'comment', String(args.issue_number), ...repoArgs, '--body', args.body];
+          if (!args.issue_number) throw new Error('comment 操作必须提供 issue_number');
+          const body = resolveBodySource({ inline: args.body, file: args.body_file }, { cwd });
+          if (body.chars === 0) throw new Error('comment 必须提供 body 或 body_file（评论正文）');
+          const commentCmd = ['issue', 'comment', String(args.issue_number), ...repoArgs, ...body.argv];
           await appendAttachFlags(commentCmd, args.attach_images);
-          const res = await executor.run(commentCmd, runOpts);
+          const res = await executor.run(commentCmd, { ...runOpts, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return { message: '评论发布成功', output: res.rawOutput };
         }
