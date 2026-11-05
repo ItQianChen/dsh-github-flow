@@ -80,11 +80,21 @@ export declare class GhExecutor {
      *
      * 解析顺序：显式 cwd（原样透传，含不存在的情况，与旧行为一致）→ session 反查 →
      * process.cwd()。三级都拿不到时才回到进程目录，与 s5 之前的兜底完全一致。
+     *
+     * ⚠️ `agent.id` 必须参与反查：DSH 真实的 ToolRunContext（宿主 tools 服务的
+     * `ToolExecutionInput`）只有 `agent: { id: SessionId }`，**既没有 cwd 也没有 sessionId**。
+     * 早先只认 `sessionId` / `session.id` / 环境变量，于是这一级在桌面端永远不触发，
+     * 所有工具退化到宿主进程的 process.cwd()（实测是 profile 目录）——表现为 `repo`
+     * 留空时无法自动识别仓库、`body_file` 这类相对路径参数被解析到错误目录。
+     * 这里改成「候选逐个试到命中为止」而非短路：任一来源能反查到工作区就返回。
      */
     resolveExecScope(execContext?: {
         cwd?: string;
         sessionId?: string;
         session?: {
+            id?: string;
+        };
+        agent?: {
             id?: string;
         };
     }): {

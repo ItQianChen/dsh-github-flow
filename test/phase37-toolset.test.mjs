@@ -307,6 +307,18 @@ console.log('\n--- 6. resolveExecScope 真实实现（不是 mock 复刻的语�
       ex.resolveExecScope({ cwd: process.cwd(), sessionId: 'sess-fixture' }).cwd === process.cwd(),
       '显式 cwd 优先级高于 session 反查'
     );
+    // DSH 真实 ToolRunContext 只给 agent（Agent = { id: SessionId }），没有 cwd/sessionId。
+    // 不认 agent.id 时这一级在桌面端永不触发，工具会退到宿主进程目录（repo 识别与相对路径全失准）。
+    ok(
+      ex.resolveExecScope({ agent: { id: 'sess-fixture' } }).cwd === fakeWs,
+      'agent.id 等价于 sessionId（真实宿主唯一可用的会话线索）',
+      ex.resolveExecScope({ agent: { id: 'sess-fixture' } }).cwd
+    );
+    ok(
+      ex.resolveExecScope({ sessionId: 'no-such-session-id', agent: { id: 'sess-fixture' } }).cwd === fakeWs,
+      '候选之间是或关系：sessionId 查不到不会短路掉 agent.id',
+      ex.resolveExecScope({ sessionId: 'no-such-session-id', agent: { id: 'sess-fixture' } }).cwd
+    );
   } finally {
     if (savedSession === undefined) delete process.env.DSH_SESSION_ID;
     else process.env.DSH_SESSION_ID = savedSession;
