@@ -53,6 +53,10 @@ export declare function createTaskTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            body_file: {
+                type: string;
+                description: string;
+            };
             comments: {
                 type: string;
                 items: {

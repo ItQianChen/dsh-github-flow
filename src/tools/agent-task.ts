@@ -1,6 +1,7 @@
 import type { GhExecutor } from '../executor.js';
 import { wrapWithGate } from '../destructive.js';
 import { renderAgentTaskMarkdown } from '../renderers/markdown.js';
+import { resolveBodySource, type BodySource } from './body-input.js';
 
 function normalizeOutput(data: any): Record<string, any> {
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -36,7 +37,11 @@ export function createAgentTaskTool(executor: GhExecutor) {
         },
         prompt: {
           type: 'string',
-          description: '任务描述正文或编码指令（create 动作必需，如 "为用户模块增加单元测试"）。',
+          description: '任务描述正文或编码指令（create 动作必需，如 "为用户模块增加单元测试"）。与 prompt_file 二选一。',
+        },
+        prompt_file: {
+          type: 'string',
+          description: '任务描述来源：本地 Markdown 文件路径（相对路径按当前工作区解析）。与 prompt 二选一。',
         },
         base_branch: {
           type: 'string',
@@ -67,6 +72,8 @@ export function createAgentTaskTool(executor: GhExecutor) {
       const { cwd, sessionId } = executor.resolveExecScope(execContext);
       const repoArgs = args.repo ? ['-R', args.repo] : [];
       const runOpts = { cwd, sessionId };
+      // 任务描述来自文件时经 stdin 注入（`--from-file -`）：绕开 Windows 约 32K 的命令行上限
+      const stdinPatch = (body: BodySource) => (body.stdin === undefined ? {} : { stdin: body.stdin });
 
       switch (args.action) {
         case 'list': {
@@ -118,14 +125,23 @@ export function createAgentTaskTool(executor: GhExecutor) {
         }
 
         case 'create': {
-          if (!args.prompt || typeof args.prompt !== 'string' || !args.prompt.trim()) {
-            throw new Error('create 操作必须提供 prompt（任务描述正文或编码指令）');
+          // 内联 prompt 继续走位置参数：它的 argv 必须与改造前逐字节一致，只有文件来源才切
+          // `--from-file -`。gh agent-task 是 preview 命令，该 flag 形态可能随上游变化。
+          const inlinePrompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
+          const body = resolveBodySource(
+            { inline: inlinePrompt, file: args.prompt_file },
+            { cwd, fileFlag: '--from-file', inlineField: 'prompt', fileField: 'prompt_file' }
+          );
+          if (body.chars === 0) {
+            throw new Error('create 操作必须提供 prompt 或 prompt_file（任务描述正文或编码指令）');
           }
-          const createCmd = ['agent-task', 'create', args.prompt.trim(), ...repoArgs];
+          const createCmd = body.fromFile
+            ? ['agent-task', 'create', ...repoArgs, ...body.argv]
+            : ['agent-task', 'create', inlinePrompt, ...repoArgs];
           if (args.base_branch) createCmd.push('-b', args.base_branch.trim());
           if (args.custom_agent) createCmd.push('-a', args.custom_agent.trim());
 
-          const res = await executor.run(createCmd, { ...runOpts, rawText: true, timeoutMs: 60_000 });
+          const res = await executor.run(createCmd, { ...runOpts, rawText: true, timeoutMs: 60_000, ...stdinPatch(body) });
           if (!res.ok) throw new Error(res.error);
           return {
             message: '智能体任务已成功创建并派发',

@@ -18,6 +18,7 @@ import { wrapWithGate } from '../destructive.js';
 import { readReviewRules } from '../review-rules.js';
 import { extractFailureAnchors } from '../executor/failure-anchors.js';
 import { renderTaskMarkdown } from '../renderers/markdown.js';
+import { resolveBodySource } from './body-input.js';
 import {
   classifyCommits,
   extractFileAnchors,
@@ -108,7 +109,11 @@ export function createTaskTool(executor: GhExecutor) {
         },
         body: {
           type: 'string',
-          description: 'review_pr 写回时的整体说明（缺省会被补 [P2] 严重度前缀）。',
+          description: 'review_pr 写回时的整体说明（缺省会被补 [P2] 严重度前缀）。与 body_file 二选一。',
+        },
+        body_file: {
+          type: 'string',
+          description: '写回说明来源：本地 Markdown 文件路径（相对路径按当前工作区解析）。与 body 二选一；长正文用本参数，无需把全文读进上下文。',
         },
         comments: {
           type: 'array',
@@ -296,9 +301,11 @@ export function createTaskTool(executor: GhExecutor) {
 
         // 写回：只有显式 write + confirm（闸门已在 wrapWithGate 里挡过一次）才执行
         if (args.write === true) {
+          // 行级评注走 REST，没有 `--body-file` 可用——正文只能由插件读文件后塞进 JSON 请求体
+          const reviewBody = resolveBodySource({ inline: args.body, file: args.body_file }, { cwd });
           const res = await executor.createPrReview(cwd, repoTarget, prNumber, {
             event: args.review_decision,
-            body: args.body,
+            body: reviewBody.text,
             comments: Array.isArray(args.comments) ? args.comments : [],
             commit_id: d.headRefOid,
           });

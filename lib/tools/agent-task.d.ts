@@ -22,6 +22,10 @@ export declare function createAgentTaskTool(executor: GhExecutor): {
                 type: string;
                 description: string;
             };
+            prompt_file: {
+                type: string;
+                description: string;
+            };
             base_branch: {
                 type: string;
                 description: string;
