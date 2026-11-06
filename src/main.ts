@@ -1,3 +1,4 @@
+import { FirecrawlSettings } from './trending/settings.js';
 import { TrendingService } from './trending/service.js';
 import { createTrendingTool } from './tools/trending.js';
 import type { Context } from '@deepseek-ai/cordis';
@@ -155,9 +156,10 @@ function onHostEvent(ctx: Context, name: string, listener: (...args: any[]) => a
 export function apply(ctx: Context, config: Config = Config({})) {
   const plain = resolvePluginConfig(config);
   const executor = new GhExecutor(plain);
+  const firecrawlSettings = new FirecrawlSettings();
   const trending = new TrendingService({
     baseUrl: config.firecrawlBaseUrl || process.env.FIRECRAWL_BASE_URL,
-    apiKey: process.env.FIRECRAWL_API_KEY,
+    apiKey: firecrawlSettings.key(),
     cacheTtlMs: config.trendingCacheTtlMs,
     timeoutMs: config.trendingTimeoutMs,
   });
@@ -262,7 +264,8 @@ export function apply(ctx: Context, config: Config = Config({})) {
       upgradeManager,
       proxyManager,
       c.get('webServer'),
-      trending
+      trending,
+      firecrawlSettings
     );
   });
 

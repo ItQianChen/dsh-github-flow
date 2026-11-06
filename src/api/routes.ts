@@ -1,3 +1,4 @@
+import type { FirecrawlSettings } from '../trending/settings.js';
 import { TrendingService } from '../trending/service.js';
 import { registerTrendingRoutes } from './routes-trending.js';
 /**
@@ -43,7 +44,8 @@ export function registerApiRoutes(
    * CLI/TUI profile 里会把插件从「PENDING」变成「加载失败」。
    */
   webServerOverride?: any,
-  trendingService?: TrendingService
+  trendingService?: TrendingService,
+  firecrawlSettings?: FirecrawlSettings
 ) {
   const ctx = ctxOrWebServer;
   // 只对「真 Context」走 ctx.get()：ctx.get 是 Context 原型方法，读它永远安全；
@@ -95,5 +97,5 @@ export function registerApiRoutes(
   registerActionRoutes(deps, executor, cacheMap, globalCache);
   registerLifecycleRoutes(deps, executor, checker, upgrader);
   registerProxyRoutes(deps, checker, proxyManager);
-  if (trendingService) registerTrendingRoutes(deps, trendingService);
+  if (trendingService) registerTrendingRoutes(deps, trendingService, firecrawlSettings);
 }

@@ -113,3 +113,56 @@ await assert.rejects(tool.execute({ refresh: 'yes' }), /refresh/);
 service.dispose();
 selfHosted.dispose();
 console.log('Trending service, six-field contract, routes, caching, cancellation and Agent tool tests passed.');
+
+// Settings persist server-side only, support replacement/removal and hot service updates.
+const fs = await import('node:fs');
+const os = await import('node:os');
+const path = await import('node:path');
+const { FirecrawlSettings } = await import('../lib/trending/settings.js');
+const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'firecrawl-settings-test-'));
+try {
+  const file = path.join(folder, 'settings.json');
+  const settings = new FirecrawlSettings(file, 'env-secret');
+  assert.equal(settings.snapshot().source, 'environment');
+  settings.save({ apiKey: 'saved-secret' });
+  assert.equal(settings.key(), 'saved-secret');
+  assert.equal(new FirecrawlSettings(file, 'env-secret').key(), 'saved-secret');
+  assert.ok(!JSON.stringify(settings.snapshot()).includes('saved-secret'));
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.throws(() => settings.save({ apiKey: '' }));
+  assert.throws(() => settings.save({ apiKey: 'a\nb' }));
+  assert.equal(settings.key(), 'saved-secret');
+  settings.save({ clear: true });
+  assert.equal(settings.key(), 'env-secret');
+  assert.ok(!fs.readFileSync(file, 'utf8').includes('saved-secret'));
+
+  let requestCount = 0;
+  const hot = new TrendingService({ apiKey: settings.key() }, async (_url, options) => {
+    requestCount++;
+    assert.equal(options.headers.Authorization, 'Bearer new-secret');
+    return reply();
+  });
+  const registered = new Map();
+  registerTrendingRoutes({ bindRoute: r => registered.set(r.path, r.handler), sendJson, readJsonBody }, hot, settings);
+  handler = registered.get('/api/github/firecrawl-settings');
+  assert.equal((await route('GET')).data.data.source, 'environment');
+  assert.equal((await route('POST', { apiKey: 'blocked' }, { origin: 'https://evil.example', 'content-type': 'application/json' })).code, 403);
+  assert.equal(settings.key(), 'env-secret');
+  const saved = await route('POST', { apiKey: 'new-secret' }, { 'content-type': 'application/json' });
+  assert.equal(saved.code, 200);
+  assert.ok(!JSON.stringify(saved).includes('new-secret'));
+  await hot.get('daily');
+  assert.equal(requestCount, 1);
+  hot.setApiKey(undefined);
+  await assert.rejects(hot.get('daily'), /API Key/);
+  hot.dispose();
+
+  let resolveOld;
+  const changing = new TrendingService({ apiKey: 'old' }, async () => new Promise(resolve => { resolveOld = resolve; }));
+  const oldRequest = changing.get('daily');
+  changing.setApiKey('replacement');
+  resolveOld(reply());
+  await assert.rejects(oldRequest, /更改/);
+  changing.dispose();
+} finally { fs.rmSync(folder, { recursive: true, force: true }); }
+console.log('Firecrawl settings persistence, redaction, CSRF and hot-reload tests passed.');

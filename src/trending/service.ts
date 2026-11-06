@@ -86,6 +86,7 @@ export class TrendingService {
   private pending = new Map<TrendingPeriod, Promise<TrendingResult>>();
   private controllers = new Set<AbortController>();
   private disposed = false;
+  private revision = 0;
   private readonly baseUrl: string;
   private readonly ttl: number;
   private readonly timeout: number;
@@ -99,6 +100,14 @@ export class TrendingService {
     }
     this.ttl = Number.isFinite(options.cacheTtlMs) ? Math.max(0, options.cacheTtlMs!) : 3_600_000;
     this.timeout = Number.isFinite(options.timeoutMs) ? Math.max(1000, Math.min(120_000, options.timeoutMs!)) : 60_000;
+  }
+
+  setApiKey(apiKey: string | undefined) {
+    this.revision++;
+    for (const controller of this.controllers) controller.abort();
+    this.pending.clear();
+    this.cache.clear();
+    this.options = { ...this.options, apiKey };
   }
 
   status() {
@@ -116,20 +125,22 @@ export class TrendingService {
   async get(period: TrendingPeriod, refresh = false): Promise<TrendingResult> {
     parseTrendingPeriod(period);
     if (this.disposed) throw new Error('热点服务已停止');
-    if (!this.status().configured) throw new Error('请在 DSH 启动环境设置 FIRECRAWL_API_KEY 后重启，或配置自托管 firecrawlBaseUrl');
+    if (!this.status().configured) throw new Error('请在插件「设置 → Firecrawl」中保存 API Key，或配置 FIRECRAWL_API_KEY 环境变量');
     const cached = this.cache.get(period);
     if (!refresh && cached && this.now() - Date.parse(cached.fetchedAt) < this.ttl) return cached;
     const pending = this.pending.get(period);
     if (pending) return pending;
-    const task = this.scrape(period, refresh).catch((error: Error) => {
+    const revision = this.revision;
+    const task = this.scrape(period, refresh, revision).catch((error: Error) => {
+      if (revision !== this.revision) throw new Error('Firecrawl 设置已更改，请重新加载榜单');
       if (cached && !this.disposed) return { ...cached, stale: true, warning: error.message };
       throw error;
-    }).finally(() => this.pending.delete(period));
+    }).finally(() => { if (this.pending.get(period) === task) this.pending.delete(period); });
     this.pending.set(period, task);
     return task;
   }
 
-  private async scrape(period: TrendingPeriod, refresh: boolean): Promise<TrendingResult> {
+  private async scrape(period: TrendingPeriod, refresh: boolean, revision: number): Promise<TrendingResult> {
     const sourceUrl = `https://github.com/trending?since=${period}`;
     const controller = new AbortController();
     this.controllers.add(controller);
@@ -169,7 +180,7 @@ export class TrendingService {
         throw new Error('Firecrawl 未成功获取 GitHub Trending 页面');
       }
       const items = validateTrendingItems(body.data?.json?.repositories);
-      if (this.disposed) throw new Error('热点服务已停止');
+      if (this.disposed || revision !== this.revision) throw new Error('热点服务已停止或配置已更改');
       const result: TrendingResult = { period, sourceUrl, fetchedAt: new Date(this.now()).toISOString(), stale: false, items };
       this.cache.set(period, result);
       return result;

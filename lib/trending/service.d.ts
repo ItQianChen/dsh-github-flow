@@ -69,10 +69,12 @@ export declare class TrendingService {
     private pending;
     private controllers;
     private disposed;
+    private revision;
     private readonly baseUrl;
     private readonly ttl;
     private readonly timeout;
     constructor(options?: TrendingOptions, request?: typeof fetch, now?: () => number);
+    setApiKey(apiKey: string | undefined): void;
     status(): {
         configured: boolean;
         cacheTtlMs: number;

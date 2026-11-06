@@ -20,7 +20,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_ruleset\` | 分支保护规则与策略诊断 | 检查分支适用的合并策略规则 (check)、查看规则集列表与详情，权威回答“PR 为何无法合并” |
 | \`github_cache\` | Actions 构建缓存盘点与安全清理 | 查看缓存列表与体积占用、按 ID/Key 删除指定缓存、删除缓存（三态均需 confirm） |
 | \`github_gist\` | 代码片段与调试日志分享治理 | 查看 Gist 列表与代码正文、创建 Secret/Public 代码片段、编辑与物理删除（需 confirm） |
-| \`github_trending\` | GitHub 热点看板 | \`github_trending({period: "all"})\` 返回每日/每周/每月三张表；六字段 name/url/description/language/stars/starsToday，starsToday 表示所选周期新增；配置 FIRECRAWL_API_KEY，无需 gh 登录 |
+| \`github_trending\` | GitHub 热点看板 | \`github_trending({period: "all"})\` 返回每日/每周/每月三张表；六字段 name/url/description/language/stars/starsToday，starsToday 表示所选周期新增；在设置 → Firecrawl 保存 API Key（也兼容 FIRECRAWL_API_KEY），无需 gh 登录 |
 | \`github_status\` | 跨仓库待办与动态聚合看板 | 账号维度汇总指派给我的 Issue/PR、等待评审、被 @提及 以及订阅仓库近期动态 |
 | \`github_agent_task\` | 云端智能体编码任务会话治理 | 查阅已分派任务列表、检视任务状态与会话日志、向云端 Agent 发起新编码重构任务 |
 | \`github_discussion\` | 团队技术讨论与开源社区 RFC 闭环 | 浏览讨论列表、检视正文与评论楼层、发起新讨论、编辑正文与追加回复 |

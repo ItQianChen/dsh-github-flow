@@ -8,6 +8,7 @@ export function GithubTrendingPanel() {
   const [boards, setBoards] = React.useState({} as Partial<Record<TrendingPeriod, TrendingResult>>);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [configRevision, setConfigRevision] = React.useState(0);
   const [configured, setConfigured] = React.useState(null as boolean | null);
   const requestRef = React.useRef(null as AbortController | null);
   const generationRef = React.useRef(0);
@@ -39,19 +40,27 @@ export function GithubTrendingPanel() {
 
   React.useEffect(() => {
     const controller = new AbortController();
+    const checkConfiguration = () => {
     fetch('/api/github/trending', { signal: controller.signal })
       .then(res => res.json()).then(json => {
         if (controller.signal.aborted) return;
         if (!json.ok) throw new Error(json.error || '无法读取 Firecrawl 配置状态');
         setConfigured(json.data.configured);
+        setConfigRevision((value: number) => value + 1);
       }).catch(err => { if (!controller.signal.aborted) setError(err.message); });
-    return () => { controller.abort(); generationRef.current++; requestRef.current?.abort(); };
+    };
+    const onUpdated = () => {
+      generationRef.current++; requestRef.current?.abort(); setBoards({}); setError(''); setBusy(false); checkConfiguration();
+    };
+    checkConfiguration();
+    window.addEventListener('dsh-github-firecrawl-updated', onUpdated);
+    return () => { window.removeEventListener('dsh-github-firecrawl-updated', onUpdated); controller.abort(); generationRef.current++; requestRef.current?.abort(); };
   }, []);
 
   React.useEffect(() => {
     if (configured) load(period);
     return () => { generationRef.current++; requestRef.current?.abort(); };
-  }, [period, configured, load]);
+  }, [period, configured, configRevision, load]);
 
   const board: TrendingResult | undefined = boards[period];
   const periods: Array<[TrendingPeriod, string]> = [['daily', '每日'], ['weekly', '每周'], ['monthly', '每月']];
@@ -69,7 +78,8 @@ export function GithubTrendingPanel() {
     h('p', { className: 'dsh-trending-note' }, `starsToday 在当前榜单表示“${increment}”，统计周期以 GitHub Trending 为准。`),
     configured === false ? h('div', { className: 'dsh-trending-notice' },
       h('strong', null, '配置 Firecrawl 后即可加载热点'),
-      h('p', null, '在启动 DSH 的环境中设置 FIRECRAWL_API_KEY，然后重启 DSH。'),
+      h('p', null, '在插件设置的 Firecrawl 分区中保存 API Key，即可开始使用。'),
+      h('button', { className: 'dsh-github-btn-sm', onClick: () => window.dispatchEvent(new Event('dsh-github-open-firecrawl')) }, '配置 Firecrawl'),
       h('p', null, '自托管服务可在插件配置中设置 firecrawlBaseUrl（服务根地址，不包含 /v2/scrape），或设置 FIRECRAWL_BASE_URL。'),
       h('p', null, '密钥仅在服务端读取；查看热点无需安装 gh 或登录 GitHub。')) : null,
     configured === null && !error ? h('p', { role: 'status' }, '正在检查 Firecrawl 配置…') : null,

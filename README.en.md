@@ -1,6 +1,6 @@
 # GitHub Trending extension (fork)
 
-The existing GitHub dashboard now has a **🔥 热点看板** entry for daily, weekly and monthly Trending tables. Set `FIRECRAWL_API_KEY` in the DSH process environment and restart. Every item uses exactly `name / url / description / language / stars / starsToday`; `starsToday` means the selected period’s gain. See [configuration and installation](docs/github-trending.md).
+The existing GitHub dashboard now has a **🔥 热点看板** entry for daily, weekly and monthly Trending tables. Save your API Key in **⚙️ Settings → 🔥 Firecrawl** for immediate activation. The `FIRECRAWL_API_KEY` environment variable remains a fallback. Every item uses exactly `name / url / description / language / stars / starsToday`; `starsToday` means the selected period’s gain. See [configuration and installation](docs/github-trending.md).
 
 # DSH GitHub Flow (`dsh-github-flow`)
 

@@ -15,7 +15,11 @@ export function GlobalSyncSettingsModal(props: {
   onClearCache: () => void;
   initialSection?: string;
 }) {
-  if (!props.isOpen) return null;
+  return props.isOpen ? React.createElement(FirecrawlAwareSettingsModal, props) : null;
+}
+
+// Mount the hook-bearing body only while open; closing never changes hook order.
+function FirecrawlAwareSettingsModal(props: any) {
 
   var [activeSection, setActiveSection] = React.useState(props.initialSection || "sync");
   var [strategy, setStrategy] = React.useState(props.currentSettings.strategy || "swr");
@@ -131,6 +135,38 @@ export function GlobalSyncSettingsModal(props: {
       });
   };
 
+  var [firecrawlKey, setFirecrawlKey] = React.useState("");
+  var [firecrawlState, setFirecrawlState] = React.useState(null as any);
+  var [firecrawlBusy, setFirecrawlBusy] = React.useState(false);
+  var [firecrawlMessage, setFirecrawlMessage] = React.useState("");
+  React.useEffect(function () {
+    if (activeSection !== "firecrawl") return;
+    var controller = new AbortController();
+    fetch("/api/github/firecrawl-settings", { signal: controller.signal })
+      .then(r => r.json()).then(j => {
+        if (!j.ok) throw new Error(j.error || "无法读取配置状态");
+        if (!controller.signal.aborted) setFirecrawlState(j.data);
+      }).catch(e => { if (!controller.signal.aborted) setFirecrawlMessage(e.message); });
+    return () => controller.abort();
+  }, [activeSection]);
+  var saveFirecrawl = async function (clear = false) {
+    setFirecrawlBusy(true);
+    setFirecrawlMessage("");
+    try {
+      var response = await fetch("/api/github/firecrawl-settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clear ? { clear: true } : { apiKey: firecrawlKey }),
+      });
+      var result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error || "保存失败");
+      setFirecrawlKey("");
+      setFirecrawlState(result.data);
+      setFirecrawlMessage(clear ? (result.data.hasKey ? "已清除界面保存的 Key，当前使用环境变量。" : "已清除 API Key。") : "API Key 已保存并立即生效，无需重启。保存不代表已验证服务连通性。");
+      window.dispatchEvent(new Event("dsh-github-firecrawl-updated"));
+    } catch (e: any) { setFirecrawlMessage(e.message || "保存失败"); }
+    finally { setFirecrawlBusy(false); }
+  };
+
   var h = React.createElement;
 
   var handleSave = function () {
@@ -234,6 +270,10 @@ export function GlobalSyncSettingsModal(props: {
             onClick: function () { setActiveSection("proxy"); },
           }, "🌐 网络代理"),
           h("button", {
+            className: "dsh-github-settings-nav-item" + (activeSection === "firecrawl" ? " active" : ""),
+            onClick: () => setActiveSection("firecrawl"),
+          }, "🔥 Firecrawl"),
+          h("button", {
             className: "dsh-github-settings-nav-item" + (activeSection === "update" ? " active" : ""),
             onClick: function () { setActiveSection("update"); },
           }, "⬆️ 更新设置"),
@@ -243,7 +283,23 @@ export function GlobalSyncSettingsModal(props: {
           }, "ℹ️ 关于")
         ),
         h("div", { className: "dsh-github-settings-content" },
-          activeSection === "sync" ? h("div", null,
+          activeSection === "firecrawl" ? h("div", null,
+            h("h3", null, "Firecrawl 热点抓取"),
+            h("p", null, "配置 GitHub 热点看板使用的 API Key，保存后立即生效。"),
+            h("p", { role: "status" }, firecrawlState ? (firecrawlState.hasKey ? "已配置 · 来源：" + (firecrawlState.source === "settings" ? "插件设置" : "环境变量") : "尚未配置 API Key") : "正在读取配置状态…"),
+            h("label", { htmlFor: "dsh-firecrawl-key" }, "API Key"),
+            h("input", { id: "dsh-firecrawl-key", type: "password", autoComplete: "new-password", spellCheck: false,
+              className: "dsh-github-search-input", value: firecrawlKey, disabled: firecrawlBusy,
+              placeholder: firecrawlState?.hasKey ? "输入新 Key 以替换；留空不会覆盖" : "粘贴 Firecrawl API Key",
+              onChange: (event: any) => setFirecrawlKey(event.target.value),
+            }),
+            h("p", null, "Key 保存在 DSH 服务端用户数据目录，不会回显，也不会写入浏览器存储。界面设置优先于 FIRECRAWL_API_KEY；清除后回退到环境变量。"),
+            h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+              h("button", { className: "dsh-github-btn-sm", disabled: firecrawlBusy || !firecrawlKey.trim(), onClick: () => saveFirecrawl() }, firecrawlBusy ? "保存中…" : "保存 API Key"),
+              h("button", { className: "dsh-github-btn-sm", disabled: firecrawlBusy || firecrawlState?.source !== "settings", onClick: () => saveFirecrawl(true) }, "清除已保存 Key")),
+            firecrawlMessage ? h("p", { role: "status" }, firecrawlMessage) : null,
+            h("a", { href: "https://www.firecrawl.dev/app", target: "_blank", rel: "noopener noreferrer" }, "打开 Firecrawl 控制台获取 Key ↗")
+          ) : activeSection === "sync" ? h("div", null,
             h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.5" } },
               "配置 GitHub 全景驾驶舱的数据拉取节奏。启用秒开模式可利用本地持久化缓存消除每次打开时的漫长等待。"
             ),

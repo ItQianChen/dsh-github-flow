@@ -1,6 +1,6 @@
 # GitHub Trending 扩展（Fork）
 
-原 GitHub 页面顶部新增 **🔥 热点看板**，支持每日 / 每周 / 每月榜单。Firecrawl 与看板统一使用 `name / url / description / language / stars / starsToday` 六字段。设置 `FIRECRAWL_API_KEY` 后重启 DSH 即可使用。
+原 GitHub 页面顶部新增 **🔥 热点看板**，支持每日 / 每周 / 每月榜单。Firecrawl 与看板统一使用 `name / url / description / language / stars / starsToday` 六字段。在 **⚙️ 设置 → 🔥 Firecrawl** 中保存 API Key 即时生效；也兼容 `FIRECRAWL_API_KEY` 环境变量。
 
 配置、自托管、Fork 安装与字段口径见 [热点看板使用说明](docs/github-trending.md)。
 

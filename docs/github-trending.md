@@ -4,7 +4,14 @@
 
 ## 配置
 
-Firecrawl 云服务：在**启动 DSH 的进程环境**中设置 `FIRECRAWL_API_KEY`，然后重启 DSH。不要把真实密钥提交到 Git、放进浏览器或写进聊天记录。
+推荐直接打开原插件页面的 **⚙️ 设置 → 🔥 Firecrawl**，粘贴 API Key 并点击“保存 API Key”。保存后立即生效，无需重启；热点看板会重新加载。未配置时也可以从看板点击“配置 Firecrawl”直达该分区。
+
+- 密码输入框不回显已保存值；留空不会覆盖，填写新值可替换。
+- “清除已保存 Key”删除界面保存的凭证，如果环境变量仍有 Key 则回退到环境变量。
+- Key 仅保存在 DSH 服务端 `~/.dsh/data/dsh-github-flow/firecrawl-settings.json`，不写入浏览器 localStorage。文件以 0600 权限原子保存（POSIX）；它是本地明文凭证文件，不是系统密钥链，Windows 文件访问由用户目录 ACL 控制。
+- 配置接口只返回是否已配置及来源，不返回 Key。保存操作不额外调用 Firecrawl、不消耗抓取额度，也不等于已经验证 Key 有效。
+
+也可以继续使用环境变量方式：在**启动 DSH 的进程环境**中设置 `FIRECRAWL_API_KEY`，然后重启 DSH。界面保存值的优先级更高。
 
 macOS / Linux（当前终端启动 DSH 时继承）：
 
@@ -31,7 +38,7 @@ config:
 
 `firecrawlBaseUrl` 是服务根地址，不带 `/v2/scrape`；也可用 `FIRECRAWL_BASE_URL` 环境变量指定，插件配置优先。自托管服务须兼容 Firecrawl v2 的 JSON schema 提取，纯 HTML 抓取部署还需要配置其结构化提取所需的模型。自托管允许不带 API Key，若服务要求认证则仍设置 `FIRECRAWL_API_KEY`。
 
-未配置云服务 Key 时显示配置说明，不影响原来的 GitHub 工作流。配置状态接口不返回密钥。热点使用 Node fetch，遵循宿主进程当前的 fetch dispatcher；原插件的代理可用性限制同样适用。
+未配置云服务 Key 时显示配置入口，不影响原来的 GitHub 工作流。配置状态接口不返回密钥。热点使用 Node fetch，遵循宿主进程当前的 fetch dispatcher；原插件的代理可用性限制同样适用。
 
 ## 六字段契约
 
