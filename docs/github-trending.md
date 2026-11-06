@@ -57,6 +57,19 @@ Firecrawl 使用 `/v2/scrape` 的 `formats: [{ type: 'json', schema, prompt }]`�
 
 列表按上述六字段顺序展示，保留 GitHub 原榜顺序。数据默认缓存一小时；“刷新榜单”会绕过本地缓存并传 `maxAge: 0` 请求 Firecrawl，消耗相应服务额度。每周期独立缓存，并发请求合并。刷新失败继续显示上次成功数据并标注时间与警告。当前缓存位于服务内存，重启后首次访问重新抓取。不后台定时抓取。
 
+## Firecrawl Agent 趋势洞察
+
+三个周期的榜单右侧各有一个独立的 **AI 趋势洞察** 卡片。点击“生成趋势洞察”后，插件通过服务端 `POST /v2/agent` 发起 Firecrawl Agent 任务；浏览器通过本地 `/api/github/trending-agent` 的 `status` 操作轮询服务端，由服务端查询 `GET /v2/agent/{jobId}`。页面不暴露 Firecrawl Key 或任意远端任务 ID。
+
+- **按需生成**：首次加载或切换周期不会自动发起付费 Agent 分析。
+- **周期隔离**：每日、每周、每月独立保存分析任务与结果，基于各自的榜单抓取快照。重复点击已创建任务不重复消耗 Agent 启动额度。
+- **结果展示**：右侧显示中文趋势总结、观察与发现，以及加载中 / 出错状态。Agent 分析失败不会影响榜单本身。
+- **数据契约**：项目表格仍只有固定的 `name / url / description / language / stars / starsToday` 六字段。分析位于独立对象，不加入项目行。
+- **刷新行为**：抓取到新榜单快照后才允许新任务；同一快照默认沿用已有分析。服务重启后内存中的任务与结果会丢失。
+- **服务兼容**：自托管 Firecrawl 需要额外支持 `/v2/agent` 和 `/v2/agent/{jobId}`，仅支持 Scrape 的部署仍可正常显示榜单，但 Agent 分析不可用。
+
+页面风格采用圆角卡片、层级留白、柔和边框、系统字体与 DSH 主题变量，深色模式跟随 `body[data-ds-dark-theme]`；窄屏下洞察卡片移至表格下方。
+
 ## Agent 工具
 
 ```text
