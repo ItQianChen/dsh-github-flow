@@ -59,7 +59,7 @@ export function GithubHelpModal(props: {
     { id: "quickstart", label: "🚀 3分钟极速上手" },
     { id: "prompts", label: "🤖 Agent 提示词实战" },
     { id: "panels", label: "🖥️ 两大界面操作图解" },
-    { id: "tools", label: "🧰 19 大工具速查" },
+    { id: "tools", label: "🧰 20 大工具速查" },
     { id: "faq", label: "🔑 常见自愈排错" },
   ];
 
@@ -101,9 +101,9 @@ export function GithubHelpModal(props: {
         }),
         // 能力总览：让用户三秒钟知道这插件到底能干什么，而不是去翻 README
         h("div", { className: "dsh-github-help-card", style: { marginTop: "4px" } },
-          h("div", { className: "dsh-github-help-title", style: { marginBottom: "8px" } }, "📦 能力总览：19 大工具 · 106 个业务动作 · 2 套可视化工作台"),
+          h("div", { className: "dsh-github-help-title", style: { marginBottom: "8px" } }, "📦 能力总览：20 大工具 · 106 个业务动作 · 2 套可视化工作台"),
           h("div", { style: { fontSize: "12px", lineHeight: "1.8", color: "var(--dsw-alias-label-secondary, #8b949e)" } },
-            "Agent 侧可直接调用 19 个 github_* 工具（PR 审查合并、Issue 任务流转、Actions 排障、免 clone 读文件、发版交付、Secrets 管理、Skills 生态、标签与规则集、构建缓存、Gist、跨仓待办大盘、Copilot 智能体、Discussions、Projects v2、Codespaces、运行时遥测与元指南）。",
+            "Agent 侧可直接调用 20 个 github_* 工具（PR 审查合并、Issue 任务流转、Actions 排障、免 clone 读文件、发版交付、Secrets 管理、Skills 生态、标签与规则集、构建缓存、Gist、跨仓待办大盘、Copilot 智能体、Discussions、Projects v2、Codespaces、运行时遥测与元指南）。",
             h("br"),
             "人类侧在每个会话右侧栏拥有 5 个 Tab（Git / 未提交 / PR / Issues / Actions），在最左侧 Octocat 入口拥有 4 个标签的全景驾驶舱。PR / Issue / Actions 的卡片点击都能在线查看详情——Actions 看到的是 job / step 树与失败步骤，失败时还能按需拉一段日志，不用切浏览器。"
           )
@@ -267,6 +267,7 @@ export function GithubHelpModal(props: {
           group: "生态与协作",
           items: [
             { name: "github_skill", desc: "Agent Skills 生态：跨仓检索/预览/安装/发布自检/批量更新" },
+            { name: "github_trending", desc: "每日/每周/每月热点：主页面顶部「热点看板」进入；配置 FIRECRAWL_API_KEY。六字段 name/url/description/language/stars/starsToday，starsToday 为所选周期新增。" },
             { name: "github_status", desc: "账号维度跨仓待办大盘 + 运行时健康度与 API 降级率审计" },
             { name: "github_agent_task", desc: "Copilot 云端编码智能体：派活、查状态、拉会话日志" },
             { name: "github_discussion", desc: "社区讨论与 RFC：列表/详情/发起/编辑/评论" },
@@ -286,7 +287,7 @@ export function GithubHelpModal(props: {
 
       return h("div", null,
         h("div", { className: "dsh-github-help-desc", style: { fontSize: "13px", marginBottom: "14px" } },
-          "19 个 Agent 工具、合计 106 个业务动作（不含元指南的 22 个查询主题与 api 逃生门的 4 个 HTTP method）。你不必记住工具名——直接用自然语言描述目标，Agent 会自己挑工具。下表用于你了解能力边界，以及排查「为什么 Agent 说做不到」："
+          "20 个 Agent 工具、合计 106 个业务动作（不含元指南的 22 个查询主题与 api 逃生门的 4 个 HTTP method）。你不必记住工具名——直接用自然语言描述目标，Agent 会自己挑工具。下表用于你了解能力边界，以及排查「为什么 Agent 说做不到」："
         ),
         toolGroups.map(function (g, gi) {
           return h("div", { key: gi, className: "dsh-github-help-card" },

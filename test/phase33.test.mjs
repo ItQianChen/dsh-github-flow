@@ -38,7 +38,7 @@ async function runTests() {
   // 统一过 applyTier / wrapWithGate 后再注册。数工厂调用而不是 register 调用，
   // 是因为注册点已收敛成一条 for 循环——按 register 数会永远得到 1。
   const registered = (mainSrc.match(/^\s*create[A-Z]\w*Tool\(/gm) || []).length;
-  ok(registered === 19, '代码中实例化 19 个 Agent 工具', String(registered));
+  ok(registered === 20, '代码中实例化 20 个 Agent 工具', String(registered));
   // 实例化 ≠ 注册：只数工厂调用的话，把下面的注册循环删掉这行仍然绿。
   // 这里显式钉住「档位过滤后逐个注册」这条语句（真正的注册点已收敛为一条 for）。
   ok(
@@ -47,8 +47,8 @@ async function runTests() {
   );
 
   // 指南里声明的工具数量必须与实际一致
-  ok(helpSrc.includes('19 大工具'), '指南标题声明「19 大工具」');
-  ok(/19 个 Agent 工具/.test(helpSrc), '工具速查页声明「19 个 Agent 工具」');
+  ok(helpSrc.includes('20 大工具'), '指南标题声明「20 大工具」');
+  ok(/20 个 Agent 工具/.test(helpSrc), '工具速查页声明「20 个 Agent 工具」');
   ok(!/\b\d+ 大核心工具/.test(helpSrc) || helpSrc.includes('18 大核心工具'), '未出现与 18 冲突的工具数量');
 
   // 每个真实工具名都要在指南里出现，不能漏
@@ -60,7 +60,7 @@ async function runTests() {
     'github_api', 'github_help',
   ];
   const missingTools = toolNames.filter((n) => !helpSrc.includes(n));
-  ok(missingTools.length === 0, '19 个工具全部在指南中列出', missingTools.length ? '缺: ' + missingTools.join(', ') : '');
+  ok(missingTools.length === 0, '20 个工具全部在指南中列出', missingTools.length ? '缺: ' + missingTools.join(', ') : '');
 
   // action 总数对账。
   // 口径必须统一：help 的 21 项是「查询主题」、api 的 4 项是「HTTP method」，
@@ -69,6 +69,7 @@ async function runTests() {
   let businessTotal = 0;
   for (const f of fs.readdirSync(path.join(__dirname, '../src/tools')).filter((x) => x.endsWith('.ts'))) {
     const src = fs.readFileSync(path.join(__dirname, '../src/tools', f), 'utf8');
+    if (f === 'trending.ts') continue; // period is a filter, not a business action
     const m = src.match(/enum:\s*\[([^\]]+)\]/);
     if (!m) continue;
     const n = (m[1].match(/'[^']+'/g) || []).length;
@@ -197,7 +198,7 @@ async function runTests() {
   console.log('\n--- 6. bundle 产物 ---');
   // ============================================================
   const bundle = fs.readFileSync(path.join(__dirname, '../lib/client.js'), 'utf8');
-  ok(bundle.includes('19 大工具'), 'bundle 含「19 大工具」');
+  ok(bundle.includes('20 大工具'), 'bundle 含「20 大工具」');
   ok(bundle.includes('106 个业务动作'), 'bundle 含「106 个业务动作」');
   ok(!bundle.includes('128 个动作'), 'bundle 已无含混的「128 个动作」口径');
   ok(bundle.includes('PR 审阅工作台'), 'bundle 含 PR 在线审阅说明');
@@ -215,6 +216,7 @@ async function runTests() {
   const actualActions = {};
   for (const f of fs.readdirSync(path.join(__dirname, '../src/tools')).filter((x) => x.endsWith('.ts'))) {
     const src = fs.readFileSync(path.join(__dirname, '../src/tools', f), 'utf8');
+    if (f === 'trending.ts') continue; // period is a filter, not a business action
     const m = src.match(/enum:\s*\[([^\]]+)\]/);
     if (!m) continue;
     actualActions[f.replace('.ts', '')] = (m[1].match(/'[^']+'/g) || []).map((s) => s.slice(1, -1));

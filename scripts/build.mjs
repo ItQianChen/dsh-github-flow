@@ -146,6 +146,7 @@ function bundleClient() {
     'run-modal.js',
     'sync-settings-modal.js',
     'help-modal.js',
+    'trending-panel.js',
   ];
 
   let leadingCode = '';

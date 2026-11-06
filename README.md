@@ -1,3 +1,9 @@
+# GitHub Trending 扩展（Fork）
+
+原 GitHub 页面顶部新增 **🔥 热点看板**，支持每日 / 每周 / 每月榜单。Firecrawl 与看板统一使用 `name / url / description / language / stars / starsToday` 六字段。设置 `FIRECRAWL_API_KEY` 后重启 DSH 即可使用。
+
+配置、自托管、Fork 安装与字段口径见 [热点看板使用说明](docs/github-trending.md)。
+
 # DSH GitHub Flow (`dsh-github-flow`)
 
 <p align="center">
@@ -10,7 +16,7 @@
 
 <p align="center">
   <b>让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手和脚，为人机协作打造沉浸式 GitHub 工作台。</b><br>
-  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>19 大领域 Agent 核心工具（106 个 action，覆盖 PR 审查/Issue 任务/Actions 工作流与构建缓存治理/免 clone 读文件/分支规则集策略排障/代码片段 Gist/标签与全局待办大盘/密钥与变量管理/智能体任务会话/社区 Discussions 讨论/Projects v2 看板/云端 Codespaces/运行时遥测与自愈健康度）</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
+  原生复用宿主机 <code>gh</code> CLI 安全登录凭据，告别 Personal Access Token 泄露；深度打通本地 Git 工作区与云端仓库协作，兼具 <b>20 大领域 Agent 核心工具（106 个 action，覆盖 PR 审查/Issue 任务/Actions 工作流与构建缓存治理/免 clone 读文件/分支规则集策略排障/代码片段 Gist/标签与全局待办大盘/密钥与变量管理/智能体任务会话/社区 Discussions 讨论/Projects v2 看板/云端 Codespaces/运行时遥测与自愈健康度）</b>、<b>人类 Slash 快捷指令</b>、<b>Web UI 全景工作台</b> 与 <b>一键自动跨平台无缝升级</b>。
 </p>
 
 <p align="center">
@@ -73,7 +79,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ## 🤖 核心工具集 (Agent Tools)：给 Agent 装上 GitHub 的手和脚
 
-本插件精选聚合为 **19 大领域核心工具（106 个 action）**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）**、**高密度 Markdown 原生渲染（列表输出压缩 70%+ Token）**、**OAuth Scope 缺失单行自愈引导** 与 **零参数 CWD 智能绑定**。
+本插件精选聚合为 **20 大领域核心工具（106 个 action）**，拒绝几十个无用微型工具撑爆 Agent 上下文，原生搭载 **Token 防溢出保护（默认 24KB 智能二分截断）**、**高密度 Markdown 原生渲染（列表输出压缩 70%+ Token）**、**OAuth Scope 缺失单行自愈引导** 与 **零参数 CWD 智能绑定**。
 
 ### 0. `github_task`：任务级原语（🆕 v0.7.0 新增）
 > **典型对话指令**：
@@ -94,7 +100,7 @@ summary（结论，≤1.5KB） + facts（结构化事实） + nextActions（可�
 * **`prepare_release`**：读最近 tag 以来的提交 → 按 Conventional Commits 归类 → 推导 SemVer（breaking→major / feat→minor / 其余→patch）→ 生成 notes 草稿 + 发版体检（工作区干净 / 同步远端 / CI 绿）。
   * **本原语不会打 tag、不会 push、不会创建 Release**：发版是人的决定，它只把「该发什么版本、notes 长什么样」准备好，并在 `nextActions` 里给出可直接执行的命令。
 
-> **档位建议**：`toolsets: ['core']` 就是「3 个任务替代 15 个领域工具」（`github_task` + `github_repo` + `github_help`，schema 仅约 4,400 字符，比全量省 84%）。需要细粒度控制时再显式挂 `github_pr` / `github_run`——原语是快捷方式，不是唯一入口。
+> **档位建议**：`toolsets: ['core']` 就是「3 个任务替代 15 个领域工具」（`github_task` + `github_repo` + `github_help`，schema 仅约 4,543 字符，比全量省 84%）。需要细粒度控制时再显式挂 `github_pr` / `github_run`——原语是快捷方式，不是唯一入口。
 
 ### 1. `github_pr`：PR 全生命周期管理与自动化代码审查
 > **典型对话指令**：
@@ -259,7 +265,7 @@ summary（结论，≤1.5KB） + facts（结构化事实） + nextActions（可�
 > - *"调用 gh 命令报错 'authentication failed'，该怎么排查？"*
 
 * **支持操作 (`topic` / `gh_command`)**：
-  * `overview`：输出全景工具箱导航与核心职责速查（19 大工具矩阵全景）；
+  * `overview`：输出全景工具箱导航与核心职责速查（20 大工具矩阵全景）；
   * `mapping`：**官方命令映射总表**，精准指示任意 `gh <command>` 对应哪个插件工具，以及未覆盖域对应的 GitHub REST/GraphQL 端点；
   * `search_syntax`：日期区间、状态筛选与高级布尔搜索语法指南；
   * `troubleshooting`：常见错误自愈配方（认证失效、网络超时、SOCKS5 代理配置、权限不足等）；
@@ -341,7 +347,7 @@ summary（结论，≤1.5KB） + facts（结构化事实） + nextActions（可�
 
 * **支持操作 (`action`)**：
   * `view`：**账号维度跨仓一站式聚合大盘**（默认），汇总展示「指派给我的 Issue」、「指派给我的 PR」、「等待我评审的 PR (Review Requests)」、「提及我的消息 (Mentions)」以及「订阅仓库近期动态 (Repository Activity)」，无需绑定单仓即可一览全局工作台；支持 `-o` 组织过滤与 `-e` 排除噪音仓库；
-  * `health`：🆕 **工具链运行时健康度与降级率审计报表**：基于 Cordis `tools/result` 事件切面，实时审计全插件 19 大核心工具的调用总量、成功率、综合健康分（0~100 分）、API 降级率与智能自愈建议。
+  * `health`：🆕 **工具链运行时健康度与降级率审计报表**：基于 Cordis `tools/result` 事件切面，实时审计全插件 20 大核心工具的调用总量、成功率、综合健康分（0~100 分）、API 降级率与智能自愈建议。
 
 ---
 
@@ -466,7 +472,7 @@ summary（结论，≤1.5KB） + facts（结构化事实） + nextActions（可�
 * **🚀 3分钟极速上手**：登录确认 → 绑定仓库 → 向 Agent 下指令的三步闭环，附能力总览（19 工具 / 106 业务动作 / 2 套工作台）；
 * **🤖 Agent 提示词实战**：7 大高频场景（建 PR、CI 排障、待办盘点、Diff 审查、看图定位、批量标签治理、RFC 研讨），每条配「📋 一键复制 Prompt」；
 * **🖥️ 两大界面操作图解**：主面板 4 标签与右侧栏 5 Tab 的逐项说明，以及两个弹窗的通用操作习惯；
-* **🧰 19 大工具速查**：按「日常研发 / 交付配置 / 生态协作 / 兜底元能力」四组列出全部工具与动作，附 `/gh` 指令速查；
+* **🧰 20 大工具速查**：按「日常研发 / 交付配置 / 生态协作 / 兜底元能力」四组列出全部工具与动作，附 `/gh` 指令速查；
 * **🔑 常见自愈排错**：登录、权限 Scope、24h 安全保护期、代理抖动、列表为空、为何需重启 DSH 共 6 条。
 
 > 同一套知识也通过 `github_help` 工具提供给 Agent——两侧口径由 phase33 测试强制对账，代码演进而文档没跟上会直接测试失败。
@@ -484,7 +490,7 @@ summary（结论，≤1.5KB） + facts（结构化事实） + nextActions（可�
 * **本地缓存可视化管理**：透明查看本地快照体积与保存时间戳，支持一键 `[🗑️ 清空缓存]` 重置。
 
 **🌐 网络代理分区**——让插件全部外联流量走你的代理：
-* **全局生效范围**：设置后驾驶舱、右侧栏面板、19 大 Agent 工具调用与一键升级链路全部经代理访问；未启用时默认使用系统环境代理（`HTTPS_PROXY` 等）或直连；
+* **全局生效范围**：设置后驾驶舱、右侧栏面板、20 大 Agent 工具调用与一键升级链路全部经代理访问；未启用时默认使用系统环境代理（`HTTPS_PROXY` 等）或直连；
 * **协议支持**：`http://` / `https://` / `socks5://` / `socks5h://`（gh 与 npm 链路原生支持 SOCKS5；`socks5h` 会把域名解析也交给代理端，抗 DNS 污染更强；npm 版本探测走 Node fetch 暂不支持 SOCKS，将保持直连并在界面如实标注）；
 * **`[🧪 测试连通性]`**：一键探测经当前代理访问 GitHub API 的延迟；
 * **保存即生效**：写入 `~/.dsh/data/dsh-github-flow/proxy.json` 持久化（DSH 重启自动恢复），无需重启、不重载插件；
@@ -582,11 +588,11 @@ summary（结论，≤1.5KB） + facts（结构化事实） + nextActions（可�
     updateCheckIntervalMs: 86400000 # 检查更新间隔（毫秒，默认 24 小时）
     registryUrl: ''           # 自定义私有 npm 镜像地址（留空走「更新设置」所选源，界面设置优先）
     proxyUrl: ''              # 代理地址预置默认值（如 'http://127.0.0.1:7890'；仅未在驾驶舱设置过时生效，界面设置优先）
-    toolsets: ['core']        # 工具档位：留空/full = 19 个全量；core=3 / ci=7 / maintain=8；也可混写工具名如 github_pr
+    toolsets: ['core']        # 工具档位：留空/full = 20 个全量；core=3 / ci=7 / maintain=8；也可混写工具名如 github_pr
     read_only: true           # 只读档位：写 action 在注册期就从工具 schema 中剔除，github_api 整体不注册
 ```
 
-> `toolsets` 决定的不是「运行时允许什么」，而是**注册给模型的工具面本身**：不填 = 19 个工具全量常驻（约 27,000 字符 schema），`core` 只有 3 个（约 4,400 字符，**省 84%**）。填错档位名会 `console.warn` 打出可用档位清单，不会静默把工具清空。
+> `toolsets` 决定的不是「运行时允许什么」，而是**注册给模型的工具面本身**：不填 = 20 个工具全量常驻（约 28,480 字符 schema），`core` 只有 3 个（约 4,543 字符，**省 84%**）。填错档位名会 `console.warn` 打出可用档位清单，不会静默把工具清空。
 > `read_only` 是硬语义，两层生效：① 注册期把写 action 从参数 `enum` 里剪掉（模型在 schema 层看不到）；② **执行入口再拦一次**——本插件用的是手写 descriptor，宿主不会替我们做参数校验，所以被剪掉的 action 即使带着 `confirm: true` 也会在到达 `gh` 之前被拒绝并抛出「只读模式」。`github_api` 因端点与 method 均可任意而无法降级，只读模式下整体不注册。
 > 边界说明：`github_help` 的帮助文本是一份**文档**，只读模式下仍会列出全部能力（含写操作的用法），它不构成可执行的契约——真正拦住写操作的是上面那两层。
 

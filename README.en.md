@@ -1,3 +1,7 @@
+# GitHub Trending extension (fork)
+
+The existing GitHub dashboard now has a **🔥 热点看板** entry for daily, weekly and monthly Trending tables. Set `FIRECRAWL_API_KEY` in the DSH process environment and restart. Every item uses exactly `name / url / description / language / stars / starsToday`; `starsToday` means the selected period’s gain. See [configuration and installation](docs/github-trending.md).
+
 # DSH GitHub Flow (`dsh-github-flow`)
 
 <p align="center">
@@ -10,7 +14,7 @@
 
 <p align="center">
   <b>Give DeepSeek Harness Agents native hands and feet to operate GitHub, crafting an immersive collaboration cockpit for developers.</b><br>
-  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>19 core domain Agent tools (106 actions covering PR review/Issue tracking/Actions workflow & cache governance/clone-free file reads/branch ruleset policy diagnosis/Gist snippets/labels & global status dashboards/secrets & variables/agent tasks/discussions/projects v2/codespaces/runtime telemetry)</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
+  Natively reuses host <code>gh</code> CLI login credentials to eliminate Personal Access Token (PAT) leaks; deeply bridges local Git workspaces with remote GitHub collaboration, equipped with <b>20 core domain Agent tools (106 actions covering PR review/Issue tracking/Actions workflow & cache governance/clone-free file reads/branch ruleset policy diagnosis/Gist snippets/labels & global status dashboards/secrets & variables/agent tasks/discussions/projects v2/codespaces/runtime telemetry)</b>, <b>human slash commands</b>, <b>Web UI visual cockpits</b>, and <b>cross-platform one-click seamless upgrades</b>.
 </p>
 
 <p align="center">
@@ -73,7 +77,7 @@ dsh plugin --profile web add dsh-github-flow
 
 ## 🤖 Core Agent Tools: Equipping Agents with Native GitHub Powers
 
-Consolidates scattered GitHub endpoints into **19 core domain tools (106 actions)**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)**, **OAuth Scope self-healing guidance**, and **Zero-argument CWD auto-binding**.
+Consolidates scattered GitHub endpoints into **20 core domain tools (106 actions)**, featuring **Token Budget Protection (default 24KB intelligent truncation)**, **High-density Native Markdown Rendering (70%+ list output token reduction)**, **OAuth Scope self-healing guidance**, and **Zero-argument CWD auto-binding**.
 
 ### 0. `github_task`: Task-level Primitives (🆕 new in v0.7.0)
 > **Example Agent Prompts**:
@@ -94,7 +98,7 @@ summary (≤1.5KB) + facts (structured) + nextActions (concrete next steps) + co
 * **`prepare_release`**: commits since the last tag → Conventional Commits grouping → SemVer suggestion (breaking→major / feat→minor / else→patch) → release-notes draft + health check (clean tree / synced / CI green).
   * **This primitive never tags, pushes, or creates a Release**: releasing is a human decision; it only prepares "which version, what notes" and puts ready-to-run commands in `nextActions`.
 
-> **Tier tip**: `toolsets: ['core']` is exactly "3 tasks instead of 15 domain tools" (`github_task` + `github_repo` + `github_help`, ~4,400 chars of schema — 84% smaller than full). Add `github_pr` / `github_run` explicitly when you need fine-grained control — primitives are shortcuts, not the only entrance.
+> **Tier tip**: `toolsets: ['core']` is exactly "3 tasks instead of 15 domain tools" (`github_task` + `github_repo` + `github_help`, ~4,543 chars of schema — 84% smaller than full). Add `github_pr` / `github_run` explicitly when you need fine-grained control — primitives are shortcuts, not the only entrance.
 
 ### 1. `github_pr`: Pull Request Lifecycle & Automated Code Review
 > **Example Agent Prompts**:
@@ -258,7 +262,7 @@ summary (≤1.5KB) + facts (structured) + nextActions (concrete next steps) + co
 > - *"How do I debug 'authentication failed' errors from gh?"*
 
 * **Supported Actions**:
-  * `overview`: Complete toolbox navigation and summary table (19 core tools);
+  * `overview`: Complete toolbox navigation and summary table (20 core tools);
   * `mapping`: **Official gh Command ↔ Tool Action Mapping Table**, detailing exact tool calls and REST/GraphQL fallback routes;
   * `search_syntax`: Date ranges, qualifiers, and boolean query syntax;
   * `troubleshooting`: Self-healing recipes for authentication loss, timeouts, SOCKS5 proxy configs, and permissions;
@@ -340,7 +344,7 @@ summary (≤1.5KB) + facts (structured) + nextActions (concrete next steps) + co
 
 * **Supported Actions**:
   * `view`: **Account-level global status cockpit** (default), aggregating Assigned Issues, Assigned PRs, Review Requests, Mentions, and Repository Activity across all subscribed repositories without needing repository context; supports `-o` org filtering and `-e` noise repository exclusion;
-  * `health`: 🆕 **Toolchain Runtime Health & Degradation Audit Report**: Powered by Cordis `tools/result` event telemetry, audits total calls, success rates, comprehensive health score (0-100), API degradation rates, and actionable self-healing upgrade suggestions across all 19 tools.
+  * `health`: 🆕 **Toolchain Runtime Health & Degradation Audit Report**: Powered by Cordis `tools/result` event telemetry, audits total calls, success rates, comprehensive health score (0-100), API degradation rates, and actionable self-healing upgrade suggestions across all 20 tools.
 
 ---
 
@@ -461,7 +465,7 @@ Located in the right drawer of every chat workspace, seamlessly bridging your lo
 
 ### 3. Help & Playbook Modal
 Click **`[📖 Help]`** in the top right of the Cockpit (or the ❓ button in the right sidebar) to open the 920px immersive manual; press Esc or click the backdrop to close. Five sections:
-* **🚀 3-Minute Quickstart**: login check → workspace binding → first Agent instruction, plus a capability overview (19 tools / 106 business actions / 2 workbenches);
+* **🚀 3-Minute Quickstart**: login check → workspace binding → first Agent instruction, plus a capability overview (20 tools / 106 business actions / 2 workbenches);
 * **🤖 Agent Prompt Playbook**: 7 high-frequency scenarios (open a PR, CI triage, daily standup, diff review, screenshot triage, bulk label governance, RFC discussion), each with one-click prompt copy;
 * **🖥️ UI Walkthrough**: per-tab documentation for the 4-tab Cockpit and the 5-tab right sidebar, plus shared modal interaction habits;
 * **🧰 19-Tool Reference**: all tools and actions grouped into daily development / delivery & config / ecosystem & collaboration / escape hatches, with a `/gh` command cheat sheet;
@@ -580,7 +584,7 @@ Fine-tune options via DSH config:
     read_only: true           # Read-only tier: write actions pruned from the schema at registration; github_api not registered
 ```
 
-> `toolsets` controls **which tools get registered to the model**, not a runtime permission check: unset = all 19 resident (~27,000 chars of schema), `core` = 3 (~4,400 chars, **84% smaller**). A misspelled tier name logs a `console.warn` listing the available tiers instead of silently dropping every tool.
+> `toolsets` controls **which tools get registered to the model**, not a runtime permission check: unset = all 19 resident (~28,480 chars of schema), `core` = 3 (~4,543 chars, **84% smaller**). A misspelled tier name logs a `console.warn` listing the available tiers instead of silently dropping every tool.
 > `read_only` is a hard semantic enforced in two layers: (1) write actions are removed from the argument `enum` at registration time (invisible at the schema layer); (2) **the execution entry rejects them again** — this plugin ships hand-rolled descriptors, so the host does not validate arguments on our behalf; a pruned action is refused before it ever reaches `gh`, even with `confirm: true`. `github_api` accepts any endpoint and method, so it cannot be degraded — it is simply not registered.
 > Boundary note: `github_help` output is **documentation**, so it still lists every capability (including write usage) in read-only mode. It is not an executable contract — what actually blocks writes is the two layers above.
 

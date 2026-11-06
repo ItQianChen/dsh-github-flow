@@ -343,12 +343,12 @@ const phaseList = phasesMatch
   : [];
 ok(phaseList.includes('phase49-diff-preview.test.mjs'),
   'run-all.mjs 的 phases 已登记 phase49-diff-preview.test.mjs', String(phaseList.length));
-ok(phaseList[phaseList.length - 1] === 'phase49-diff-preview.test.mjs',
-  'phase49 位于 phases 数组末尾（追加而非插队）', phaseList.slice(-2).join(' , '));
+ok(phaseList.indexOf('phase49-diff-preview.test.mjs') === phaseList.indexOf('phase48-body-file.test.mjs') + 1,
+  'phase49 紧随 phase48（后续阶段可追加）', phaseList.slice(-2).join(' , '));
 
 const archSrc = readFileSync(path.join(ROOT, 'docs/architecture.md'), 'utf8');
-ok(archSrc.includes('49 个独立阶段'),
-  'docs/architecture.md 声明 49 个独立阶段（phase35 与 run-all 对账）');
+ok(archSrc.includes('50 个独立阶段'),
+  'docs/architecture.md 声明 50 个独立阶段（phase35 与 run-all 对账）');
 ok(archSrc.includes('phase49'),
   'docs/architecture.md 的阶段要点列表含 phase49 条目');
 

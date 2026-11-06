@@ -83,7 +83,7 @@ ok(bundle.includes('---- [Bundled: state-badges.js]'), '共享状态徽章模块
 // 计数口径：leadingModules + trailingModules 全部命中才会出现该标记。
 // phase49 起多了 diff-utils.js（补丁切分纯函数）与 file-diff-modal.js（Diff 弹窗），
 // 21 UI + 1 shared = 22。
-ok(bundledCount === 22, '22 个 Bundle 子模块已内联（21 UI + 1 shared）', `实际 ${bundledCount}`);
+ok(bundledCount === 23, '23 个 Bundle 子模块已内联（22 UI + 1 shared）', `实际 ${bundledCount}`);
 // 子模块被内联进闭包后不得残留 ESM 导出语法，否则整段在浏览器里语法错误
 ok(!/^export\s+(const|function|class|default)\s/m.test(bundle), 'Bundle 内无残留 ESM export 语句');
 
@@ -200,7 +200,7 @@ for (const file of readdirSync(LIB_TOOLS).filter((f) => f.endsWith('.js') && f !
   descriptors.push({ file, tool: factory(mock) });
 }
 
-ok(descriptors.length === 19, '19 个工具工厂全部可实例化', `实际 ${descriptors.length}`);
+ok(descriptors.length === 20, '20 个工具工厂全部可实例化', `实际 ${descriptors.length}`);
 
 const seen = new Set();
 for (const { file, tool } of descriptors) {
@@ -242,7 +242,7 @@ const fiber = root.plugin(mainModule, { checkUpdate: false });
 await tick();
 
 ok(fiber.state === 2, '无 webServer/commands 的 profile 里插件为 ACTIVE（0=PENDING 2=ACTIVE 3=FAILED）', `实际 state=${fiber.state}`);
-ok(registeredTools.length === 19, '19 个工具全部注册', `实际 ${registeredTools.length}`);
+ok(registeredTools.length === 20, '20 个工具全部注册', `实际 ${registeredTools.length}`);
 ok(root.get('github') !== undefined, 'ctx.provide("github") 在真实 Context 上生效');
 ok(root.get('github')?.constructor?.name === 'GhExecutor', '提供的是 GhExecutor 实例');
 

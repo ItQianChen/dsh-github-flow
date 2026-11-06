@@ -1,3 +1,4 @@
+import { GithubTrendingPanel } from './trending-panel.js';
 import { prStateBadge, issueStateBadge } from '../shared/state-badges.js';
 declare const React: any;
 declare function getLocalSyncSettings(): any;
@@ -37,6 +38,7 @@ export function GithubWorkspacePanel() {
   var [isHelpModalOpen, setIsHelpModalOpen] = React.useState(false);
   var [error, setError] = React.useState(null as string | null);
   var [updateInfo, setUpdateInfo] = React.useState(null as any);
+  var [showTrending, setShowTrending] = React.useState(false);
   var [activeTab, setActiveTab] = React.useState("workspaces");
   var [searchQuery, setSearchQuery] = React.useState("");
   var [issueFilter, setIssueFilter] = React.useState("all");
@@ -341,6 +343,11 @@ export function GithubWorkspacePanel() {
     h(
       "div",
       { style: { display: "flex", alignItems: "center", gap: "8px" } },
+      h("button", {
+        className: "dsh-github-btn-sm",
+        "aria-pressed": showTrending,
+        onClick: () => setShowTrending(!showTrending),
+      }, showTrending ? "← 返回工作台" : "🔥 热点看板"),
       h(
         "button",
         {
@@ -372,6 +379,17 @@ export function GithubWorkspacePanel() {
       )
     )
   );
+
+  if (showTrending) {
+    return h("div", { className: "dsh-github-panel", ref: panelRef }, headerEl, h(GithubTrendingPanel),
+      h(GlobalSyncSettingsModal, {
+        isOpen: isSettingsModalOpen, initialSection: settingsInitialSection,
+        onClose: () => { setIsSettingsModalOpen(false); refreshProxyBadge(); },
+        currentSettings: syncSettings, onSave: setSyncSettings,
+        onClearCache: () => { setData(null); setLastSyncedAt(0); },
+      }),
+      h(GithubHelpModal, { isOpen: isHelpModalOpen, onClose: () => setIsHelpModalOpen(false) }));
+  }
 
   if (loading && !data) {
     return h("div", { className: "dsh-github-panel", ref: panelRef }, headerEl, h("div", { className: "dsh-github-empty" }, "正在加载全局 GitHub 账号与工作区数据..."));

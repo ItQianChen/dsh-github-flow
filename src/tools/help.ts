@@ -20,6 +20,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 | \`github_ruleset\` | 分支保护规则与策略诊断 | 检查分支适用的合并策略规则 (check)、查看规则集列表与详情，权威回答“PR 为何无法合并” |
 | \`github_cache\` | Actions 构建缓存盘点与安全清理 | 查看缓存列表与体积占用、按 ID/Key 删除指定缓存、删除缓存（三态均需 confirm） |
 | \`github_gist\` | 代码片段与调试日志分享治理 | 查看 Gist 列表与代码正文、创建 Secret/Public 代码片段、编辑与物理删除（需 confirm） |
+| \`github_trending\` | GitHub 热点看板 | \`github_trending({period: "all"})\` 返回每日/每周/每月三张表；六字段 name/url/description/language/stars/starsToday，starsToday 表示所选周期新增；配置 FIRECRAWL_API_KEY，无需 gh 登录 |
 | \`github_status\` | 跨仓库待办与动态聚合看板 | 账号维度汇总指派给我的 Issue/PR、等待评审、被 @提及 以及订阅仓库近期动态 |
 | \`github_agent_task\` | 云端智能体编码任务会话治理 | 查阅已分派任务列表、检视任务状态与会话日志、向云端 Agent 发起新编码重构任务 |
 | \`github_discussion\` | 团队技术讨论与开源社区 RFC 闭环 | 浏览讨论列表、检视正文与评论楼层、发起新讨论、编辑正文与追加回复 |
@@ -30,7 +31,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 
 💡 **使用准则**：优先调用高层语义工具（pr / issue / run / repo / release / secret）；当高层工具无法满足特殊接口需求时，再降级使用 \`github_api\`。
 📄 **长正文走文件，别塞进 body**：正文/发版说明/请求体/prompt 若已经写成本地 md 文件，直接用 \`body_file\` / \`notes_file\` / \`input_file\` / \`prompt_file\` 指向它，不要把全文内联——插件读文件、正文经 stdin 交给 gh，既不占模型上下文，也不会撞上 Windows 的命令行长度上限。
-📊 **规模口径**：19 个工具 / 106 个业务 action（不含 \`github_help\` 的 22 个查询主题与 \`github_api\` 的 4 个 HTTP method——它们不是业务动作）。
+📊 **规模口径**：20 个工具 / 106 个业务 action（不含 \`github_help\` 的 22 个查询主题与 \`github_api\` 的 4 个 HTTP method——它们不是业务动作）。
 💬 **人类指令**：聊天框支持 \`/gh status\`（大盘看板）、\`/gh upgrade\`（一键升级插件）、\`/gh help\`（快捷帮助）。
 🖥️ **可视化工作台**：最左侧 Octocat 图标打开全景驾驶舱（4 标签：本地工作区 / 我的仓库 / Pull Requests / 待办 Issues）；每个会话右侧栏有 5 个 Tab（Git / 未提交 / PR / Issues / Actions）。PR、Issue、Actions 三类卡片点击均可在线查看详情（Actions 为 job / step 树 + 按需失败日志），无需跳浏览器；提交详情里的「文件变更统计」与未提交清单里的文件均可弹窗预览该文件的 Unified Diff（整包补丁按文件切分、重命名路径自动归一、超长补丁按文件边界截断）。
 🗺️ **命令对照**：不确定某 gh 命令对应哪个工具？\`github_help(topic: 'mapping')\` 查询完整映射表（含未覆盖域的 API 引导）。`,
@@ -262,7 +263,7 @@ const KNOWLEDGE_BASE: Record<string, string> = {
 - **排除噪音仓库**: \`github_status(exclude: ['owner/noisy-repo'])\`
   - 过滤高频刷屏但无需关注的仓库活动。
 - **查看工具链运行时健康度**: \`github_status(action: 'health')\`
-  - 审计当前会话 19 大工具矩阵的综合健康分、API 降级率、安全防线拦截频次与针对性自愈建议。`,
+  - 审计当前会话 20 大工具矩阵的综合健康分、API 降级率、安全防线拦截频次与针对性自愈建议。`,
 
   agent_task: `### 🤖 github_agent_task 智能体任务指南
 

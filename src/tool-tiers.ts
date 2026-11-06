@@ -76,6 +76,7 @@ export const WRITE_ACTIONS: Record<string, string[] | '*'> = {
   github_ruleset: [],
   github_status: [],
   github_help: [],
+  github_trending: [],
   github_api: '*',
 };
 

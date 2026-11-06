@@ -105,6 +105,7 @@ const withArgv = rows.filter((r) => r.argv.length > 0);
 
 // 明确白名单：这些 action 不产生 gh 调用，或依赖真实文件系统，不参与 argv 校验
 const SKIP = new Set([
+  'github_trending::(none)', // HTTP Firecrawl service, no gh argv
   'github_status::health', // 纯本地遥测汇总，不调用 gh
 ]);
 const skipHits = [];

@@ -1,3 +1,4 @@
+import { TrendingService } from '../trending/service.js';
 /**
  * API 路由注册器（纯装配骨架）。
  *
@@ -26,4 +27,4 @@ export declare function registerApiRoutes(ctxOrWebServer: any, executor: GhExecu
  * 的 Proxy get 陷阱）。所以 `ctx?.webServer` 这种"安全回退"根本不安全：它在
  * CLI/TUI profile 里会把插件从「PENDING」变成「加载失败」。
  */
-webServerOverride?: any): void;
+webServerOverride?: any, trendingService?: TrendingService): void;

@@ -50,6 +50,9 @@ declare const ConfigSchema: Schema<Schemastery.ObjectS<NoInfer<{
     proxyUrl: Schema<string, string, "plain">;
     toolsets: Schema<string[], string[], "plain">;
     read_only: Schema<boolean, boolean, "plain">;
+    firecrawlBaseUrl: Schema<string, string, "plain">;
+    trendingCacheTtlMs: Schema<number, number, "defined">;
+    trendingTimeoutMs: Schema<number, number, "defined">;
 }>>, Schemastery.ObjectT<NoInfer<{
     ghPath: Schema<string, string, "defined">;
     defaultTimeoutMs: Schema<number, number, "volatile-defined">;
@@ -64,6 +67,9 @@ declare const ConfigSchema: Schema<Schemastery.ObjectS<NoInfer<{
     proxyUrl: Schema<string, string, "plain">;
     toolsets: Schema<string[], string[], "plain">;
     read_only: Schema<boolean, boolean, "plain">;
+    firecrawlBaseUrl: Schema<string, string, "plain">;
+    trendingCacheTtlMs: Schema<number, number, "defined">;
+    trendingTimeoutMs: Schema<number, number, "defined">;
 }>>, "plain">;
 /** 校验并补齐默认值后的运行期配置（volatile 字段为稳定引用，非普通值）。 */
 export type Config = ReturnType<typeof ConfigSchema>;
@@ -82,6 +88,9 @@ export declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
     proxyUrl: Schema<string, string, "plain">;
     toolsets: Schema<string[], string[], "plain">;
     read_only: Schema<boolean, boolean, "plain">;
+    firecrawlBaseUrl: Schema<string, string, "plain">;
+    trendingCacheTtlMs: Schema<number, number, "defined">;
+    trendingTimeoutMs: Schema<number, number, "defined">;
 }>>, Schemastery.ObjectT<NoInfer<{
     ghPath: Schema<string, string, "defined">;
     defaultTimeoutMs: Schema<number, number, "volatile-defined">;
@@ -96,6 +105,9 @@ export declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
     proxyUrl: Schema<string, string, "plain">;
     toolsets: Schema<string[], string[], "plain">;
     read_only: Schema<boolean, boolean, "plain">;
+    firecrawlBaseUrl: Schema<string, string, "plain">;
+    trendingCacheTtlMs: Schema<number, number, "defined">;
+    trendingTimeoutMs: Schema<number, number, "defined">;
 }>>, "plain">;
 export declare function apply(ctx: Context, config?: Config): void;
 export type GitHubService = GhExecutor;

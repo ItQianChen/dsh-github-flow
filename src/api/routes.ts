@@ -1,3 +1,5 @@
+import { TrendingService } from '../trending/service.js';
+import { registerTrendingRoutes } from './routes-trending.js';
 /**
  * API 路由注册器（纯装配骨架）。
  *
@@ -40,7 +42,8 @@ export function registerApiRoutes(
    * 的 Proxy get 陷阱）。所以 `ctx?.webServer` 这种"安全回退"根本不安全：它在
    * CLI/TUI profile 里会把插件从「PENDING」变成「加载失败」。
    */
-  webServerOverride?: any
+  webServerOverride?: any,
+  trendingService?: TrendingService
 ) {
   const ctx = ctxOrWebServer;
   // 只对「真 Context」走 ctx.get()：ctx.get 是 Context 原型方法，读它永远安全；
@@ -92,4 +95,5 @@ export function registerApiRoutes(
   registerActionRoutes(deps, executor, cacheMap, globalCache);
   registerLifecycleRoutes(deps, executor, checker, upgrader);
   registerProxyRoutes(deps, checker, proxyManager);
+  if (trendingService) registerTrendingRoutes(deps, trendingService);
 }
