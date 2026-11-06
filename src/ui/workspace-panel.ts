@@ -313,14 +313,14 @@ export function GithubWorkspacePanel() {
 
   var headerEl = h(
     "div",
-    { className: "dsh-github-header" },
+    { className: "dsh-github-header", style: { flexWrap: "wrap", gap: "12px" } },
     h(
       "div",
-      { className: "dsh-github-title" },
+      { className: "dsh-github-title", style: { flexWrap: "wrap" } },
       renderOctocatBadge(32),
       h("h2", null, "GitHub 全景驾驶舱"),
       renderPluginBadge(h),
-      h(SyncStatusBadge, { syncStatus, lastSyncedAt }),
+      showTrending ? null : h(SyncStatusBadge, { syncStatus, lastSyncedAt }),
       proxyActive && proxyActive.enabled
         ? h("span", {
             style: {
@@ -342,13 +342,13 @@ export function GithubWorkspacePanel() {
     ),
     h(
       "div",
-      { style: { display: "flex", alignItems: "center", gap: "8px" } },
+      { className: "dsh-github-dashboard-actions", style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
       h("button", {
         className: "dsh-github-btn-sm",
         "aria-pressed": showTrending,
         onClick: () => setShowTrending(!showTrending),
       }, showTrending ? "← 返回工作台" : "🔥 热点看板"),
-      h(
+      showTrending ? null : h(
         "button",
         {
           className: "dsh-github-refresh-btn",
