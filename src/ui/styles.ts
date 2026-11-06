@@ -4,6 +4,63 @@
  */
 
 export const GITHUB_PANEL_CSS = `
+/* Apple-inspired trending surface: host-native tokens, no hard-coded light backgrounds. */
+.dsh-trending { --trend-surface:var(--dsw-alias-bg-layer-1,#fff); --trend-elevated:var(--dsw-alias-bg-layer-2,#f7f8fa); --trend-border:var(--dsw-alias-border,rgba(60,60,67,.14)); --trend-text:var(--dsw-alias-label-primary,#1d1d1f); --trend-muted:var(--dsw-alias-label-secondary,#6e6e73); --trend-accent:var(--dsw-alias-link,#007aff); color:var(--trend-text); padding:clamp(12px,2vw,28px); }
+.dsh-trending-heading { align-items:center; margin-bottom:20px; }
+.dsh-trending-eyebrow { display:block; color:var(--trend-accent); font-size:10px; font-weight:700; letter-spacing:2px; margin-bottom:8px; }
+.dsh-trending-heading h2 { font-size:clamp(25px,2.4vw,34px); font-weight:700; letter-spacing:-.035em; margin:0 0 7px; }
+.dsh-trending-heading p { margin:0; }
+.dsh-trending .dsh-github-pills { display:inline-flex; padding:4px; border-radius:13px; background:var(--trend-elevated); border:1px solid var(--trend-border); }
+.dsh-trending .dsh-github-pill-btn { border:0; border-radius:10px; padding:9px 20px; transition:background .2s,color .2s,box-shadow .2s; }
+.dsh-trending .dsh-github-pill-btn.active { background:var(--trend-surface); color:var(--trend-text); box-shadow:0 2px 8px rgba(0,0,0,.09); }
+.dsh-trending-note { margin:12px 0 18px; }
+.dsh-trending-meta { margin:0 0 12px; }
+.dsh-trending-content { display:grid; grid-template-columns:minmax(0,1fr) minmax(265px,310px); align-items:start; gap:18px; }
+.dsh-trending-table-wrap { min-width:0; background:var(--trend-surface); border-color:var(--trend-border); border-radius:16px; box-shadow:0 5px 22px rgba(0,0,0,.025); }
+.dsh-trending-table th { background:var(--trend-elevated); color:var(--trend-muted); font-size:11px; text-transform:none; letter-spacing:.02em; }
+.dsh-trending-table th,.dsh-trending-table td { border-color:var(--trend-border); }
+.dsh-trending-table tbody tr { transition:background .18s; }
+.dsh-trending-table tbody tr:hover { background:color-mix(in srgb,var(--trend-accent) 5%,transparent); }
+.dsh-trending-table .dsh-trending-name a { font-weight:650; }
+.dsh-trending-insight { position:sticky; top:16px; padding:22px; border-radius:18px; border:1px solid var(--trend-border); background:var(--trend-surface); box-shadow:0 8px 32px rgba(0,0,0,.035); color:var(--trend-text); min-width:0; overflow-wrap:anywhere; }
+.dsh-trending-insight-header { display:flex; gap:11px; align-items:center; }
+.dsh-trending-agent-icon { width:38px; height:38px; flex:none; display:grid; place-items:center; font-size:24px; border-radius:12px; background:color-mix(in srgb,var(--trend-accent) 11%,transparent); color:var(--trend-accent); }
+.dsh-trending-insight h3 { margin:0 0 3px; font-size:16px; letter-spacing:-.025em; }
+.dsh-trending-insight-header small { color:var(--trend-muted); font-size:10px; letter-spacing:.05em; }
+.dsh-trending-insight-subtitle,.dsh-trending-agent-footnote { font-size:12px; color:var(--trend-muted); line-height:1.7; }
+.dsh-trending-insight-subtitle { margin:17px 0; }
+.dsh-trending-insight-result { border-top:1px solid var(--trend-border); padding-top:9px; font-size:13px; line-height:1.75; }
+.dsh-trending-insight-result h4 { font-size:12px; margin:15px 0 6px; }
+.dsh-trending-insight-result p { margin:0; white-space:pre-wrap; }
+.dsh-trending-insight-result ol { padding-left:20px; margin:5px 0 14px; }
+.dsh-trending-insight-result li { margin:0 0 10px; }
+.dsh-trending-agent-empty { padding:20px 4px; text-align:center; color:var(--trend-muted); font-size:12px; }
+.dsh-trending-agent-sparkle { color:var(--trend-accent); font-size:32px; }
+.dsh-trending-agent-button { width:100%; border:0; border-radius:12px; background:var(--trend-accent); color:#fff; padding:11px 14px; font-size:13px; font-weight:600; cursor:pointer; }
+.dsh-trending-agent-button:disabled { opacity:.55; cursor:default; }
+.dsh-trending-agent-error { color:#d63638; font-size:12px; line-height:1.6; }
+.dsh-trending-agent-loading { display:flex; align-items:center; gap:9px; padding:18px 0; font-size:12px; color:var(--trend-muted); }
+.dsh-trending-agent-spinner { width:15px; height:15px; border:2px solid var(--trend-border); border-top-color:var(--trend-accent); border-radius:50%; animation:dsh-trend-spin 1s linear infinite; }
+@keyframes dsh-trend-spin { to { transform:rotate(360deg); } }
+.dsh-trending-agent-footnote { margin:12px 0 0; font-size:11px; }
+.dsh-firecrawl-settings { color:var(--dsw-alias-label-primary,#1d1d1f); }
+.dsh-firecrawl-settings .dsh-firecrawl-heading { font-size:22px; font-weight:700; letter-spacing:-.03em; margin:0 0 8px; }
+.dsh-firecrawl-settings .dsh-firecrawl-lead { font-size:13px; color:var(--dsw-alias-label-secondary,#6e6e73); line-height:1.65; }
+.dsh-firecrawl-card { background:var(--dsw-alias-bg-layer-2,#f7f8fa); border:1px solid var(--dsw-alias-border,rgba(60,60,67,.14)); border-radius:15px; padding:18px; margin:18px 0; }
+.dsh-firecrawl-status { display:inline-block; padding:6px 10px; border-radius:99px; background:rgba(52,199,89,.12); color:var(--dsw-alias-label-primary,#1d1d1f); font-size:12px; margin-bottom:16px; }
+.dsh-firecrawl-card label { display:block; font-weight:600; margin:0 0 8px; font-size:13px; }
+.dsh-firecrawl-card input { width:100%; box-sizing:border-box; border-radius:10px; min-height:40px; }
+.dsh-firecrawl-hint { font-size:12px; line-height:1.7; color:var(--dsw-alias-label-secondary,#6e6e73); }
+.dsh-firecrawl-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:15px; }
+.dsh-firecrawl-actions button { border-radius:10px; min-height:36px; }
+body[data-ds-dark-theme] .dsh-trending { --trend-surface:var(--dsw-alias-bg-layer-1,#242426); --trend-elevated:var(--dsw-alias-bg-layer-2,#303033); --trend-border:var(--dsw-alias-border,rgba(255,255,255,.12)); --trend-text:var(--dsw-alias-label-primary,#f5f5f7); --trend-muted:var(--dsw-alias-label-secondary,#a1a1a6); --trend-accent:var(--dsw-alias-link,#5ac8fa); }
+body[data-ds-dark-theme] .dsh-trending-table th { background:var(--trend-elevated); }
+body[data-ds-dark-theme] .dsh-trending-table tbody tr:hover { background:rgba(255,255,255,.045); }
+body[data-ds-dark-theme] .dsh-trending-agent-button { color:#111; }
+@media(max-width:1120px){ .dsh-trending-content { grid-template-columns:minmax(0,1fr); } .dsh-trending-insight { position:static; } }
+@media(max-width:700px){ .dsh-trending { padding:12px; } .dsh-trending-insight { padding:16px; } .dsh-trending .dsh-github-pill-btn { padding:8px 13px; } }
+@media(prefers-reduced-motion:reduce){ .dsh-trending-agent-spinner { animation:none; } .dsh-trending * { transition:none!important; } }
+
 .dsh-github-dashboard-actions button { white-space: nowrap; flex-shrink: 0; }
 .dsh-trending { min-width: 0; }
 .dsh-trending-heading, .dsh-trending-meta { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
