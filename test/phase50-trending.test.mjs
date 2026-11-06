@@ -110,6 +110,33 @@ assert.match(markdown, /本月新增 starsToday/);
 assert.ok(markdown.includes('A \\| useful project'));
 await assert.rejects(tool.execute({ period: 'yearly' }), /period/);
 await assert.rejects(tool.execute({ refresh: 'yes' }), /refresh/);
+// Firecrawl Agent is opt-in, caches one job per snapshot and never changes the six-field rows.
+const agentRequests = [];
+let agentState = 'processing';
+const agentService = new TrendingService({ apiKey: 'agent-secret' }, async (url, options) => {
+  agentRequests.push({ url, options });
+  if (url.endsWith('/v2/scrape')) return reply();
+  if (url.endsWith('/v2/agent')) return new Response(JSON.stringify({ success: true, id: '12345678-1234-1234-1234-123456789abc' }));
+  return new Response(JSON.stringify({ success: true, status: agentState,
+    data: { summary: 'AI 项目受关注', observations: ['项目 owner/repo 上榜'] } }));
+});
+await assert.rejects(agentService.agentStart('weekly'), /先加载/);
+await agentService.get('daily');
+assert.equal((await agentService.agentStatus('daily')).status, 'idle');
+assert.equal((await agentService.agentStart('daily')).status, 'processing');
+assert.equal((await agentService.agentStart('daily')).status, 'processing');
+assert.equal(agentRequests.filter(v => v.url.endsWith('/v2/agent')).length, 1, 'do not create duplicate paid jobs');
+assert.equal((await agentService.agentStatus('daily')).status, 'processing');
+agentState = 'completed';
+const insight = await agentService.agentStatus('daily');
+assert.equal(insight.insight.summary, 'AI 项目受关注');
+assert.equal(insight.insight.observations.length, 1);
+assert.deepEqual(Object.keys((await agentService.get('daily')).items[0]), keys);
+const startBody = JSON.parse(agentRequests.find(v => v.url.endsWith('/v2/agent')).options.body);
+assert.deepEqual(startBody.urls, ['https://github.com/trending?since=daily']);
+assert.ok(!JSON.stringify(insight).includes('agent-secret'));
+agentService.dispose();
+
 service.dispose();
 selfHosted.dispose();
 console.log('Trending service, six-field contract, routes, caching, cancellation and Agent tool tests passed.');
