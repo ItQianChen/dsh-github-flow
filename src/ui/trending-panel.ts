@@ -7,6 +7,10 @@ export function GithubTrendingPanel() {
   const [period, setPeriod] = React.useState('daily' as TrendingPeriod);
   const [boards, setBoards] = React.useState({} as Partial<Record<TrendingPeriod, TrendingResult>>);
   const [busy, setBusy] = React.useState(false);
+  const [insights, setInsights] = React.useState({} as Record<string, any>);
+  const [agentBusy, setAgentBusy] = React.useState(false);
+  const [agentError, setAgentError] = React.useState('');
+  const agentGeneration = React.useRef(0);
   const [error, setError] = React.useState('');
   const [configRevision, setConfigRevision] = React.useState(0);
   const [configured, setConfigured] = React.useState(null as boolean | null);
@@ -50,7 +54,7 @@ export function GithubTrendingPanel() {
       }).catch(err => { if (!controller.signal.aborted) setError(err.message); });
     };
     const onUpdated = () => {
-      generationRef.current++; requestRef.current?.abort(); setBoards({}); setError(''); setBusy(false); checkConfiguration();
+      generationRef.current++; requestRef.current?.abort(); setBoards({}); setInsights({}); setAgentError(''); agentGeneration.current++; setError(''); setBusy(false); checkConfiguration();
     };
     checkConfiguration();
     window.addEventListener('dsh-github-firecrawl-updated', onUpdated);
@@ -62,6 +66,47 @@ export function GithubTrendingPanel() {
     return () => { generationRef.current++; requestRef.current?.abort(); };
   }, [period, configured, configRevision, load]);
 
+  const agentCall = React.useCallback(async (selected: TrendingPeriod, action: 'start' | 'status') => {
+    const response = await fetch('/api/github/trending-agent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ period: selected, action }),
+    });
+    const json = await response.json();
+    if (!response.ok || !json.ok) throw new Error(json.error || 'Agent 请求失败');
+    return json.data;
+  }, []);
+
+  React.useEffect(() => {
+    if (!boards[period]) return;
+    let stopped = false;
+    const generation = ++agentGeneration.current;
+    const poll = async () => {
+      try {
+        const state = await agentCall(period, 'status');
+        if (!stopped && generation === agentGeneration.current) {
+          setInsights((old: Record<string, any>) => ({ ...old, [period]: state }));
+        }
+      } catch (err: any) {
+        if (!stopped && generation === agentGeneration.current) setAgentError(err.message);
+      }
+    };
+    poll();
+    const timer = setInterval(() => {
+      if (insights[period]?.status === 'processing') poll();
+    }, 3500);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [period, boards[period]?.fetchedAt, insights[period]?.status, agentCall]);
+
+  const startAnalysis = async () => {
+    setAgentBusy(true);
+    setAgentError('');
+    try {
+      const state = await agentCall(period, 'start');
+      setInsights((old: Record<string, any>) => ({ ...old, [period]: state }));
+    } catch (err: any) { setAgentError(err.message || 'Agent 分析失败'); }
+    finally { setAgentBusy(false); }
+  };
+
   const board: TrendingResult | undefined = boards[period];
   const periods: Array<[TrendingPeriod, string]> = [['daily', '每日'], ['weekly', '每周'], ['monthly', '每月']];
   const increment = { daily: '今日新增', weekly: '本周新增', monthly: '本月新增' }[period as TrendingPeriod];
@@ -70,7 +115,7 @@ export function GithubTrendingPanel() {
 
   return h('section', { className: 'dsh-trending', 'aria-label': 'GitHub 热点看板' },
     h('div', { className: 'dsh-trending-heading' },
-      h('div', null, h('h2', null, 'GitHub 热点看板'), h('p', null, '发现开源社区正在关注的项目 · 保留 GitHub Trending 原始排名')),
+      h('div', null, h('span', { className: 'dsh-trending-eyebrow' }, 'DISCOVER / OPEN SOURCE'), h('h2', null, 'GitHub 热点看板'), h('p', null, '探索开源趋势，洞察每天涌现的新项目')),
       h('button', { className: 'dsh-github-btn-sm', disabled: busy || !configured, onClick: () => load(period, true), title: '绕过缓存，重新抓取当前榜单' }, busy ? '抓取中…' : '刷新榜单')),
     h('div', { className: 'dsh-github-pills', role: 'tablist', 'aria-label': '榜单周期' },
       ...periods.map(([key, label]) => h('button', { key, role: 'tab', 'aria-selected': period === key,
@@ -88,10 +133,11 @@ export function GithubTrendingPanel() {
       configured ? h('button', { className: 'dsh-github-btn-sm', disabled: busy, onClick: () => load(period, true) }, '重试') : null) : null,
     board?.stale ? h('div', { className: 'dsh-trending-notice', role: 'status' }, `刷新失败，显示缓存：${board.warning}`) : null,
     busy && !board ? h('div', { className: 'dsh-github-empty', role: 'status' }, '正在通过 Firecrawl 抓取榜单，请稍候…') : null,
-    board ? h('div', null,
+    board ? h('div', { className: 'dsh-trending-board' },
       h('div', { className: 'dsh-trending-meta' },
         h('span', null, `${board.items.length} 个项目 · 最近成功获取 ${new Date(board.fetchedAt).toLocaleString()}${board.stale || error ? ' · 旧数据' : ''}`),
         h('a', { href: board.sourceUrl, target: '_blank', rel: 'noopener noreferrer' }, '查看 GitHub 原榜 ↗')),
+      h('div', { className: 'dsh-trending-content' },
       h('div', { className: 'dsh-trending-table-wrap', 'aria-busy': busy },
         h('table', { className: 'dsh-trending-table' },
           h('thead', null, h('tr', null, ...columns.map(([key, label]) => h('th', { key, scope: 'col' }, label, h('small', null, key))))),
@@ -101,5 +147,26 @@ export function GithubTrendingPanel() {
             h('td', { className: 'dsh-trending-description' }, row.description || '—'),
             h('td', null, row.language || '—'),
             h('td', { className: 'dsh-trending-number' }, count(row.stars)),
-            h('td', { className: 'dsh-trending-number dsh-trending-gain' }, row.starsToday === null ? '—' : '+' + count(row.starsToday)))))))) : null);
+            h('td', { className: 'dsh-trending-number dsh-trending-gain' }, row.starsToday === null ? '—' : '+' + count(row.starsToday))))))),
+      h('aside', { className: 'dsh-trending-insight', 'aria-label': 'Firecrawl Agent 总结与观察' },
+        h('div', { className: 'dsh-trending-insight-header' },
+          h('span', { className: 'dsh-trending-agent-icon', 'aria-hidden': true }, '✦'),
+          h('div', null, h('h3', null, 'AI 趋势洞察'), h('small', null, 'FIRECRAWL AGENT · ' + ({ daily: '每日', weekly: '每周', monthly: '每月' }[period])))),
+        h('p', { className: 'dsh-trending-insight-subtitle' }, '基于当前周期的 GitHub Trending 榜单生成总结与观察。'),
+        agentError ? h('p', { className: 'dsh-trending-agent-error', role: 'alert' }, agentError) : null,
+        insights[period]?.status === 'completed' ? h('div', { className: 'dsh-trending-insight-result' },
+          h('h4', null, '趋势总结'),
+          h('p', null, insights[period].insight.summary),
+          h('h4', null, '观察与发现'),
+          h('ol', null, ...insights[period].insight.observations.map((item: string, i: number) => h('li', { key: i }, item)))) :
+        insights[period]?.status === 'processing' ? h('div', { className: 'dsh-trending-agent-loading', role: 'status' },
+          h('span', { className: 'dsh-trending-agent-spinner' }), 'Agent 正在分析榜单，请稍后…') :
+        h('div', { className: 'dsh-trending-agent-empty' },
+          h('span', { className: 'dsh-trending-agent-sparkle', 'aria-hidden': true }, '✧'),
+          h('p', null, '让 Firecrawl Agent 发现热门技术方向与值得关注的项目')),
+        h('button', { className: 'dsh-trending-agent-button', disabled: agentBusy || insights[period]?.status === 'processing' || busy,
+          onClick: startAnalysis }, agentBusy ? '启动中…' : insights[period]?.status === 'processing' ? '分析进行中' :
+          insights[period]?.status === 'completed' ? '已生成分析' : '生成趋势洞察'),
+        h('p', { className: 'dsh-trending-agent-footnote' }, '按需调用 Agent，可能消耗 Firecrawl 额度。分析结果仅供参考。')
+      ))) : null);
 }
