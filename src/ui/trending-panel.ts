@@ -89,7 +89,7 @@ export function GithubTrendingPanel() {
   // Automatically start analysis as soon as a successfully scraped board is available.
   // The service deduplicates jobs for the same snapshot, including remounts and tab switches.
   React.useEffect(() => {
-    const board = boards[period];
+    const board = boards[period as TrendingPeriod];
     if (!board || !configured) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -120,9 +120,9 @@ export function GithubTrendingPanel() {
     };
     run();
     return () => { stopped = true; if (timer) clearTimeout(timer); };
-  }, [period, boards[period]?.fetchedAt, configured, agentCall]);
+  }, [period, boards[period as TrendingPeriod]?.fetchedAt, configured, agentCall]);
 
-  const board: TrendingResult | undefined = boards[period];
+  const board: TrendingResult | undefined = boards[period as TrendingPeriod];
   const periods: Array<[TrendingPeriod, string]> = [['daily', '每日'], ['weekly', '每周'], ['monthly', '每月']];
   const increment = { daily: '今日新增', weekly: '本周新增', monthly: '本月新增' }[period as TrendingPeriod];
   const columns = [['name', '项目'], ['url', '项目链接'], ['description', '简介'], ['language', '语言'], ['stars', '总 Star'], ['starsToday', increment]];
@@ -168,17 +168,18 @@ export function GithubTrendingPanel() {
           h('span', { className: 'dsh-trending-agent-icon', 'aria-hidden': true }, '✦'),
           h('div', null, h('h3', null, 'AI 趋势洞察'), h('small', null, 'FIRECRAWL AGENT · ' + ({ daily: '每日', weekly: '每周', monthly: '每月' }[period])))),
         h('p', { className: 'dsh-trending-insight-subtitle' }, '基于当前周期的 GitHub Trending 榜单生成总结与观察。'),
-        agentError ? h('p', { className: 'dsh-trending-agent-error', role: 'alert' }, agentError) : null,
+        (agentError || insights[period]?.error) ? h('p', { className: 'dsh-trending-agent-error', role: 'alert' },
+          agentError || insights[period]?.error) : null,
         insights[period]?.status === 'completed' ? h('div', { className: 'dsh-trending-insight-result' },
           h('h4', null, '趋势总结'),
           h('p', null, insights[period].insight.summary),
           h('h4', null, '观察与发现'),
           h('ol', null, ...insights[period].insight.observations.map((item: string, i: number) => h('li', { key: i }, item)))) :
-        insights[period]?.status === 'processing' ? h('div', { className: 'dsh-trending-agent-loading', role: 'status' },
+        insights[period]?.status === 'processing' && !agentError ? h('div', { className: 'dsh-trending-agent-loading', role: 'status' },
           h('span', { className: 'dsh-trending-agent-spinner' }), 'Agent 正在分析榜单，请稍后…') :
-        h('div', { className: 'dsh-trending-agent-empty' },
+        !agentError && insights[period]?.status !== 'failed' ? h('div', { className: 'dsh-trending-agent-empty' },
           h('span', { className: 'dsh-trending-agent-sparkle', 'aria-hidden': true }, '✧'),
-          h('p', null, '榜单抓取完成后将自动分析热门技术方向与重点项目')),
+          h('p', null, '榜单抓取完成后将自动分析热门技术方向与重点项目')) : null,
         h('p', { className: 'dsh-trending-agent-footnote' }, '榜单就绪后自动启动 Agent。每份榜单快照仅启动一次任务，分析可能消耗 Firecrawl 额度。')
       ))) : null);
 }
