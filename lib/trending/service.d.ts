@@ -55,6 +55,17 @@ export interface TrendingResult {
 export declare function parseTrendingPeriod(value: unknown): TrendingPeriod;
 /** Reject malformed extractions rather than silently showing invented zeros or an empty board. */
 export declare function validateTrendingItems(value: unknown): TrendingRepository[];
+export interface TrendingInsight {
+    summary: string;
+    observations: string[];
+    /** Sidecar translations keyed by owner/repo; never added to the six-field row schema. */
+    descriptionsZh?: Record<string, string>;
+}
+export interface TrendingAgentState {
+    status: 'idle' | 'processing' | 'completed' | 'failed';
+    insight?: TrendingInsight;
+    error?: string;
+}
 export interface TrendingOptions {
     baseUrl?: string;
     apiKey?: string;
@@ -69,6 +80,8 @@ export declare class TrendingService {
     private pending;
     private controllers;
     private disposed;
+    private agentJobs;
+    private agentStarts;
     private revision;
     private readonly baseUrl;
     private readonly ttl;
@@ -81,5 +94,9 @@ export declare class TrendingService {
     };
     dispose(): void;
     get(period: TrendingPeriod, refresh?: boolean): Promise<TrendingResult>;
+    /** Automatically run one Agent analysis for each successful leaderboard snapshot. */
+    agentStart(period: TrendingPeriod): Promise<TrendingAgentState>;
+    agentStatus(period: TrendingPeriod): Promise<TrendingAgentState>;
+    private agentFetch;
     private scrape;
 }

@@ -137,7 +137,7 @@ assert.equal((await agentService.get('daily')).items[0].description, row.descrip
 assert.deepEqual(Object.keys((await agentService.get('daily')).items[0]), keys);
 const startBody = JSON.parse(agentRequests.find(v => v.url.endsWith('/v2/agent')).options.body);
 assert.deepEqual(startBody.urls, ['https://github.com/trending?since=daily']);
-assert.ok(startBody.prompt.includes(row.description));
+assert.ok(startBody.prompt.includes(JSON.stringify(row.description)), 'snapshot carries the original description, JSON-escaped');
 assert.deepEqual(startBody.schema.required, ['summary', 'observations', 'descriptionsZh']);
 assert.equal(startBody.schema.properties.descriptionsZh.type, 'object');
 assert.ok(!JSON.stringify(insight).includes('agent-secret'));

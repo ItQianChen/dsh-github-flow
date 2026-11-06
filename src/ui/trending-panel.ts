@@ -181,7 +181,7 @@ export function GithubTrendingPanel() {
       h('aside', { className: 'dsh-trending-insight', 'aria-label': 'Firecrawl Agent 总结与观察' },
         h('div', { className: 'dsh-trending-insight-header' },
           h('span', { className: 'dsh-trending-agent-icon', 'aria-hidden': true }, '✦'),
-          h('div', null, h('h3', null, 'AI 趋势洞察'), h('small', null, 'FIRECRAWL AGENT · ' + ({ daily: '每日', weekly: '每周', monthly: '每月' }[period])))),
+          h('div', null, h('h3', null, 'AI 趋势洞察'), h('small', null, 'FIRECRAWL AGENT · ' + ({ daily: '每日', weekly: '每周', monthly: '每月' })[period as TrendingPeriod]))),
         h('p', { className: 'dsh-trending-insight-subtitle' }, '基于当前周期的 GitHub Trending 榜单生成总结与观察。'),
         (agentError || insights[period]?.error) ? h('p', { className: 'dsh-trending-agent-error', role: 'alert' },
           agentError || insights[period]?.error) : null,
