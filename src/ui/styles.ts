@@ -2916,6 +2916,19 @@ body[data-ds-dark-theme] .dsh-trending .dsh-trending-insight-result { border-top
 body[data-ds-dark-theme] .dsh-firecrawl-card { border-color:rgba(180,180,190,.09); background:rgba(255,255,255,.025); }
 body[data-ds-dark-theme] .dsh-github-modal-dialog { border-color:rgba(180,180,190,.1); }
 body[data-ds-dark-theme] .dsh-trending .dsh-github-pill-btn.active { box-shadow:0 1px 5px rgba(0,0,0,.22); }
+/* Bilingual description control, using the same host-aware surface tokens. */
+.dsh-trending-controls { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:4px; }
+.dsh-trending-controls .dsh-github-pills { margin-bottom:0; }
+.dsh-trending-locale-switch { display:inline-flex; align-items:center; gap:3px; padding:4px; border-radius:12px; background:var(--trend-elevated); color:var(--trend-text); }
+.dsh-trending-locale-label { color:var(--trend-muted); padding:0 9px; font-size:12px; white-space:nowrap; }
+.dsh-trending-locale-btn { font:inherit; font-size:12px; font-weight:600; color:var(--trend-muted); background:transparent; border:0; border-radius:9px; padding:8px 12px; cursor:pointer; min-height:34px; }
+.dsh-trending-locale-btn:hover { color:var(--trend-text); }
+.dsh-trending-locale-btn.active { background:var(--trend-surface); color:var(--trend-text); box-shadow:0 1px 5px rgba(0,0,0,.09); }
+.dsh-trending-locale-btn:focus-visible { outline:2px solid var(--trend-accent); outline-offset:2px; }
+body[data-ds-dark-theme] .dsh-trending-locale-switch { background:var(--trend-elevated); }
+body[data-ds-dark-theme] .dsh-trending-locale-btn.active { box-shadow:0 1px 5px rgba(0,0,0,.22); }
+@media(max-width:700px) { .dsh-trending-controls { align-items:flex-start; } .dsh-trending-locale-switch { width:max-content; max-width:100%; } }
+
 `;
 
 export function injectStyles() {
