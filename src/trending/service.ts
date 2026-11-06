@@ -176,7 +176,14 @@ export class TrendingService {
       const descriptions = board.items.filter(item => item.description.trim()).map(item => ({
         name: item.name, description: item.description.slice(0, 600),
       }));
-      const snapshot = JSON.stringify(descriptions).slice(0, 36000);
+      // Trim at item boundaries, never in the middle of JSON data.
+      const selected: typeof descriptions = [];
+      for (const item of descriptions) {
+        const candidate = JSON.stringify([...selected, item]);
+        if (candidate.length > 36000) break;
+        selected.push(item);
+      }
+      const snapshot = JSON.stringify(selected);
       const names = board.items.slice(0, 25).map(item => item.name).join(', ');
       const response = await this.agentFetch('/v2/agent', {
         method: 'POST',
