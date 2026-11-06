@@ -118,7 +118,8 @@ const agentService = new TrendingService({ apiKey: 'agent-secret' }, async (url,
   if (url.endsWith('/v2/scrape')) return reply();
   if (url.endsWith('/v2/agent')) return new Response(JSON.stringify({ success: true, id: '12345678-1234-1234-1234-123456789abc' }));
   return new Response(JSON.stringify({ success: true, status: agentState,
-    data: { summary: 'AI 项目受关注', observations: ['项目 owner/repo 上榜'] } }));
+    data: { summary: 'AI 项目受关注', observations: ['项目 owner/repo 上榜'],
+      descriptionsZh: { 'owner/repo': '一个有用的项目', 'unknown/repo': '此项不应显示' } } }));
 });
 await assert.rejects(agentService.agentStart('weekly'), /先加载/);
 await agentService.get('daily');
@@ -131,9 +132,14 @@ agentState = 'completed';
 const insight = await agentService.agentStatus('daily');
 assert.equal(insight.insight.summary, 'AI 项目受关注');
 assert.equal(insight.insight.observations.length, 1);
+assert.deepEqual(insight.insight.descriptionsZh, { 'owner/repo': '一个有用的项目' });
+assert.equal((await agentService.get('daily')).items[0].description, row.description, 'original English text is unchanged');
 assert.deepEqual(Object.keys((await agentService.get('daily')).items[0]), keys);
 const startBody = JSON.parse(agentRequests.find(v => v.url.endsWith('/v2/agent')).options.body);
 assert.deepEqual(startBody.urls, ['https://github.com/trending?since=daily']);
+assert.ok(startBody.prompt.includes(row.description));
+assert.deepEqual(startBody.schema.required, ['summary', 'observations', 'descriptionsZh']);
+assert.equal(startBody.schema.properties.descriptionsZh.type, 'object');
 assert.ok(!JSON.stringify(insight).includes('agent-secret'));
 agentService.dispose();
 
