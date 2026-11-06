@@ -61,7 +61,7 @@ Firecrawl 使用 `/v2/scrape` 的 `formats: [{ type: 'json', schema, prompt }]`�
 
 三个周期的榜单右侧各有一个独立的 **AI 趋势洞察** 卡片。点击“生成趋势洞察”后，插件通过服务端 `POST /v2/agent` 发起 Firecrawl Agent 任务；浏览器通过本地 `/api/github/trending-agent` 的 `status` 操作轮询服务端，由服务端查询 `GET /v2/agent/{jobId}`。页面不暴露 Firecrawl Key 或任意远端任务 ID。
 
-- **按需生成**：首次加载或切换周期不会自动发起付费 Agent 分析。
+- **自动生成**：榜单抓取成功后自动发起分析；重复查看同一周期快照不重复创建任务。
 - **周期隔离**：每日、每周、每月独立保存分析任务与结果，基于各自的榜单抓取快照。重复点击已创建任务不重复消耗 Agent 启动额度。
 - **结果展示**：右侧显示中文趋势总结、观察与发现，以及加载中 / 出错状态。Agent 分析失败不会影响榜单本身。
 - **数据契约**：项目表格仍只有固定的 `name / url / description / language / stars / starsToday` 六字段。分析位于独立对象，不加入项目行。
@@ -69,6 +69,16 @@ Firecrawl 使用 `/v2/scrape` 的 `formats: [{ type: 'json', schema, prompt }]`�
 - **服务兼容**：自托管 Firecrawl 需要额外支持 `/v2/agent` 和 `/v2/agent/{jobId}`，仅支持 Scrape 的部署仍可正常显示榜单，但 Agent 分析不可用。
 
 页面风格采用圆角卡片、层级留白、柔和边框、系统字体与 DSH 主题变量，深色模式跟随 `body[data-ds-dark-theme]`；窄屏下洞察卡片移至表格下方。
+
+## 项目简介中英双语
+
+热点看板提供全局的 **中文 / English** 简介切换。默认显示中文；English 显示 GitHub Trending 原始简介，保留完整原文与原有排名。
+
+- Firecrawl Scrape 的 `description` 字段始终保存**原始英文（或 GitHub 原有语言）**，固定六字段 schema 不变。
+- 榜单抓取成功后，自动运行的 **同一个 Firecrawl Agent 任务**同时负责趋势总结与简介中文翻译，不额外为每行发起 Agent 任务。
+- 翻译以抓取时的原始简介为依据，按 `owner/repo` 映射到独立的 `insight.descriptionsZh`，不会修改列表数据、排序或工具契约。
+- 中文翻译尚未返回、Agent 失败、原文为空或个别项目漏译时，**只对对应项目回退原始简介**，不伪造翻译、不影响英文切换。
+- 翻译结果与当前周期的 Agent 分析任务共同缓存；刷新获得新榜单后重新生成。
 
 ## Agent 工具
 
