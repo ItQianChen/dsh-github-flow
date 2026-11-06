@@ -16,6 +16,7 @@ async function readTrendingResponse(response: Response, feature: string): Promis
 export function GithubTrendingPanel() {
   const h = React.createElement;
   const [period, setPeriod] = React.useState('daily' as TrendingPeriod);
+  const [descriptionLocale, setDescriptionLocale] = React.useState('zh' as 'zh' | 'en');
   const [boards, setBoards] = React.useState({} as Partial<Record<TrendingPeriod, TrendingResult>>);
   const [busy, setBusy] = React.useState(false);
   const [insights, setInsights] = React.useState({} as Record<string, any>);
@@ -127,15 +128,28 @@ export function GithubTrendingPanel() {
   const increment = { daily: '今日新增', weekly: '本周新增', monthly: '本月新增' }[period as TrendingPeriod];
   const columns = [['name', '项目'], ['url', '项目链接'], ['description', '简介'], ['language', '语言'], ['stars', '总 Star'], ['starsToday', increment]];
   const count = (value: number | null) => value === null ? '—' : value.toLocaleString('zh-CN');
+  const translations: Record<string, string> = insights[period]?.status === 'completed'
+    ? (insights[period]?.insight?.descriptionsZh || {}) : {};
+  const localizedDescription = (row: { name: string; description: string }) => {
+    if (descriptionLocale === 'en' || !row.description) return row.description || '—';
+    return translations[row.name] || row.description || '—';
+  };
 
   return h('section', { className: 'dsh-trending', 'aria-label': 'GitHub 热点看板' },
     h('div', { className: 'dsh-trending-heading' },
       h('div', null, h('span', { className: 'dsh-trending-eyebrow' }, 'DISCOVER / OPEN SOURCE'), h('h2', null, 'GitHub 热点看板'), h('p', null, '探索开源趋势，洞察每天涌现的新项目')),
       h('button', { className: 'dsh-github-btn-sm', disabled: busy || !configured, onClick: () => load(period, true), title: '绕过缓存，重新抓取当前榜单' }, busy ? '抓取中…' : '刷新榜单')),
-    h('div', { className: 'dsh-github-pills', role: 'tablist', 'aria-label': '榜单周期' },
-      ...periods.map(([key, label]) => h('button', { key, role: 'tab', 'aria-selected': period === key,
-        className: 'dsh-github-pill-btn' + (period === key ? ' active' : ''), onClick: () => setPeriod(key) }, label))),
-    h('p', { className: 'dsh-trending-note' }, `starsToday 在当前榜单表示“${increment}”，统计周期以 GitHub Trending 为准。`),
+    h('div', { className: 'dsh-trending-controls' },
+      h('div', { className: 'dsh-github-pills', role: 'tablist', 'aria-label': '榜单周期' },
+        ...periods.map(([key, label]) => h('button', { key, role: 'tab', 'aria-selected': period === key,
+          className: 'dsh-github-pill-btn' + (period === key ? ' active' : ''), onClick: () => setPeriod(key) }, label))),
+      h('div', { className: 'dsh-trending-locale-switch', role: 'group', 'aria-label': '项目简介语言' },
+        h('span', { className: 'dsh-trending-locale-label' }, '项目简介'),
+        ...([['zh', '中文'], ['en', 'English']] as const).map(([locale, label]) =>
+          h('button', { key: locale, type: 'button', className: 'dsh-trending-locale-btn' + (descriptionLocale === locale ? ' active' : ''),
+            'aria-pressed': descriptionLocale === locale, onClick: () => setDescriptionLocale(locale) }, label)))) ,
+    h('p', { className: 'dsh-trending-note' }, `starsToday 在当前榜单表示“${increment}”，统计周期以 GitHub Trending 为准。`,
+      descriptionLocale === 'zh' && insights[period]?.status === 'processing' ? ' 中文简介正在由 Agent 翻译，完成前显示英文原文。' : ''),
     configured === false ? h('div', { className: 'dsh-trending-notice' },
       h('strong', null, '配置 Firecrawl 后即可加载热点'),
       h('p', null, '在插件设置的 Firecrawl 分区中保存 API Key，即可开始使用。'),
@@ -159,7 +173,8 @@ export function GithubTrendingPanel() {
           h('tbody', null, ...board.items.map(row => h('tr', { key: row.url },
             h('td', { className: 'dsh-trending-name' }, h('a', { href: row.url, target: '_blank', rel: 'noopener noreferrer' }, row.name)),
             h('td', { className: 'dsh-trending-url' }, h('a', { href: row.url, target: '_blank', rel: 'noopener noreferrer' }, row.url)),
-            h('td', { className: 'dsh-trending-description' }, row.description || '—'),
+            h('td', { className: 'dsh-trending-description', lang: descriptionLocale === 'zh' && translations[row.name] ? 'zh-CN' : 'en',
+              title: descriptionLocale === 'zh' && !translations[row.name] && row.description ? '中文翻译生成中或暂不可用，当前显示原文' : undefined }, localizedDescription(row)),
             h('td', null, row.language || '—'),
             h('td', { className: 'dsh-trending-number' }, count(row.stars)),
             h('td', { className: 'dsh-trending-number dsh-trending-gain' }, row.starsToday === null ? '—' : '+' + count(row.starsToday))))))),
