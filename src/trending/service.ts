@@ -232,10 +232,10 @@ export class TrendingService {
         ? 'API Key 无效或无权限' : response.status === 429 ? '请求过于频繁' : '服务请求失败';
       throw new Error(`Firecrawl Agent HTTP ${response.status}：${hint}`);
     }
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('json')) throw new Error('Firecrawl Agent 返回了非 JSON 内容，请检查服务接口');
+    // Some compatible Firecrawl installations omit Content-Type despite returning JSON.
+    // Parse only successful responses, never echo provider bodies or credentials.
     try { return await response.json(); }
-    catch { throw new Error('Firecrawl Agent 返回无效 JSON'); }
+    catch { throw new Error('Firecrawl Agent 返回非 JSON 数据，请检查兼容性与接口地址'); }
   }
 
   private async scrape(period: TrendingPeriod, refresh: boolean, revision: number): Promise<TrendingResult> {
