@@ -95,6 +95,10 @@ const ConfigSchema = Schema.object({
   firecrawlBaseUrl: Schema.string(),
   trendingCacheTtlMs: Schema.number().default(3_600_000),
   trendingTimeoutMs: Schema.number().default(60_000),
+  // agent：一次 Firecrawl Agent 任务同时完成抓取、翻译与总结；scrape：确定性抓取 + 单独洞察。
+  trendingSource: Schema.string().default('agent'),
+  trendingAgentTimeoutMs: Schema.number().default(180_000),
+  trendingAgentMaxCredits: Schema.number().default(300),
 });
 
 /** 校验并补齐默认值后的运行期配置（volatile 字段为稳定引用，非普通值）。 */
@@ -162,6 +166,9 @@ export function apply(ctx: Context, config: Config = Config({})) {
     apiKey: firecrawlSettings.key(),
     cacheTtlMs: config.trendingCacheTtlMs,
     timeoutMs: config.trendingTimeoutMs,
+    source: String(config.trendingSource).toLowerCase() === 'scrape' ? 'scrape' : 'agent',
+    agentTimeoutMs: config.trendingAgentTimeoutMs,
+    agentMaxCredits: config.trendingAgentMaxCredits,
   });
   ctx.effect(() => () => trending.dispose());
   // 代理管理器：优先读取用户在驾驶舱保存的 proxy.json，回落 cordis.patch.yml 的

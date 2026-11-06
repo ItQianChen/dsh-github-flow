@@ -209,7 +209,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **50 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
+项目配备了 **51 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
 - 阶段数与 `test/run-all.mjs` 的 `phases` 数组由 `test/phase35-doc.test.mjs` 对账，改一处漏一处会直接红；
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
@@ -261,3 +261,5 @@
 - `phase49`：**提交详情 / 未提交清单的文件 Diff 弹窗契约测试**（`diff-utils.ts` 四个纯函数：`parseDiffGitLine` 对含空格路径按**最后一个** `" b/"` 切出 b 侧（截错就点开是空的）、`normalizeRenamePath` 把 `src/{old => new}.ts` 与 `old => new` 两种 `--stat` 写法归一成新路径、`splitUnifiedPatch` 按 `diff --git` 边界切段并**丢弃首个 `diff --git` 之前的提交头**（否则第一段会渲染成幽灵差异）、`Binary files` 判二进制、`rename from`/`rename to` 定新旧路径、**按「首个 `@@` 之前才算文件头」的状态机解析**（正文里以 `---`/`+++` 开头的行是 Markdown 分隔线，按行首前缀判会把它们当文件头，导致增删计数为 0 且染错颜色）、`findPatchSection` 支持新路径 / 旧路径 / `{old => new}` 原文三态命中；`executor.getCommitDiff` 在临时 git 仓库真跑——两文件提交切出两段且 `truncated=false`、`git mv` 提交的 patch 含 `rename from`/`rename to`、非法 sha 在触达子进程前拒绝；整包 patch 超过 400k 字符时在**最后一个 `diff --git` 边界**截断（绝不切半个 hunk，只有单文件巨型 diff 找不到边界才硬切）并置 `truncated`；`/api/github/commit-diff` 路由与 `get_commit_diff` action 双向可用；`lib/client.js` 内联 `FileDiffModal`/`splitUnifiedPatch`、`commit-modal.ts` 的文件变更统计行绑 `onClick` 弹窗）。
 
 - `phase50`：GitHub 热点六字段 schema、Firecrawl 周期映射、缓存与强制刷新、并发去重、失败保留旧值、卸载取消、路由跨站门禁与 Agent 工具部分失败。
+- `phase51`：**Agent 单任务榜单**（一次 `/v2/agent` 同时完成抓取、中文翻译与总结，`insight` 随榜单同响应返回；`"12,345"` 这类展示计数归一化；同一快照只跑一次任务、缓存命中零消耗；Agent 失败自动回退 scrape 并附 `warning`；总结为空时保留行数据）。
+

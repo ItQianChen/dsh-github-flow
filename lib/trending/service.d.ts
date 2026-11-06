@@ -51,10 +51,14 @@ export interface TrendingResult {
     stale: boolean;
     warning?: string;
     items: TrendingRepository[];
+    /** Present when one Agent task produced the board, its translations and its summary together. */
+    insight?: TrendingInsight;
 }
 export declare function parseTrendingPeriod(value: unknown): TrendingPeriod;
 /** Reject malformed extractions rather than silently showing invented zeros or an empty board. */
 export declare function validateTrendingItems(value: unknown): TrendingRepository[];
+/** Agents often echo counters as display strings such as "7,338" or "—"; normalise before validation. */
+export declare function coerceAgentItems(value: unknown): unknown;
 export interface TrendingInsight {
     summary: string;
     observations: string[];
@@ -71,6 +75,18 @@ export interface TrendingOptions {
     apiKey?: string;
     cacheTtlMs?: number;
     timeoutMs?: number;
+    /**
+     * 'agent' runs a single Firecrawl Agent task that scrapes the Trending page,
+     * extracts the six fields, translates descriptions and summarises the board.
+     * 'scrape' keeps the deterministic scrape and analyses separately.
+     */
+    source?: 'agent' | 'scrape';
+    /** Whole-task budget for the agent path, polling included. */
+    agentTimeoutMs?: number;
+    /** Delay between job status polls. */
+    agentPollMs?: number;
+    /** Hard ceiling for one agent task so a stuck run cannot drain credits. */
+    agentMaxCredits?: number;
 }
 export declare class TrendingService {
     private options;
@@ -86,6 +102,10 @@ export declare class TrendingService {
     private readonly baseUrl;
     private readonly ttl;
     private readonly timeout;
+    private readonly source;
+    private readonly agentBudget;
+    private readonly agentPoll;
+    private readonly agentCredits;
     constructor(options?: TrendingOptions, request?: typeof fetch, now?: () => number);
     setApiKey(apiKey: string | undefined): void;
     status(): {
@@ -97,6 +117,14 @@ export declare class TrendingService {
     /** Automatically run one Agent analysis for each successful leaderboard snapshot. */
     agentStart(period: TrendingPeriod): Promise<TrendingAgentState>;
     agentStatus(period: TrendingPeriod): Promise<TrendingAgentState>;
+    /**
+     * One Agent task owns scraping, translation and summary, so a single response
+     * carries every row together with the insights that describe it.
+     */
+    private fetchBoard;
+    private agentBoard;
+    /** Keep only well-formed insight text and translations for repositories actually on the board. */
+    private buildInsight;
     private agentFetch;
     private scrape;
 }

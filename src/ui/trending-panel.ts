@@ -33,7 +33,8 @@ export function GithubTrendingPanel() {
     const controller = new AbortController();
     requestRef.current = controller;
     const generation = ++generationRef.current;
-    const timer = setTimeout(() => controller.abort(), 130_000);
+    // An Agent task scrapes, translates and summarises before answering, so allow the full server budget.
+    const timer = setTimeout(() => controller.abort(), 300_000);
     setBusy(true);
     setError('');
     try {
@@ -92,6 +93,13 @@ export function GithubTrendingPanel() {
   React.useEffect(() => {
     const board = boards[period as TrendingPeriod];
     if (!board || !configured) return;
+    // Agent mode ships the summary with the board; never spend a second task for it.
+    if (board.insight) {
+      setInsights((old: Record<string, any>) => ({
+        ...old, [period]: { status: 'completed', insight: board.insight },
+      }));
+      return;
+    }
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const generation = ++agentGeneration.current;
@@ -195,6 +203,6 @@ export function GithubTrendingPanel() {
         !agentError && insights[period]?.status !== 'failed' ? h('div', { className: 'dsh-trending-agent-empty' },
           h('span', { className: 'dsh-trending-agent-sparkle', 'aria-hidden': true }, '✧'),
           h('p', null, '榜单抓取完成后将自动分析热门技术方向与重点项目')) : null,
-        h('p', { className: 'dsh-trending-agent-footnote' }, '榜单就绪后自动启动 Agent。每份榜单快照仅启动一次任务，分析可能消耗 Firecrawl 额度。')
+        h('p', { className: 'dsh-trending-agent-footnote' }, '一次 Firecrawl Agent 任务同时完成抓取、中文翻译与总结；每份快照仅执行一次，可能消耗额度。')
       ))) : null);
 }

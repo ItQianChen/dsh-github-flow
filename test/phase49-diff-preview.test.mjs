@@ -347,8 +347,8 @@ ok(phaseList.indexOf('phase49-diff-preview.test.mjs') === phaseList.indexOf('pha
   'phase49 紧随 phase48（后续阶段可追加）', phaseList.slice(-2).join(' , '));
 
 const archSrc = readFileSync(path.join(ROOT, 'docs/architecture.md'), 'utf8');
-ok(archSrc.includes('50 个独立阶段'),
-  'docs/architecture.md 声明 50 个独立阶段（phase35 与 run-all 对账）');
+ok(archSrc.includes(`${phaseList.length} 个独立阶段`),
+  `docs/architecture.md 的阶段数与 run-all 一致（${phaseList.length}）`);
 ok(archSrc.includes('phase49'),
   'docs/architecture.md 的阶段要点列表含 phase49 条目');
 
