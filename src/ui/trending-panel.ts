@@ -1,6 +1,17 @@
 import type { TrendingPeriod, TrendingResult } from '../trending/service.js';
 declare const React: any;
 
+/** A stale DSH server may return plain-text "not found" for a missing route. */
+async function readTrendingResponse(response: Response, feature: string): Promise<any> {
+  const type = response.headers.get('content-type') || '';
+  if (!type.includes('json')) {
+    if (response.status === 404) throw new Error(`${feature} 接口不存在（HTTP 404）。请重新构建插件并重启 DSH 后端，确认新路由已加载。`);
+    throw new Error(`${feature} 请求失败（HTTP ${response.status}），服务端没有返回 JSON。`);
+  }
+  try { return await response.json(); }
+  catch { throw new Error(`${feature} 返回的数据格式无效（HTTP ${response.status}）。`); }
+}
+
 /** Lazy-mounted from the existing GitHub dashboard; never depends on personal GitHub data. */
 export function GithubTrendingPanel() {
   const h = React.createElement;
@@ -8,7 +19,6 @@ export function GithubTrendingPanel() {
   const [boards, setBoards] = React.useState({} as Partial<Record<TrendingPeriod, TrendingResult>>);
   const [busy, setBusy] = React.useState(false);
   const [insights, setInsights] = React.useState({} as Record<string, any>);
-  const [agentBusy, setAgentBusy] = React.useState(false);
   const [agentError, setAgentError] = React.useState('');
   const agentGeneration = React.useRef(0);
   const [error, setError] = React.useState('');
@@ -30,7 +40,7 @@ export function GithubTrendingPanel() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
         body: JSON.stringify({ period: selected, refresh }),
       });
-      const json = await response.json();
+      const json = await readTrendingResponse(response, '热点榜单');
       if (!response.ok || !json.ok) throw new Error(json.error || '热点榜单加载失败');
       if (generation !== generationRef.current) return;
       setBoards((previous: Partial<Record<TrendingPeriod, TrendingResult>>) => ({ ...previous, [selected]: json.data }));
@@ -46,7 +56,7 @@ export function GithubTrendingPanel() {
     const controller = new AbortController();
     const checkConfiguration = () => {
     fetch('/api/github/trending', { signal: controller.signal })
-      .then(res => res.json()).then(json => {
+      .then(res => readTrendingResponse(res, 'Firecrawl 配置')).then(json => {
         if (controller.signal.aborted) return;
         if (!json.ok) throw new Error(json.error || '无法读取 Firecrawl 配置状态');
         setConfigured(json.data.configured);
@@ -71,41 +81,46 @@ export function GithubTrendingPanel() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ period: selected, action }),
     });
-    const json = await response.json();
+    const json = await readTrendingResponse(response, 'Firecrawl Agent');
     if (!response.ok || !json.ok) throw new Error(json.error || 'Agent 请求失败');
     return json.data;
   }, []);
 
+  // Automatically start analysis as soon as a successfully scraped board is available.
+  // The service deduplicates jobs for the same snapshot, including remounts and tab switches.
   React.useEffect(() => {
-    if (!boards[period]) return;
+    const board = boards[period];
+    if (!board || !configured) return;
     let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const generation = ++agentGeneration.current;
-    const poll = async () => {
+    const current = () => !stopped && generation === agentGeneration.current;
+    setAgentError('');
+    setInsights((old: Record<string, any>) => ({ ...old, [period]: { status: 'processing' } }));
+    const run = async () => {
       try {
-        const state = await agentCall(period, 'status');
-        if (!stopped && generation === agentGeneration.current) {
-          setInsights((old: Record<string, any>) => ({ ...old, [period]: state }));
-        }
+        let state = await agentCall(period, 'start');
+        if (!current()) return;
+        setInsights((old: Record<string, any>) => ({ ...old, [period]: state }));
+        const poll = async () => {
+          if (!current() || state.status !== 'processing') return;
+          try {
+            state = await agentCall(period, 'status');
+            if (!current()) return;
+            setInsights((old: Record<string, any>) => ({ ...old, [period]: state }));
+            if (state.status === 'processing') timer = setTimeout(poll, 3500);
+          } catch (err: any) {
+            if (current()) setAgentError(err.message || 'Agent 状态获取失败');
+          }
+        };
+        if (state.status === 'processing') timer = setTimeout(poll, 3500);
       } catch (err: any) {
-        if (!stopped && generation === agentGeneration.current) setAgentError(err.message);
+        if (current()) setAgentError(err.message || 'Agent 分析失败');
       }
     };
-    poll();
-    const timer = setInterval(() => {
-      if (insights[period]?.status === 'processing') poll();
-    }, 3500);
-    return () => { stopped = true; clearInterval(timer); };
-  }, [period, boards[period]?.fetchedAt, insights[period]?.status, agentCall]);
-
-  const startAnalysis = async () => {
-    setAgentBusy(true);
-    setAgentError('');
-    try {
-      const state = await agentCall(period, 'start');
-      setInsights((old: Record<string, any>) => ({ ...old, [period]: state }));
-    } catch (err: any) { setAgentError(err.message || 'Agent 分析失败'); }
-    finally { setAgentBusy(false); }
-  };
+    run();
+    return () => { stopped = true; if (timer) clearTimeout(timer); };
+  }, [period, boards[period]?.fetchedAt, configured, agentCall]);
 
   const board: TrendingResult | undefined = boards[period];
   const periods: Array<[TrendingPeriod, string]> = [['daily', '每日'], ['weekly', '每周'], ['monthly', '每月']];
@@ -163,10 +178,7 @@ export function GithubTrendingPanel() {
           h('span', { className: 'dsh-trending-agent-spinner' }), 'Agent 正在分析榜单，请稍后…') :
         h('div', { className: 'dsh-trending-agent-empty' },
           h('span', { className: 'dsh-trending-agent-sparkle', 'aria-hidden': true }, '✧'),
-          h('p', null, '让 Firecrawl Agent 发现热门技术方向与值得关注的项目')),
-        h('button', { className: 'dsh-trending-agent-button', disabled: agentBusy || insights[period]?.status === 'processing' || busy,
-          onClick: startAnalysis }, agentBusy ? '启动中…' : insights[period]?.status === 'processing' ? '分析进行中' :
-          insights[period]?.status === 'completed' ? '已生成分析' : '生成趋势洞察'),
-        h('p', { className: 'dsh-trending-agent-footnote' }, '按需调用 Agent，可能消耗 Firecrawl 额度。分析结果仅供参考。')
+          h('p', null, '榜单抓取完成后将自动分析热门技术方向与重点项目')),
+        h('p', { className: 'dsh-trending-agent-footnote' }, '榜单就绪后自动启动 Agent。每份榜单快照仅启动一次任务，分析可能消耗 Firecrawl 额度。')
       ))) : null);
 }
