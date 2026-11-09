@@ -322,12 +322,13 @@ function FirecrawlAwareSettingsModal(props: any) {
             h("div", { className: "dsh-firecrawl-card" },
               h("label", null, "抓取模式"),
               h("div", { className: "dsh-firecrawl-modes", role: "radiogroup", "aria-label": "抓取模式" },
-                [["scrape", "Scrape"], ["agent", "Agent"]].map((option) =>
+                [["scrape", "Scrape", "一次抽取同时得到榜单、中文译文与总结，约 5 credits。"],
+                 ["agent", "Agent", "一次 Agent 任务，条数更多、洞察更丰富，约 24–39 credits。"]].map((option) =>
                   h("label", { key: option[0], className: "dsh-firecrawl-mode" + (activeSource === option[0] ? " active" : "") },
                     h("input", { type: "radio", name: "dsh-trending-source", value: option[0],
                       checked: activeSource === option[0], disabled: firecrawlBusy,
                       onChange: () => saveSource(option[0]) }),
-                    h("span", null, option[1]))))),
+                    h("span", null, h("strong", null, option[1]), h("small", null, option[2])))))),
             firecrawlMessage ? h("p", { className: "dsh-firecrawl-hint", role: "status" }, firecrawlMessage) : null,
             h("a", { href: "https://www.firecrawl.dev/app", target: "_blank", rel: "noopener noreferrer" }, "前往 Firecrawl 控制台获取 API Key ↗")
           ) : activeSection === "sync" ? h("div", null,
