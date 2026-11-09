@@ -565,7 +565,8 @@ summary（结论，≤1.5KB） + facts（结构化事实） + nextActions（可�
 
 * `/gh status`：一键诊断当前 GitHub CLI 账号认证状态、作用域、当前工作区关联仓库、插件版本与**工具链运行时可观测性（健康分与 API 降级率）**；
 * `/gh upgrade`：主动检测 npm 最新版本，自适应输出当前操作系统（macOS / Windows / Linux）的最佳升级指引；
-* `/gh help`：查看帮助说明与 Agent 典型对话范例。
+* `/gh help`：查看帮助说明与 Agent 典型对话范例；
+* `/gh-trending [daily|weekly|monthly|all]`：查看 GitHub 热点榜单，默认 daily（也可写作 `/gh trending weekly`）。
 
 ---
 

@@ -1,4 +1,6 @@
 import type { GhExecutor } from '../executor.js';
+import { TRENDING_PERIODS, type TrendingPeriod, type TrendingService } from '../trending/service.js';
+import { renderTrendingMarkdown } from '../renderers/trending.js';
 import type { UpdateChecker } from '../updater.js';
 import { CURRENT_PLUGIN_VERSION, PLUGIN_PACKAGE_NAME, NPM_PACKAGE_URL } from '../version.js';
 import { loadUpdateSettings, describeUpdateMode, type UpdateSourceMode } from '../update-settings.js';
@@ -109,7 +111,8 @@ function buildHelpReport(): string {
     '### 🧭 DSH GitHub Flow 快捷指令帮助\n',
     '- `/gh`：查看当前 GitHub CLI 账号认证状态、关联仓库与运行时健康度（直接回车即可）',
     '- `/gh-upgrade`：检查新版本并输出针对当前系统的最佳升级命令',
-    '- `/gh-help`：显示此使用指南与 Agent 对话范例\n',
+    '- `/gh-help`：显示此使用指南与 Agent 对话范例',
+    '- `/gh-trending [daily|weekly|monthly|all]`：查看 GitHub 热点榜单（默认 daily）\n',
     '*(提示：熟练用户亦可使用二级语法，如 `/gh upgrade`、`/gh status`)*\n',
     '#### 可以在对话框直接让 Agent 操作 GitHub，例如：',
     '- *"帮我看看今天在 GitHub 上有哪些需要我处理的事情？"*',
@@ -121,6 +124,22 @@ function buildHelpReport(): string {
 }
 
 /**
+ * 热点榜单：命令与工具共用同一个 TrendingService，因此命令命中缓存时同样零额度。
+ */
+async function buildTrendingReply(trending: TrendingService, scope: string) {
+  const periods: TrendingPeriod[] = scope === 'all' ? [...TRENDING_PERIODS] : [scope as TrendingPeriod];
+  const results = await Promise.allSettled(periods.map(period => trending.get(period)));
+  const items = results.flatMap(result => (result.status === 'fulfilled' ? [result.value] : []));
+  const errors = results.flatMap((result, index) => (result.status === 'rejected'
+    ? [{ period: periods[index], message: result.reason instanceof Error ? result.reason.message : String(result.reason) }]
+    : []));
+  if (items.length === 0) {
+    return { kind: 'error' as const, text: errors.map(e => `${e.period}：${e.message}`).join('\n') || '无法获取热点榜单' };
+  }
+  return { kind: 'success' as const, text: renderTrendingMarkdown({ items, errors }) };
+}
+
+/**
  * 注册人类 Slash 快捷指令集
  * 采用扁平化一级指令 + 二级参数容错双轨机制，消除用户“敲了 /gh 不会加参数”的交互盲区
  */
@@ -128,7 +147,8 @@ export function registerGhCommand(
   commandsService: any,
   executor: GhExecutor,
   updateChecker?: UpdateChecker,
-  telemetryCollector?: TelemetryCollector
+  telemetryCollector?: TelemetryCollector,
+  trending?: TrendingService
 ) {
   if (!commandsService || typeof commandsService.register !== 'function') return;
 
@@ -163,6 +183,11 @@ export function registerGhCommand(
         };
       }
 
+      const trendingMatch = trimmed.match(/^(?:trending|trend|hot)(?:\s+(daily|weekly|monthly|all))?$/);
+      if (trendingMatch && trending) {
+        return buildTrendingReply(trending, trendingMatch[1] || 'daily');
+      }
+
       return {
         kind: 'error',
         text: `未知命令选项: /gh ${rawInput}。可用快捷指令: /gh（查看状态）、/gh-upgrade（检查升级）、/gh-help（帮助）。`,
@@ -170,7 +195,22 @@ export function registerGhCommand(
     },
   });
 
-  // 2. 扁平化一级指令 /gh-upgrade（下拉菜单一键可见，无需手动输入空格与子命令）
+  // 2. 扁平化一级指令 /gh-trending（下拉菜单一键可见，无需手动输入空格与子命令）
+  if (trending) {
+    commandsService.register({
+      name: 'gh-trending',
+      description: '查看 GitHub 每日 / 每周 / 每月热点榜单',
+      async handler({ rawInput }: { rawInput: string }) {
+        const scope = (rawInput || '').trim().toLowerCase() || 'daily';
+        if (!['daily', 'weekly', 'monthly', 'all'].includes(scope)) {
+          return { kind: 'error', text: '用法：/gh-trending [daily|weekly|monthly|all]' };
+        }
+        return buildTrendingReply(trending, scope);
+      },
+    });
+  }
+
+  // 3. 扁平化一级指令 /gh-upgrade（下拉菜单一键可见，无需手动输入空格与子命令）
   commandsService.register({
     name: 'gh-upgrade',
     description: '检查插件新版本并查看一键自动升级指引',
@@ -182,7 +222,7 @@ export function registerGhCommand(
     },
   });
 
-  // 3. 扁平化一级指令 /gh-help（下拉菜单一键可见，查看指南与 Agent 提示词范例）
+  // 4. 扁平化一级指令 /gh-help（下拉菜单一键可见，查看指南与 Agent 提示词范例）
   commandsService.register({
     name: 'gh-help',
     description: '查看 GitHub 协作帮助与 Agent 提示词范例',

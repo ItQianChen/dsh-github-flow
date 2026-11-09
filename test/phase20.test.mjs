@@ -159,6 +159,26 @@ async function runTests() {
   const helpOutput = await ghHelpCmd.handler();
   assert(helpOutput.text.includes('快捷指令帮助'), '/gh-help 直接输出帮助指南');
 
+  // 5.5 /gh-trending：与 github_trending 工具共用服务，输出六字段表格
+  const withTrending = [];
+  const fakeTrending = {
+    get: async (period) => ({
+      period, sourceUrl: `https://github.com/trending?since=${period}`, fetchedAt: '2026-11-09T00:00:00.000Z', stale: false,
+      items: [{ name: 'owner/repo', url: 'https://github.com/owner/repo', description: 'desc', language: 'TS', stars: 12345, starsToday: 321 }],
+    }),
+  };
+  registerGhCommand({ register: (cmd) => withTrending.push(cmd) }, mockExecutor, undefined, collector, fakeTrending);
+  const trendingCmd = withTrending.find((c) => c.name === 'gh-trending');
+  assert(Boolean(trendingCmd), '注册了 /gh-trending 一级指令');
+  const weekly = await trendingCmd.handler({ rawInput: 'weekly' });
+  assert(weekly.kind === 'success' && weekly.text.includes('GitHub weekly'), '/gh-trending weekly 输出周榜');
+  assert(weekly.text.includes('owner/repo') && weekly.text.includes('12345'), '榜单含六字段行');
+  const badScope = await trendingCmd.handler({ rawInput: 'yearly' });
+  assert(badScope.kind === 'error', '非法周期返回错误并给出用法');
+  const ghWithTrending = withTrending.find((c) => c.name === 'gh');
+  const viaSubcommand = await ghWithTrending.handler({ rawInput: 'trending monthly' });
+  assert(viaSubcommand.text.includes('GitHub monthly'), '/gh trending monthly 二级语法可用');
+
   console.log('\n--- 6. help 映射与元知识库覆盖测试 ---');
   const helpTool = createHelpTool(mockExecutor);
   const mappingRes = await helpTool.execute({ topic: 'mapping' });

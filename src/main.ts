@@ -220,7 +220,7 @@ export function apply(ctx: Context, config: Config = Config({})) {
   // ctx.inject 的嵌套 fiber 在服务出现时补触发；服务始终不出现则它自己保持 PENDING，
   // 外层插件照常 ACTIVE（18 个工具不受影响）。这就是「可选依赖」在 cordis 里的正确写法。
   ctx.inject(['commands'], (c) => {
-    registerGhCommand(c.get('commands'), executor, updateChecker, defaultTelemetryCollector);
+    registerGhCommand(c.get('commands'), executor, updateChecker, defaultTelemetryCollector, trending);
   });
 
   // 4. 注册 Agent 模型工具集（核心领域工具 + 元指南）

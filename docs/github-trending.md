@@ -88,7 +88,18 @@ github_trending({ period: "weekly", refresh: true })
 github_trending({ period: "all" })
 ```
 
-`all` 返回三张表，单周期失败不影响其余结果。默认全量档位包括该工具；精简档位显式加入：
+`all` 返回三张表，单周期失败不影响其余结果。
+
+人类侧还有对应的 Slash 指令，和工具共用同一个服务与缓存：
+
+```text
+/gh-trending            # 默认 daily
+/gh-trending weekly
+/gh-trending all
+/gh trending monthly    # 二级语法等价写法
+```
+
+默认全量档位包括该工具；精简档位显式加入：
 
 ```yaml
 toolsets: ['core', 'github_trending']
