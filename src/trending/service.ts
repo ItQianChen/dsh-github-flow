@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 /** Public Trending data, independent of gh authentication and the active workspace. */
 export const TRENDING_PERIODS = ['daily', 'weekly', 'monthly'] as const;
 export type TrendingPeriod = typeof TRENDING_PERIODS[number];
@@ -124,6 +128,55 @@ export interface TrendingOptions {
   agentPollMs?: number;
   /** Hard ceiling for one agent task so a stuck run cannot drain credits. */
   agentMaxCredits?: number;
+  /**
+   * Optional persistence for the board cache.
+   *
+   * The service keeps everything in memory so it stays trivial to test; the host passes a
+   * file store so the three-hour window survives a reload or an app restart instead of
+   * paying for a fresh Agent task every time the process restarts.
+   */
+  store?: TrendingCacheStore;
+}
+
+/** Version marker so an old or foreign cache file is ignored instead of trusted. */
+const CACHE_FILE_VERSION = 1;
+
+export interface TrendingCacheStore {
+  read(period: TrendingPeriod): TrendingResult | null;
+  write(period: TrendingPeriod, result: TrendingResult): void;
+  clear(): void;
+}
+
+export function createFileCacheStore(
+  dir = path.join(os.homedir(), '.dsh', 'data', 'dsh-github-flow', 'trending-cache'),
+): TrendingCacheStore {
+  const file = (period: TrendingPeriod) => path.join(dir, `${period}.json`);
+  return {
+    read(period) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(file(period), 'utf8'));
+        if (!raw || raw.v !== CACHE_FILE_VERSION || raw.period !== period) return null;
+        return raw.data as TrendingResult;
+      } catch {
+        // 未写入、JSON 损坏、权限不足都按「没有缓存」处理，绝不因磁盘问题阻断取数
+        return null;
+      }
+    },
+    write(period, result) {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(file(period), JSON.stringify({ v: CACHE_FILE_VERSION, period, data: result }),
+          { mode: 0o600 });
+      } catch {
+        // 落盘失败只影响下次启动能否复用，不影响本次响应
+      }
+    },
+    clear() {
+      for (const period of TRENDING_PERIODS) {
+        try { fs.unlinkSync(file(period)); } catch { /* 不存在即视为已清 */ }
+      }
+    },
+  };
 }
 
 export class TrendingService {
@@ -141,6 +194,7 @@ export class TrendingService {
   private readonly agentBudget: number;
   private readonly agentPoll: number;
   private readonly agentCredits: number;
+  private readonly store?: TrendingCacheStore;
 
   constructor(private options: TrendingOptions = {}, private request: typeof fetch = fetch,
     private now: () => number = Date.now) {
@@ -158,6 +212,7 @@ export class TrendingService {
       ? Math.max(10, Math.min(10_000, options.agentPollMs!)) : 2_500;
     this.agentCredits = Number.isFinite(options.agentMaxCredits)
       ? Math.max(1, Math.min(2500, options.agentMaxCredits!)) : 300;
+    this.store = options.store;
   }
 
   setApiKey(apiKey: string | undefined) {
@@ -165,6 +220,7 @@ export class TrendingService {
     for (const controller of this.controllers) controller.abort();
     this.pending.clear();
     this.cache.clear();
+    this.store?.clear();
     this.agentJobs.clear();
     this.agentStarts.clear();
     this.options = { ...this.options, apiKey };
@@ -188,7 +244,7 @@ export class TrendingService {
     parseTrendingPeriod(period);
     if (this.disposed) throw new Error('热点服务已停止');
     if (!this.status().configured) throw new Error('请在插件「设置 → Firecrawl」中保存 API Key，或配置 FIRECRAWL_API_KEY 环境变量');
-    const cached = this.cache.get(period);
+    const cached = this.cache.get(period) ?? this.hydrate(period);
     // Every automatic trigger — mount, period switch, tool call — stops here while the entry is fresh.
     // Only an explicit refresh bypasses the gate, and that is exactly the path that spends credits.
     if (!refresh && cached && this.now() - Date.parse(cached.fetchedAt) < this.ttl) return cached;
@@ -202,6 +258,36 @@ export class TrendingService {
     }).finally(() => { if (this.pending.get(period) === task) this.pending.delete(period); });
     this.pending.set(period, task);
     return task;
+  }
+
+  /** Write the board to memory and, when configured, to the persistent store. */
+  private remember(period: TrendingPeriod, result: TrendingResult): void {
+    this.cache.set(period, result);
+    this.store?.write(period, result);
+  }
+
+  /**
+   * Rebuild the memory entry from disk after a reload or a host restart.
+   *
+   * Whatever is on disk is untrusted input: the six-field contract is re-validated and any
+   * entry the current code cannot read is dropped, so an older or corrupted file can only
+   * cost one refetch — never a broken board.
+   */
+  private hydrate(period: TrendingPeriod): TrendingResult | undefined {
+    if (!this.store) return undefined;
+    const raw = this.store.read(period);
+    if (!raw || raw.period !== period || typeof raw.fetchedAt !== 'string'
+      || !Number.isFinite(Date.parse(raw.fetchedAt))) {
+      return undefined;
+    }
+    try {
+      const items = validateTrendingItems(raw.items);
+      const result: TrendingResult = { ...raw, items };
+      this.cache.set(period, result);
+      return result;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Automatically run one Agent analysis for each successful leaderboard snapshot. */
@@ -365,7 +451,7 @@ export class TrendingService {
     const insight = this.buildInsight(data, items);
     if (insight) result.insight = insight;
     else result.warning = 'Firecrawl Agent 已返回榜单，但没有可用的总结内容。';
-    this.cache.set(period, result);
+    this.remember(period, result);
     return result;
   }
 
@@ -452,7 +538,7 @@ export class TrendingService {
       const items = validateTrendingItems(body.data?.json?.repositories);
       if (this.disposed || revision !== this.revision) throw new Error('热点服务已停止或配置已更改');
       const result: TrendingResult = { period, sourceUrl, fetchedAt: new Date(this.now()).toISOString(), stale: false, items };
-      this.cache.set(period, result);
+      this.remember(period, result);
       return result;
     } finally {
       clearTimeout(timer);

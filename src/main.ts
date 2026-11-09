@@ -1,5 +1,5 @@
 import { FirecrawlSettings } from './trending/settings.js';
-import { TrendingService } from './trending/service.js';
+import { TrendingService, createFileCacheStore } from './trending/service.js';
 import { createTrendingTool } from './tools/trending.js';
 import type { Context } from '@deepseek-ai/cordis';
 import Schema from '@deepseek-ai/schemastery';
@@ -166,6 +166,7 @@ export function apply(ctx: Context, config: Config = Config({})) {
     apiKey: firecrawlSettings.key(),
     cacheTtlMs: config.trendingCacheTtlMs,
     timeoutMs: config.trendingTimeoutMs,
+    store: createFileCacheStore(),
     source: String(config.trendingSource).toLowerCase() === 'scrape' ? 'scrape' : 'agent',
     agentTimeoutMs: config.trendingAgentTimeoutMs,
     agentMaxCredits: config.trendingAgentMaxCredits,

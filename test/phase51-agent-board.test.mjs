@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { TrendingService } from '../lib/trending/service.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { TrendingService, createFileCacheStore } from '../lib/trending/service.js';
 
 /** Agent mode: one task scrapes, translates and summarises, and the board arrives complete. */
 const row = {
@@ -127,4 +130,47 @@ function stub(handler) {
   assert.match(board.warning, /没有可用的总结/);
 }
 
-console.log('Agent board: single task, normalisation, cache, no double spend, fallback — all passed.');
+// 7. The board survives a reload or restart through the file store.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trending-cache-'));
+  const store = createFileCacheStore(dir);
+  const time = 1_700_000_000_000;
+  const { fetchMock } = stub(async (url, options) => (options.method === 'POST'
+    ? json({ success: true, id: 'job-7' })
+    : completed()));
+
+  const first = new TrendingService({ apiKey: 'k', source: 'agent', agentPollMs: 10, store }, fetchMock, () => time);
+  const board = await first.get('daily');
+  first.dispose();
+
+  // A fresh instance stands in for a hot reload or an app restart.
+  const second = new TrendingService({ apiKey: 'k', source: 'agent', agentPollMs: 10, store },
+    async () => { throw new Error('a persisted board must not hit the network'); }, () => time + 1_000);
+  const reused = await second.get('daily');
+  assert.equal(reused.fetchedAt, board.fetchedAt, 'reload reuses the persisted board');
+  assert.equal(reused.items.length, board.items.length);
+  assert.equal(reused.insight.summary, '中文总结');
+  second.dispose();
+
+  // Past the TTL the persisted entry must be ignored.
+  let refetched = 0;
+  const third = new TrendingService({ apiKey: 'k', source: 'agent', agentPollMs: 10, store, cacheTtlMs: 1_000 },
+    async (url, options) => { refetched++; return options.method === 'POST' ? json({ success: true, id: 'job-8' }) : completed(); },
+    () => time + 5_000);
+  await third.get('daily');
+  assert.ok(refetched > 0, 'an expired persisted board is refetched');
+  third.dispose();
+
+  // A corrupted file degrades to "no cache" instead of breaking the board.
+  fs.writeFileSync(path.join(dir, 'daily.json'), '{not json');
+  const fourth = new TrendingService({ apiKey: 'k', source: 'agent', agentPollMs: 10, store }, fetchMock, () => time);
+  const recovered = await fourth.get('daily');
+  assert.ok(recovered.items.length > 0, 'corrupted cache still yields a board');
+  fourth.dispose();
+
+  store.clear();
+  assert.equal(store.read('daily'), null, 'clearing the store drops the entry');
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('Agent board: single task, normalisation, cache, no double spend, fallback, persistence — all passed.');

@@ -87,7 +87,21 @@ export interface TrendingOptions {
     agentPollMs?: number;
     /** Hard ceiling for one agent task so a stuck run cannot drain credits. */
     agentMaxCredits?: number;
+    /**
+     * Optional persistence for the board cache.
+     *
+     * The service keeps everything in memory so it stays trivial to test; the host passes a
+     * file store so the three-hour window survives a reload or an app restart instead of
+     * paying for a fresh Agent task every time the process restarts.
+     */
+    store?: TrendingCacheStore;
 }
+export interface TrendingCacheStore {
+    read(period: TrendingPeriod): TrendingResult | null;
+    write(period: TrendingPeriod, result: TrendingResult): void;
+    clear(): void;
+}
+export declare function createFileCacheStore(dir?: string): TrendingCacheStore;
 export declare class TrendingService {
     private options;
     private request;
@@ -106,6 +120,7 @@ export declare class TrendingService {
     private readonly agentBudget;
     private readonly agentPoll;
     private readonly agentCredits;
+    private readonly store?;
     constructor(options?: TrendingOptions, request?: typeof fetch, now?: () => number);
     setApiKey(apiKey: string | undefined): void;
     status(): {
@@ -114,6 +129,16 @@ export declare class TrendingService {
     };
     dispose(): void;
     get(period: TrendingPeriod, refresh?: boolean): Promise<TrendingResult>;
+    /** Write the board to memory and, when configured, to the persistent store. */
+    private remember;
+    /**
+     * Rebuild the memory entry from disk after a reload or a host restart.
+     *
+     * Whatever is on disk is untrusted input: the six-field contract is re-validated and any
+     * entry the current code cannot read is dropped, so an older or corrupted file can only
+     * cost one refetch — never a broken board.
+     */
+    private hydrate;
     /** Automatically run one Agent analysis for each successful leaderboard snapshot. */
     agentStart(period: TrendingPeriod): Promise<TrendingAgentState>;
     agentStatus(period: TrendingPeriod): Promise<TrendingAgentState>;
