@@ -71,11 +71,11 @@ ok(all.length === 20, '工具工厂实例化出 20 个工具', String(all.length
 // 后基线 27,016 → 28,007（+991）。这不是回归：换来的是「长正文不必进上下文」，即把每次调用要付的
 // 正文 token 成本换成了常驻 schema 的固定成本，量级上仍然是省。
 // phase50 adds the 473-character Trending descriptor; core/ci/maintain remain unchanged.
-ok(size(all) === 28480, '全量 schema 字符数 == 28,480（phase50 新增 github_trending 后的基线）', String(size(all)));
+ok(size(all) === 28497, '全量 schema 字符数 == 28,497（phase50 新增 github_trending 后的基线）', String(size(all)));
 {
   const r = applyTier(all, {});
   ok(r.kept.length === 20, '不配置 toolsets → 保留全部 20 个');
-  ok(size(r.kept) === 28480, '不配置 toolsets → 字符数不变');
+  ok(size(r.kept) === 28497, '不配置 toolsets → 字符数不变');
   ok(r.dropped.length === 0, '不配置 toolsets → 不剔除任何工具');
   ok(Object.keys(r.pruned).length === 0, '不配置 read_only → 不剪任何 action');
 }
@@ -124,7 +124,7 @@ console.log('\n--- 4. read_only 硬语义：写 action 在注册期被剪掉 ---
   const r = applyTier(all, { read_only: true });
   ok(r.dropped.includes('github_api'), 'github_api 在只读模式下整体剔除（端点/method 任意，无法降级）');
   ok(r.kept.length === 19, '只读模式保留 19 个工具（github_api 整体剔除）', String(r.kept.length));
-  ok(size(r.kept) === 26988, '只读模式 schema 26,988 字符（github_task 的 review_pr 被剪掉 5 字符）', String(size(r.kept)));
+  ok(size(r.kept) === 27005, '只读模式 schema 27,005 字符（github_task 的 review_pr 被剪掉 5 字符）', String(size(r.kept)));
 
   let violations = [];
   for (const tool of r.kept) {

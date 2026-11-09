@@ -149,7 +149,7 @@ export class TrendingService {
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
       throw new Error('Firecrawl 地址必须是无凭证、无查询参数的 HTTP(S) 服务地址');
     }
-    this.ttl = Number.isFinite(options.cacheTtlMs) ? Math.max(0, options.cacheTtlMs!) : 3_600_000;
+    this.ttl = Number.isFinite(options.cacheTtlMs) ? Math.max(0, options.cacheTtlMs!) : 10_800_000;
     this.timeout = Number.isFinite(options.timeoutMs) ? Math.max(1000, Math.min(120_000, options.timeoutMs!)) : 60_000;
     this.source = options.source === 'agent' ? 'agent' : 'scrape';
     this.agentBudget = Number.isFinite(options.agentTimeoutMs)
@@ -189,7 +189,9 @@ export class TrendingService {
     if (this.disposed) throw new Error('热点服务已停止');
     if (!this.status().configured) throw new Error('请在插件「设置 → Firecrawl」中保存 API Key，或配置 FIRECRAWL_API_KEY 环境变量');
     const cached = this.cache.get(period);
-    if (!refresh && cached && this.now() - Date.parse(cached.fetchedAt) < this.ttl) return cached;
+    // Every trigger — mount, period switch, the refresh button and the tool — passes the same gate:
+    // a fresh entry always wins, so no caller can spend Firecrawl credits before the TTL expires.
+    if (cached && this.now() - Date.parse(cached.fetchedAt) < this.ttl) return cached;
     const pending = this.pending.get(period);
     if (pending) return pending;
     const revision = this.revision;

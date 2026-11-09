@@ -32,7 +32,7 @@ $env:FIRECRAWL_API_KEY = '你的 Firecrawl API Key'
 ```yaml
 config:
   firecrawlBaseUrl: 'https://api.firecrawl.dev'
-  trendingCacheTtlMs: 3600000
+  trendingCacheTtlMs: 10800000
   trendingTimeoutMs: 60000
 ```
 
@@ -55,7 +55,7 @@ Firecrawl 使用 `/v2/scrape` 的 `formats: [{ type: 'json', schema, prompt }]`�
 
 `starsToday` 在日榜代表今日新增、周榜代表本周新增、月榜代表本月新增，字段名固定不变；UI 表头随周期变化。统计周期沿用 GitHub Trending，不做自然日/周/月的重新计算。页面缺失的数值显示 `—`，不会伪造为零。
 
-列表按上述六字段顺序展示，保留 GitHub 原榜顺序。数据默认缓存一小时；“刷新榜单”会绕过本地缓存并传 `maxAge: 0` 请求 Firecrawl，消耗相应服务额度。每周期独立缓存，并发请求合并。刷新失败继续显示上次成功数据并标注时间与警告。当前缓存位于服务内存，重启后首次访问重新抓取。不后台定时抓取。
+列表按上述六字段顺序展示，保留 GitHub 原榜顺序。数据默认缓存三小时；面板挂载、切换周期、点“刷新榜单”和 Agent 工具调用**全部先过缓存**，只有缓存过期（或为空）才会真正请求 Firecrawl，届时才消耗额度。每周期独立缓存，并发请求合并。刷新失败继续显示上次成功数据并标注时间与警告。当前缓存位于服务内存，重启后首次访问重新抓取。不后台定时抓取。
 
 ## Firecrawl Agent 趋势洞察
 

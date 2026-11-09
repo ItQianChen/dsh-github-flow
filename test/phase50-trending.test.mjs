@@ -34,8 +34,9 @@ assert.equal(calls[0].body.url, 'https://github.com/trending?since=daily');
 assert.deepEqual(calls[0].body.formats[0].schema.properties.repositories.items, TRENDING_ITEM_SCHEMA);
 await service.get('daily');
 assert.equal(calls.length, 1, 'cache hit does not consume credits');
-await service.get('daily', true);
-assert.equal(calls[1].body.maxAge, 0);
+const reused = await service.get('daily', true);
+assert.equal(calls.length, 1, 'an explicit refresh also passes the cache gate while the entry is fresh');
+assert.equal(reused.fetchedAt, first.fetchedAt);
 for (const period of ['weekly', 'monthly']) {
   await service.get(period);
   assert.equal(calls.at(-1).body.url, `https://github.com/trending?since=${period}`);

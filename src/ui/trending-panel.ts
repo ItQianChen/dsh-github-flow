@@ -146,7 +146,7 @@ export function GithubTrendingPanel() {
   return h('section', { className: 'dsh-trending', 'aria-label': 'GitHub 热点看板' },
     h('div', { className: 'dsh-trending-heading' },
       h('div', null, h('span', { className: 'dsh-trending-eyebrow' }, 'DISCOVER / OPEN SOURCE'), h('h2', null, 'GitHub 热点看板'), h('p', null, '探索开源趋势，洞察每天涌现的新项目')),
-      h('button', { className: 'dsh-github-btn-sm', disabled: busy || !configured, onClick: () => load(period, true), title: '绕过缓存，重新抓取当前榜单' }, busy ? '抓取中…' : '刷新榜单')),
+      h('button', { className: 'dsh-github-btn-sm', disabled: busy || !configured, onClick: () => load(period, true), title: '缓存三小时内直接复用，过期后才会重新抓取' }, busy ? '抓取中…' : '刷新榜单')),
     h('div', { className: 'dsh-trending-controls' },
       h('div', { className: 'dsh-github-pills', role: 'tablist', 'aria-label': '榜单周期' },
         ...periods.map(([key, label]) => h('button', { key, role: 'tab', 'aria-selected': period === key,
