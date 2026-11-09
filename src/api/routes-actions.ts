@@ -1,5 +1,6 @@
 /**
- * 动作类路由：缓存强制刷新 + 右侧栏快捷操作（create_pr/create_issue/open_browser/open_terminal）。
+ * 动作类路由：缓存强制刷新 + 右侧栏快捷操作（create_pr/create_issue/open_browser）。
+ * 不再提供 open_terminal：任何操作都不应自行唤起系统终端。
  * 共同特征：POST 触发、读少写多、无缓存语义，与概览类路由的演进方向不同。
  */
 import { spawn, execFile } from 'node:child_process';
@@ -9,6 +10,7 @@ import { hasGitDir } from '../workspace.js';
 import { watchGitMetadata } from '../git-watcher.js';
 import type { GitHubOverviewData, GlobalOverviewData } from '../types.js';
 import { isSafeExternalUrl, sendJson, guardLocalWrite, type RouteDeps } from './route-helpers.js';
+
 
 /**
  * 构造「在新终端窗口运行命令」的平台命令（execFile 数组形态，不经 shell）。
@@ -136,7 +138,6 @@ function launchTerminalAndWait(command: string): Promise<{ ok: boolean; error?: 
     });
   });
 }
-
 export function registerActionRoutes(
   deps: RouteDeps,
   executor: GhExecutor,
@@ -241,32 +242,6 @@ export function registerActionRoutes(
                 if (err) console.warn('[dsh-github-flow] 打开浏览器失败:', err?.message || err);
               });
               sendJson(res, 200, { ok: true, message: '已在浏览器打开' });
-              break;
-            }
-            case 'open_terminal': {
-              const command = typeof payload.command === 'string' ? payload.command.trim() : 'gh auth login';
-              // 严格白名单过滤，严防任意命令注入
-              const allowedCommands = [
-                'gh auth login',
-                'winget install --id GitHub.cli',
-                'brew install gh',
-                'sudo apt install gh',
-                'sudo dnf install gh',
-              ];
-              if (!allowedCommands.includes(command)) {
-                throw new Error(`不支持唤起该指令: ${command}`);
-              }
-              // Issue #2 修复：等待真实唤起结果再回传——旧实现 execFile 异步回调吞错、
-              // 路由先行返回 ok:true，导致终端弹不弹都提示成功。
-              const launch = await launchTerminalAndWait(command);
-              if (!launch.ok) {
-                sendJson(res, 500, {
-                  ok: false,
-                  message: `唤起终端失败：${launch.error}。请手动打开系统终端执行：${command}`,
-                });
-                return;
-              }
-              sendJson(res, 200, { ok: true, message: '已唤起系统终端' });
               break;
             }
             case 'switch_branch': {

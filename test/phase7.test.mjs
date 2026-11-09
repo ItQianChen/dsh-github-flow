@@ -57,17 +57,14 @@ console.log('\n--- 2. linux detection chain ---');
   assert(src.includes("'-x', ...shArgs"), 'xfce4-terminal 用 -x 形态');
 }
 
-// ---- 3. 失败回传语义（源码级：不再先斩后奏） ----
-console.log('\n--- 3. honest failure reporting ---');
+// ---- 3. 任何路由都不再唤起系统终端 ----
+console.log('\n--- 3. no route launches a terminal ---');
 {
   const src = readFileSync('src/api/routes-actions.ts', 'utf8');
-  assert(src.includes('launchTerminalAndWait') && src.includes('await launchTerminalAndWait'), 'open_terminal 等待真实结果再回传');
-  assert(src.includes('唤起终端失败：'), '失败响应含原因文案');
-  assert(src.includes('请手动打开系统终端执行'), '失败响应含手动出路');
-  // 旧的 fire-and-forget + 假成功模式必须消失
-  const openTermSection = src.slice(src.indexOf("case 'open_terminal'"), src.indexOf("default:", src.indexOf("case 'open_terminal'")));
-  assert(!openTermSection.includes("sendJson(res, 200, { ok: true, message: '已请求唤起系统终端' })"), '旧的「已请求唤起」假成功文案已移除');
-  assert(!/execFile\(bin, args, \(err/.test(openTermSection), '旧的吞错 fire-and-forget 已移除');
+  assert(!src.includes("case 'open_terminal'"), '路由不再处理 open_terminal');
+  assert(!src.includes('await launchTerminalAndWait'), '没有任何调用方唤起终端');
+  const cj = readFileSync('lib/client.js', 'utf8');
+  assert(!cj.includes('open_terminal'), '客户端不再请求 open_terminal');
 }
 
 // ---- 4. 路由端到端：HTTP 语义（mock webServer） ----
@@ -88,50 +85,26 @@ console.log('\n--- 4. route e2e (mock) ---');
   const handler = registered['/api/github/action'];
   assert(typeof handler === 'function', 'action 路由已注册');
 
-  // 4.1 白名单外的命令 → 500 + 明确拒绝
-  {
-    let status = 0, body = '';
-    const res = { setHeader() {}, end(d) { body = d; }, get statusCode() { return status; }, set statusCode(v) { status = v; } };
-    const req = { method: 'POST', headers: { 'content-type': 'application/json' }, on(ev, cb) { if (ev === 'data') cb('{}'); if (ev === 'end') cb(); } };
-    // 覆写 body 内容：用闭包注入 payload
-    let payload = JSON.stringify({ action: 'open_terminal', command: 'rm -rf /' });
-    const req2 = { method: 'POST', headers: { 'content-type': 'application/json' }, on(ev, cb) { if (ev === 'data') cb(payload); if (ev === 'end') cb(); } };
-    await handler(req2, res);
-    const json = JSON.parse(body);
-    assert(status === 500 && json.ok === false && /不支持唤起/.test(json.error || json.message || ''), '非白名单命令被拒绝');
-  }
-
-  // 4.2 合法命令（Windows 本机真实唤起会弹窗——stdio ignore 后 cmd start 亚秒返回，
-  //     close 事件异步到达，需轮询等待响应而非同步断言）
+  // 4.1 open_terminal 已下线：请求必须被当作未知操作拒绝，且绝不弹窗
   {
     let status = 0, body = '';
     const res = { setHeader() {}, end(d) { body = d; }, get statusCode() { return status; }, set statusCode(v) { status = v; } };
     const payload = JSON.stringify({ action: 'open_terminal', command: 'gh auth login' });
-    const req2 = { method: 'POST', headers: { 'content-type': 'application/json' }, on(ev, cb) { if (ev === 'data') cb(payload); if (ev === 'end') cb(); } };
-    await handler(req2, res);
-    // 响应经 spawn close 异步到达：最多等 12s（后端兜底 10s + 余量）
-    for (let i = 0; i < 120 && !body; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    assert(body, 'open_terminal 响应最终到达（不悬挂）');
+    const req = { method: 'POST', headers: { 'content-type': 'application/json' }, on(ev, cb) { if (ev === 'data') cb(payload); if (ev === 'end') cb(); } };
+    await handler(req, res);
     const json = JSON.parse(body);
-    // 真实环境：ok:true（终端已弹出）或 ok:false+原因（如沙箱 EPERM）——两者都是「如实」，不能是恒真
-    if (json.ok === true) {
-      assert(json.message === '已唤起系统终端', '成功响应语义正确');
-    } else {
-      // 失败如实回传：沙箱 spawn EPERM 走的是 catch 分支（error 字段），真实终端缺失走 message 分支——两者都算「如实」
-      const msg = json.message || json.error || '';
-      assert(status === 500 && (msg.includes('唤起终端失败') || msg.includes('EPERM') || msg.includes('失败')), `失败如实回传（沙箱环境预期）: ${msg.slice(0, 60)}`);
-    }
+    assert(status === 400 && json.ok === false && /未知的操作类型/.test(json.message || json.error || ''),
+      'open_terminal 已下线，按未知操作拒绝');
   }
 }
 
-// ---- 5. 前端如实展示锚点 ----
-console.log('\n--- 5. frontend honest display ---');
+// ---- 5. 前端不再自动唤起系统终端 ----
+console.log('\n--- 5. frontend no longer launches a terminal ---');
 {
   const cj = readFileSync('lib/client.js', 'utf8');
-  assert(cj.includes('若未弹出，可手动打开终端执行上方命令'), '成功 toast 留余地');
-  assert(cj.includes('"❌ " +'), '失败 toast 带 ❌ 前缀如实展示');
+  assert(!cj.includes('open_terminal'), '客户端不再调用 open_terminal');
+  assert(!cj.includes('已唤起系统终端'), '不再展示唤起终端的 toast');
+  assert(!cj.includes('唤起终端登录'), '鉴权卡片不再提供「唤起终端」按钮');
 }
 
 // ---- 6. 检查更新与 gh 链路并行化（不得被业务数据门控）----

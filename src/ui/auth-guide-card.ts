@@ -10,7 +10,6 @@ export function AuthGuideCard(props: any) {
   var isRightbar = Boolean(props && props.isRightbar);
 
   var [copied, setCopied] = React.useState(false);
-  var [launching, setLaunching] = React.useState(false);
   var [toastMsg, setToastMsg] = React.useState(null as string | null);
 
   var isNetwork = Boolean(auth?.networkError);
@@ -40,29 +39,6 @@ export function AuthGuideCard(props: any) {
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
       console.warn("复制失败:", e);
-    }
-  };
-
-  var launchTerminal = async (cmd: string) => {
-    setLaunching(true);
-    setToastMsg(null);
-    try {
-      var res = await fetch("/api/github/action", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "open_terminal", command: cmd })
-      });
-      var json = await res.json();
-      if (json.ok) {
-        setToastMsg("已唤起系统终端，请在弹出窗口中完成操作；若未弹出，可手动打开终端执行上方命令");
-        setTimeout(() => setToastMsg(null), 6000);
-      } else {
-        setToastMsg("❌ " + (json.message || "唤起失败，请手动打开终端执行上方命令"));
-      }
-    } catch (e) {
-      setToastMsg("无法连接后台服务，请手动打开终端执行上方命令");
-    } finally {
-      setLaunching(false);
     }
   };
 
@@ -172,16 +148,6 @@ export function AuthGuideCard(props: any) {
             "⚙️ 配置网络代理"
           )
         : null,
-      h(
-        "button",
-        {
-          className: "dsh-github-action-btn",
-          onClick: () => launchTerminal(defaultCmd),
-          disabled: launching,
-          title: "自动唤起系统终端并执行该命令"
-        },
-        launching ? "正在唤起..." : (isNetwork ? "💻 终端排查状态" : notInstalled ? "💻 唤起终端安装" : "💻 唤起终端登录")
-      ),
       notInstalled
         ? h(
             "button",
