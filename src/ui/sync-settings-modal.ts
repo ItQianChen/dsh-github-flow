@@ -162,9 +162,7 @@ function FirecrawlAwareSettingsModal(props: any) {
       var result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || "保存失败");
       setFirecrawlState(result.data);
-      setFirecrawlMessage(source === "agent"
-        ? "已切换到 Agent 模式：榜单与右侧洞察都由 Agent 任务产出。"
-        : "已切换到 Scrape 模式：榜单与右侧洞察都由 Scrape 产出，不再调用 Agent。");
+      setFirecrawlMessage("已切换到 " + (source === "agent" ? "Agent" : "Scrape") + " 模式。");
       window.dispatchEvent(new Event("dsh-github-firecrawl-updated"));
     } catch (e: any) { setFirecrawlMessage(e && e.message ? e.message : "保存失败"); }
     finally { setFirecrawlBusy(false); }
@@ -323,18 +321,13 @@ function FirecrawlAwareSettingsModal(props: any) {
                 h("button", { className: "dsh-github-btn-sm", disabled: firecrawlBusy || firecrawlState?.source !== "settings", onClick: () => saveFirecrawl(true) }, "清除已保存 Key"))),
             h("div", { className: "dsh-firecrawl-card" },
               h("label", null, "抓取模式"),
-              h("div", { className: "dsh-firecrawl-modes", role: "radiogroup", "aria-label": "热点看板抓取模式" },
-                [["scrape", "Scrape", "一次抽取同时得到榜单、中文译文与总结，约 5 credits。"],
-                 ["agent", "Agent", "一次 Agent 任务，条数更多、洞察更丰富，约 24–39 credits。"]].map((option) =>
+              h("div", { className: "dsh-firecrawl-modes", role: "radiogroup", "aria-label": "抓取模式" },
+                [["scrape", "Scrape"], ["agent", "Agent"]].map((option) =>
                   h("label", { key: option[0], className: "dsh-firecrawl-mode" + (activeSource === option[0] ? " active" : "") },
                     h("input", { type: "radio", name: "dsh-trending-source", value: option[0],
                       checked: activeSource === option[0], disabled: firecrawlBusy,
                       onChange: () => saveSource(option[0]) }),
-                    h("span", null, h("strong", null, option[1]), h("small", null, option[2]))))),
-              h("p", { className: "dsh-firecrawl-hint" },
-                activeSource === "agent"
-                  ? "当前：Agent。抓取与右侧洞察都由 Agent 产出，不会调用 Scrape。"
-                  : "当前：Scrape。抓取与右侧洞察都由 Scrape 产出，不会调用 Agent。")),
+                    h("span", null, option[1]))))),
             firecrawlMessage ? h("p", { className: "dsh-firecrawl-hint", role: "status" }, firecrawlMessage) : null,
             h("a", { href: "https://www.firecrawl.dev/app", target: "_blank", rel: "noopener noreferrer" }, "前往 Firecrawl 控制台获取 API Key ↗")
           ) : activeSection === "sync" ? h("div", null,
