@@ -99,16 +99,16 @@ toolsets: ['core', 'github_trending']
 ## 开发与安装 Fork
 
 ```bash
-git clone --branch feature/github-trending https://github.com/AiurRefugee/dsh-github-flow-trending.git
-cd dsh-github-flow-trending
+git clone https://github.com/ItQianChen/dsh-github-flow.git
+cd dsh-github-flow
 pnpm install --frozen-lockfile
 pnpm run build
 pnpm test
 ```
 
-插件包名与服务名继续使用 `dsh-github-flow`，便于替换现有安装和向上游贡献。按 README 的“本地开发与联调热重载”方式，将当前 DSH Profile 中的原插件指向此源码目录；后端修改后重启 DSH，前端强制刷新。不要同时加载原版与 Fork，否则服务、路由和 UI 槽位会冲突。
+插件包名与服务名继续使用 `dsh-github-flow`，便于替换现有安装。按 README 的“本地开发与联调热重载”方式，将当前 DSH Profile 中的插件指向此源码目录；后端修改后重启 DSH，前端强制刷新。
 
-在上游合并前，不要使用插件内的官方 npm 一键升级覆盖此 Fork。可设置 `checkUpdate: false` 关闭更新提示，但这不禁用显式升级操作。
+在本地源码开发时，注意不要同时加载 npm 版与源码版，否则服务、路由和 UI 槽位会冲突。可设置 `checkUpdate: false` 关闭更新提示，但这不禁用显式升级操作。
 
 ## 验证
 
