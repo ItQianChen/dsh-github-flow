@@ -124,12 +124,14 @@ export declare class TrendingService {
     private readonly baseUrl;
     private readonly ttl;
     private readonly timeout;
-    private readonly source;
+    private source;
     private readonly agentBudget;
     private readonly agentPoll;
     private readonly agentCredits;
     private readonly store?;
     constructor(options?: TrendingOptions, request?: typeof fetch, now?: () => number);
+    /** Switch the fetch mode at runtime; cached boards from the other mode are not reusable. */
+    setSource(source: 'agent' | 'scrape'): void;
     setApiKey(apiKey: string | undefined): void;
     status(): {
         configured: boolean;

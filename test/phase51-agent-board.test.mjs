@@ -203,4 +203,31 @@ function stub(handler) {
   service.dispose();
 }
 
-console.log('Agent board: single task, normalisation, cache, no double spend, fallback, persistence, scrape+insights — all passed.');
+// 10. Switching the mode drops boards that came from the other one.
+{
+  const calls = [];
+  const fetchMock = async (url, options) => {
+    calls.push(url);
+    if (url.endsWith('/v2/scrape')) {
+      return json({ success: true, data: { json: {
+        repositories: [{ ...row, stars: 12345, starsToday: 321, descriptionZh: '译' }],
+        summary: '抓取总结', observations: ['要点'],
+      } } });
+    }
+    if (options.method === 'POST') return json({ success: true, id: 'job-10' });
+    return completed();
+  };
+  const service = new TrendingService({ apiKey: 'k', source: 'scrape', agentPollMs: 10 }, fetchMock, () => 1_700_000_000_000);
+
+  const scraped = await service.get('daily');
+  assert.equal(scraped.insightMode, 'scrape');
+  assert.equal(calls.length, 1);
+
+  service.setSource('agent');
+  const agentBoard = await service.get('daily');
+  assert.ok(calls.some((url) => url.endsWith('/v2/agent')), 'agent mode switches endpoint');
+  assert.equal(agentBoard.insightMode, 'agent', 'the cached scrape board is not reused after switching');
+  service.dispose();
+}
+
+console.log('Agent board: single task, normalisation, cache, no double spend, fallback, persistence, scrape+insights, mode switch — all passed.');

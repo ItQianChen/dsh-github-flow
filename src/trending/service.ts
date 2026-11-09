@@ -198,7 +198,7 @@ export class TrendingService {
   private readonly baseUrl: string;
   private readonly ttl: number;
   private readonly timeout: number;
-  private readonly source: 'agent' | 'scrape';
+  private source: 'agent' | 'scrape';
   private readonly agentBudget: number;
   private readonly agentPoll: number;
   private readonly agentCredits: number;
@@ -221,6 +221,17 @@ export class TrendingService {
     this.agentCredits = Number.isFinite(options.agentMaxCredits)
       ? Math.max(1, Math.min(2500, options.agentMaxCredits!)) : 300;
     this.store = options.store;
+  }
+
+  /** Switch the fetch mode at runtime; cached boards from the other mode are not reusable. */
+  setSource(source: 'agent' | 'scrape'): void {
+    if (source === this.source) return;
+    this.source = source;
+    this.revision++;
+    for (const controller of this.controllers) controller.abort();
+    this.pending.clear();
+    this.cache.clear();
+    this.store?.clear();
   }
 
   setApiKey(apiKey: string | undefined) {

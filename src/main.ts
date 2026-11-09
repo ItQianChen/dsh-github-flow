@@ -168,7 +168,9 @@ export function apply(ctx: Context, config: Config = Config({})) {
     cacheTtlMs: config.trendingCacheTtlMs,
     timeoutMs: config.trendingTimeoutMs,
     store: createFileCacheStore(),
-    source: String(config.trendingSource).toLowerCase() === 'scrape' ? 'scrape' : 'agent',
+    // The settings panel wins over the config default: it is what the user last chose in the UI.
+    source: firecrawlSettings.source()
+      ?? (String(config.trendingSource).toLowerCase() === 'agent' ? 'agent' : 'scrape'),
     agentTimeoutMs: config.trendingAgentTimeoutMs,
     agentMaxCredits: config.trendingAgentMaxCredits,
   });

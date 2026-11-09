@@ -123,12 +123,18 @@ pnpm test
 | `scrape`（默认） | `POST /v2/scrape` + JSON 抽取 | 5 credits | 约 40s | 9 |
 | `agent` | `POST /v2/agent` + 轮询 | 24–39 credits | 约 100s | 15 |
 
+**切换方式：插件页面「⚙️ 设置 → 🔥 Firecrawl → 抓取模式」**，选完立即生效并持久化到 `~/.dsh/data/dsh-github-flow/firecrawl-settings.json`，无需重启；切换会清空缓存，因为两种模式产出的榜单不可复用。
+
+未在界面选过时，回落到 plugin config 的 `trendingSource`（默认 `scrape`）：
+
 ```yaml
 config:
-  trendingSource: scrape       # scrape（默认）| agent
+  trendingSource: scrape       # scrape | agent，仅在界面未选过时生效
   trendingAgentTimeoutMs: 180000   # 仅 agent：整个任务预算，含轮询
   trendingAgentMaxCredits: 300     # 仅 agent：单次任务额度上限
 ```
+
+两种模式互斥：`scrape` 模式下右侧总结也由 scrape 产出，**任何路径都不会调用 Agent**；`agent` 模式下榜单与洞察都由 Agent 任务产出，不会回落到 scrape（除非 Agent 失败自动降级）。
 
 - `scrape` 的译文直接写在每条记录的 `descriptionZh` 里，服务端拆成 sidecar 后再走六字段校验，行数据不会被污染；总结与观察来自同一次抽取，因此**一个周期只花 5 credits**，三个周期共 15。
 - 抽取结果不合法或总结为空时，只丢洞察、保留榜单，并用 `insightMode: 'scrape'` 标记「本次已经尝试过总结」，前端不会因此再偷偷起一个付费的 Agent 任务。

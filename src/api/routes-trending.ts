@@ -16,6 +16,9 @@ export function registerTrendingRoutes(deps: RouteDeps, service: TrendingService
       const body = await readJsonBody(req, 4096);
       const state = settings.save(body);
       service.setApiKey(settings.key());
+      if (state.trendingSource === 'scrape' || state.trendingSource === 'agent') {
+        service.setSource(state.trendingSource);
+      }
       sendJson(res, 200, { ok: true, data: state });
     } catch (error: any) {
       sendJson(res, 400, { ok: false, error: error.message });

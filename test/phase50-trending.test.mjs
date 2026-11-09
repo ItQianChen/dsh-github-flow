@@ -176,6 +176,7 @@ try {
   assert.equal(settings.key(), 'env-secret');
   assert.ok(!fs.readFileSync(file, 'utf8').includes('saved-secret'));
 
+
   let requestCount = 0;
   const hot = new TrendingService({ apiKey: settings.key() }, async (_url, options) => {
     requestCount++;
@@ -196,6 +197,16 @@ try {
   hot.setApiKey(undefined);
   await assert.rejects(hot.get('daily'), /API Key/);
   hot.dispose();
+
+  // 抓取模式由设置面板决定，独立于 Key 持久化
+  assert.equal(settings.source(), undefined);
+  const keyBeforeMode = settings.key();
+  settings.save({ source: 'agent' });
+  assert.equal(settings.source(), 'agent');
+  assert.equal(new FirecrawlSettings(file, 'env-secret').source(), 'agent');
+  assert.equal(settings.key(), keyBeforeMode, '保存模式不会清掉已保存的 Key');
+  assert.throws(() => settings.save({ source: 'bogus' }));
+  assert.throws(() => settings.save({}));
 
   let resolveOld;
   const changing = new TrendingService({ apiKey: 'old' }, async () => new Promise(resolve => { resolveOld = resolve; }));
