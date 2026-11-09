@@ -51,8 +51,16 @@ export interface TrendingResult {
     stale: boolean;
     warning?: string;
     items: TrendingRepository[];
-    /** Present when one Agent task produced the board, its translations and its summary together. */
+    /** Translations and summary produced by the same request that produced the rows. */
     insight?: TrendingInsight;
+    /**
+     * Which path produced (or failed to produce) the insight.
+     *
+     * The panel uses this to decide whether to start a separate Agent task: when a request
+     * already tried to summarise, a missing insight is a degraded result, not a reason to
+     * spend another 30+ credits without the user asking.
+     */
+    insightMode?: 'agent' | 'scrape';
 }
 export declare function parseTrendingPeriod(value: unknown): TrendingPeriod;
 /** Reject malformed extractions rather than silently showing invented zeros or an empty board. */

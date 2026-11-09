@@ -31,7 +31,12 @@ assert.deepEqual(first, duplicate);
 assert.equal(calls.length, 1, 'coalesces concurrent scrapes');
 assert.equal(calls[0].url, 'https://api.firecrawl.dev/v2/scrape');
 assert.equal(calls[0].body.url, 'https://github.com/trending?since=daily');
-assert.deepEqual(calls[0].body.formats[0].schema.properties.repositories.items, TRENDING_ITEM_SCHEMA);
+const items = calls[0].body.formats[0].schema.properties.repositories.items;
+assert.deepEqual(items.properties.name, TRENDING_ITEM_SCHEMA.properties.name);
+assert.deepEqual(Object.keys(items.properties).sort(),
+  [...Object.keys(TRENDING_ITEM_SCHEMA.properties), 'descriptionZh'].sort(),
+  'scrape also asks for the translation so one pass covers rows + translations + summary');
+assert.deepEqual(calls[0].body.formats[0].schema.required, ['repositories', 'summary', 'observations']);
 await service.get('daily');
 assert.equal(calls.length, 1, 'cache hit does not consume credits');
 const reused = await service.get('daily', true);

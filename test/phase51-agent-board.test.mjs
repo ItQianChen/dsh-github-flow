@@ -173,4 +173,34 @@ function stub(handler) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-console.log('Agent board: single task, normalisation, cache, no double spend, fallback, persistence — all passed.');
+// 9. scrape mode returns rows, translations and summary from one request.
+{
+  const { calls, fetchMock } = stub(async (url, options) => {
+    if (url.endsWith('/v2/scrape')) {
+      return json({ success: true, data: { json: {
+        repositories: [{ ...row, stars: 12345, starsToday: 321, descriptionZh: '一个有用的项目' }],
+        summary: '中文总结', observations: ['要点一'],
+      } } });
+    }
+    throw new Error('scrape mode must not fall back to the agent endpoint');
+  });
+  const service = new TrendingService({ apiKey: 'k', source: 'scrape' }, fetchMock, () => 1_700_000_000_000);
+  const board = await service.get('daily');
+
+  assert.equal(calls.length, 1, 'one scrape call covers rows, translations and summary');
+  assert.equal(calls[0].url, 'https://api.firecrawl.dev/v2/scrape');
+  assert.equal(board.items[0].stars, 12345);
+  assert.equal(board.insight.summary, '中文总结');
+  assert.deepEqual(board.insight.descriptionsZh, { 'owner/repo': '一个有用的项目' });
+  assert.equal(board.insightMode, 'scrape');
+  assert.equal(Object.prototype.hasOwnProperty.call(board.items[0], 'descriptionZh'), false,
+    'the translated field never leaks into the six-field row');
+
+  // The board already carries a summary, so the panel must not buy a second task.
+  const state = await service.agentStart('daily');
+  assert.equal(state.status, 'completed');
+  assert.equal(calls.length, 1, 'no extra agent task after a scrape that produced insights');
+  service.dispose();
+}
+
+console.log('Agent board: single task, normalisation, cache, no double spend, fallback, persistence, scrape+insights — all passed.');

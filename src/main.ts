@@ -95,8 +95,9 @@ const ConfigSchema = Schema.object({
   firecrawlBaseUrl: Schema.string(),
   trendingCacheTtlMs: Schema.number().default(10_800_000),
   trendingTimeoutMs: Schema.number().default(60_000),
-  // agent：一次 Firecrawl Agent 任务同时完成抓取、翻译与总结；scrape：确定性抓取 + 单独洞察。
-  trendingSource: Schema.string().default('agent'),
+  // scrape：一次 /v2/scrape 的 JSON 抽取同时产出榜单、中文译文与总结（约 5 credits）；
+  // agent：一次 Agent 任务，条数更多、洞察更丰富，但要 24–39 credits。
+  trendingSource: Schema.string().default('scrape'),
   trendingAgentTimeoutMs: Schema.number().default(180_000),
   trendingAgentMaxCredits: Schema.number().default(300),
 });

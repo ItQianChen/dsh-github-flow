@@ -100,6 +100,9 @@ export function GithubTrendingPanel() {
       }));
       return;
     }
+    // The request already tried to summarise this board; a missing summary is degraded, not a
+    // reason to silently start a second paid task.
+    if (board.insightMode) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const generation = ++agentGeneration.current;
