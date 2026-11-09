@@ -189,9 +189,9 @@ export class TrendingService {
     if (this.disposed) throw new Error('热点服务已停止');
     if (!this.status().configured) throw new Error('请在插件「设置 → Firecrawl」中保存 API Key，或配置 FIRECRAWL_API_KEY 环境变量');
     const cached = this.cache.get(period);
-    // Every trigger — mount, period switch, the refresh button and the tool — passes the same gate:
-    // a fresh entry always wins, so no caller can spend Firecrawl credits before the TTL expires.
-    if (cached && this.now() - Date.parse(cached.fetchedAt) < this.ttl) return cached;
+    // Every automatic trigger — mount, period switch, tool call — stops here while the entry is fresh.
+    // Only an explicit refresh bypasses the gate, and that is exactly the path that spends credits.
+    if (!refresh && cached && this.now() - Date.parse(cached.fetchedAt) < this.ttl) return cached;
     const pending = this.pending.get(period);
     if (pending) return pending;
     const revision = this.revision;

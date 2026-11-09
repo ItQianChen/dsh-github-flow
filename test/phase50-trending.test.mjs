@@ -35,8 +35,9 @@ assert.deepEqual(calls[0].body.formats[0].schema.properties.repositories.items, 
 await service.get('daily');
 assert.equal(calls.length, 1, 'cache hit does not consume credits');
 const reused = await service.get('daily', true);
-assert.equal(calls.length, 1, 'an explicit refresh also passes the cache gate while the entry is fresh');
-assert.equal(reused.fetchedAt, first.fetchedAt);
+assert.equal(calls.length, 2, 'an explicit refresh bypasses the cache');
+assert.equal(calls[1].body.maxAge, 0, 'refresh asks Firecrawl for content it has not cached');
+assert.equal(reused.stale, false);
 for (const period of ['weekly', 'monthly']) {
   await service.get(period);
   assert.equal(calls.at(-1).body.url, `https://github.com/trending?since=${period}`);
