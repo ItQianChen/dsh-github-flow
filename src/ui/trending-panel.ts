@@ -190,7 +190,6 @@ export function GithubTrendingPanel() {
         h('div', { className: 'dsh-trending-insight-header' },
           h('span', { className: 'dsh-trending-agent-icon', 'aria-hidden': true }, '✦'),
           h('div', null, h('h3', null, 'AI 趋势洞察'), h('small', null, 'FIRECRAWL AGENT · ' + ({ daily: '每日', weekly: '每周', monthly: '每月' })[period as TrendingPeriod]))),
-        h('p', { className: 'dsh-trending-insight-subtitle' }, '基于当前周期的 GitHub Trending 榜单生成总结与观察。'),
         (agentError || insights[period]?.error) ? h('p', { className: 'dsh-trending-agent-error', role: 'alert' },
           agentError || insights[period]?.error) : null,
         insights[period]?.status === 'completed' ? h('div', { className: 'dsh-trending-insight-result' },
@@ -199,10 +198,6 @@ export function GithubTrendingPanel() {
           h('h4', null, '观察与发现'),
           h('ol', null, ...insights[period].insight.observations.map((item: string, i: number) => h('li', { key: i }, item)))) :
         insights[period]?.status === 'processing' && !agentError ? h('div', { className: 'dsh-trending-agent-loading', role: 'status' },
-          h('span', { className: 'dsh-trending-agent-spinner' }), 'Agent 正在分析榜单，请稍后…') :
-        !agentError && insights[period]?.status !== 'failed' ? h('div', { className: 'dsh-trending-agent-empty' },
-          h('span', { className: 'dsh-trending-agent-sparkle', 'aria-hidden': true }, '✧'),
-          h('p', null, '榜单抓取完成后将自动分析热门技术方向与重点项目')) : null,
-        h('p', { className: 'dsh-trending-agent-footnote' }, '一次 Firecrawl Agent 任务同时完成抓取、中文翻译与总结；每份快照仅执行一次，可能消耗额度。')
+          h('span', { className: 'dsh-trending-agent-spinner' }), 'Agent 正在分析榜单，请稍后…') : null
       ))) : null);
 }
