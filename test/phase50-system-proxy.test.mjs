@@ -148,8 +148,12 @@ console.log('\n--- 5. UI 与路由接线（源码级契约）---');
 {
   const modalSrc = readFileSync(path.join(ROOT, 'src/ui/sync-settings-modal.ts'), 'utf8');
   ok(modalSrc.includes('autoFollowSystem'), '设置弹窗提交 autoFollowSystem');
-  ok(modalSrc.includes('自动跟随系统代理'), '设置弹窗渲染自动跟随开关');
-  ok(modalSrc.includes('proxyAutoFollow ? "启用代理（自动跟随模式下停用）"'), '自动跟随时手动开关置灰（模式互斥在 UI 可见）');
+  ok(modalSrc.includes('跟随系统代理'), '设置弹窗渲染跟随系统代理开关');
+  // 2026-11-23 交互改版：checkbox 平铺 → 层级式滑块开关（总开关 → 跟随系统 → 手动表单逐级出现）
+  ok(modalSrc.includes('dsh-toggle-row') && modalSrc.includes('dsh-toggle-track'), '开关使用滑块样式（iOS 风格 toggle）');
+  ok(/proxyEnabled \? h\("div", \{ className: "dsh-toggle-sub"/.test(modalSrc), '跟随系统代理仅在总开关开启时渲染（层级显示）', '缺少 dsh-toggle-sub 条件渲染');
+  ok(modalSrc.includes('proxyAutoFollow\n') || /proxyAutoFollow\s*\?\s*h\(/.test(modalSrc) || modalSrc.includes('proxyAutoFollow\n                ? h(') || /proxyAutoFollow\s*\n?\s*\?/.test(modalSrc), '跟随开启显示状态卡、关闭显示手动表单（三级内容切换）');
+  ok(modalSrc.includes('各项设置会记住，下次开启时恢复'), '总开关描述明示状态记忆语义');
   const routeSrc = readFileSync(path.join(ROOT, 'src/api/routes-proxy.ts'), 'utf8');
   ok(routeSrc.includes('proxyManager.save(body'), '保存路由透传请求体（autoFollowSystem 经由 body 到达）');
   const proxySrc = readFileSync(path.join(ROOT, 'src/proxy.ts'), 'utf8');

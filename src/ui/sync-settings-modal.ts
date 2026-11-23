@@ -463,64 +463,80 @@ export function GlobalSyncSettingsModal(props: {
             h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.5" } },
               "设置后插件的 GitHub 数据链路（本页面、右侧栏、Agent 工具调用、版本升级）全部经代理访问；未启用时默认使用系统环境代理或直连。保存后立即生效，无需重启。"
             ),
-            h("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", cursor: "pointer", fontSize: "13px" } },
+            /* 一级开关：代理总开关。关闭时全部子项隐藏，插件回落直连 */
+            h("label", { className: "dsh-toggle-row" },
               h("input", {
                 type: "checkbox",
-                checked: proxyAutoFollow,
-                onChange: function (e: any) {
-                  var next = Boolean(e.target.checked);
-                  setProxyAutoFollow(next);
-                  // 模式互斥：跟随系统时代理来源是注册表，手动开关与地址都失去意义，直接置灰防误配
-                  if (next) setProxyEnabled(false);
-                },
-              }),
-              "自动跟随系统代理"
-            ),
-            h("div", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "10px", lineHeight: "1.5", paddingLeft: "24px" } },
-              "开启后读取 Windows 注册表的系统代理（clash / v2rayN 等工具的「系统代理」开关）：系统开则自动使用，系统关则自动直连，30 秒内同步，代理地址等手动设置停用。" +
-              (proxyAutoFollow
-                ? (proxySystemProxy
-                  ? proxySystemProxy.enabled
-                    ? "当前跟随系统代理 " + proxySystemProxy.url
-                    : "当前系统代理处于关闭状态，插件保持直连"
-                  : "尚未检测（保存后立即检测一次）")
-                : "关闭时使用下方手动配置")
-            ),
-            h("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px", cursor: proxyAutoFollow ? "not-allowed" : "pointer", fontSize: "13px", opacity: proxyAutoFollow ? 0.45 : 1 } },
-              h("input", {
-                type: "checkbox",
-                checked: proxyEnabled && !proxyAutoFollow,
-                disabled: proxyAutoFollow,
+                checked: proxyEnabled,
                 onChange: function (e: any) { setProxyEnabled(Boolean(e.target.checked)); },
               }),
-              proxyAutoFollow ? "启用代理（自动跟随模式下停用）" : "启用代理"
+              h("span", { className: "dsh-toggle-track" }, h("span", { className: "dsh-toggle-thumb" })),
+              h("div", { className: "dsh-toggle-body" },
+                h("div", { className: "dsh-toggle-title" }, "启用代理"),
+                h("div", { className: "dsh-toggle-desc" }, "关闭后插件保持直连（各项设置会记住，下次开启时恢复）")
+              )
             ),
-            proxyEnabled && !proxyAutoFollow ? h("div", null,
-              h("div", { style: { fontSize: "12px", marginBottom: "4px" } }, "代理地址"),
-              h("input", {
-                className: "dsh-github-input",
-                style: { width: "100%", boxSizing: "border-box", padding: "6px 10px", fontSize: "13px", marginBottom: "10px" },
-                placeholder: "http://127.0.0.1:7890 或 socks5h://127.0.0.1:1080（DNS 由代理解析）",
-                value: proxyUrl,
-                onChange: function (e: any) { setProxyUrl(e.target.value); },
-              }),
-              h("div", { style: { fontSize: "12px", marginBottom: "4px" } }, "NO_PROXY 排除列表（逗号分隔，localhost 与 127.0.0.1 强制包含）"),
-              h("input", {
-                className: "dsh-github-input",
-                style: { width: "100%", boxSizing: "border-box", padding: "6px 10px", fontSize: "12px", marginBottom: "10px" },
-                value: proxyNoProxy,
-                onChange: function (e: any) { setProxyNoProxy(e.target.value); },
-              }),
-              h("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", cursor: "pointer", fontSize: "12px" } },
+            /* 二级开关：仅在总开关开启时出现。跟随系统 = 代理来源交给注册表；关闭 = 手动配置 */
+            proxyEnabled ? h("div", { className: "dsh-toggle-sub" },
+              h("label", { className: "dsh-toggle-row" },
                 h("input", {
                   type: "checkbox",
-                  checked: proxyApplyNpm,
-                  onChange: function (e: any) { setProxyApplyNpm(Boolean(e.target.checked)); },
+                  checked: proxyAutoFollow,
+                  onChange: function (e: any) { setProxyAutoFollow(Boolean(e.target.checked)); },
                 }),
-                "同时应用于 npm 版本探测与一键升级"
-              )
+                h("span", { className: "dsh-toggle-track" }, h("span", { className: "dsh-toggle-thumb" })),
+                h("div", { className: "dsh-toggle-body" },
+                  h("div", { className: "dsh-toggle-title" }, "跟随系统代理"),
+                  h("div", { className: "dsh-toggle-desc" }, "读取 Windows 注册表的系统代理（clash / v2rayN 等工具的「系统代理」开关），开启则自动使用、关闭则自动直连，30 秒内同步")
+                )
+              ),
+              /* 三级内容：跟随开 → 检测状态卡；跟随关 → 手动表单 */
+              proxyAutoFollow
+                ? h("div", {
+                    style: {
+                      fontSize: "12px", lineHeight: "1.6", marginBottom: "10px", padding: "10px 12px",
+                      borderRadius: "6px",
+                      background: proxySystemProxy && proxySystemProxy.enabled
+                        ? "var(--dsw-alias-state-success-subtle, rgba(46, 160, 67, 0.1))"
+                        : "var(--dsw-alias-bg-layer-1, rgba(0, 0, 0, 0.03))",
+                      color: proxySystemProxy && proxySystemProxy.enabled
+                        ? "var(--dsw-alias-state-success, #1a7f37)"
+                        : "var(--dsw-alias-label-secondary, #656d76)",
+                    },
+                  },
+                  proxySystemProxy
+                    ? proxySystemProxy.enabled
+                      ? "已跟随系统代理 " + proxySystemProxy.url
+                      : "当前系统代理处于关闭状态，插件保持直连；系统代理开启后 30 秒内自动跟进"
+                    : "尚未检测：保存后立即检测一次，此后每 30 秒自动刷新"
+                  )
+                : h("div", null,
+                    h("div", { style: { fontSize: "12px", marginBottom: "4px" } }, "代理地址"),
+                    h("input", {
+                      className: "dsh-github-input",
+                      style: { width: "100%", boxSizing: "border-box", padding: "6px 10px", fontSize: "13px", marginBottom: "10px" },
+                      placeholder: "http://127.0.0.1:7890 或 socks5h://127.0.0.1:1080（DNS 由代理解析）",
+                      value: proxyUrl,
+                      onChange: function (e: any) { setProxyUrl(e.target.value); },
+                    }),
+                    h("div", { style: { fontSize: "12px", marginBottom: "4px" } }, "NO_PROXY 排除列表（逗号分隔，localhost 与 127.0.0.1 强制包含）"),
+                    h("input", {
+                      className: "dsh-github-input",
+                      style: { width: "100%", boxSizing: "border-box", padding: "6px 10px", fontSize: "12px", marginBottom: "10px" },
+                      value: proxyNoProxy,
+                      onChange: function (e: any) { setProxyNoProxy(e.target.value); },
+                    }),
+                    h("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", cursor: "pointer", fontSize: "12px" } },
+                      h("input", {
+                        type: "checkbox",
+                        checked: proxyApplyNpm,
+                        onChange: function (e: any) { setProxyApplyNpm(Boolean(e.target.checked)); },
+                      }),
+                      "同时应用于 npm 版本探测与一键升级"
+                    )
+                  )
             ) : null,
-            h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+            proxyEnabled ? h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
               h("button", {
                 className: "dsh-github-btn-sm",
                 style: { padding: "5px 12px", fontSize: "12px" },
@@ -549,7 +565,7 @@ export function GlobalSyncSettingsModal(props: {
                 },
                 title: proxyProbe.error || "",
               }, proxyProbe.ok ? "✅ " + proxyProbe.latencyMs + "ms" : "❌ 探测失败") : null
-            ),
+            ) : null,
             proxyMsg ? h("div", {
               style: {
                 marginTop: "8px",

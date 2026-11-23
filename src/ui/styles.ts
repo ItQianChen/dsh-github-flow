@@ -1061,6 +1061,97 @@ body[data-ds-dark-theme] .dsh-github-input:focus {
   box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
 }
 
+/* 4.x iOS 风格滑块开关（设置页代理分区）
+ *
+ * 为什么不用原生 checkbox：代理的「启用 / 跟随系统」是主次两级开关，
+ * checkbox 在视觉上完全平权，用户分不清哪层管哪层；滑块开关自带
+ * 「这一项是设置」的心理暗示，层级关系靠缩进表达。
+ * 结构：label(承载点击) > input(隐藏，保留无障碍语义) > span 滑块。
+ * 颜色不引入新变量：选中态复用链接蓝，禁用态降低透明度而非换灰——
+ * 深浅两套主题都由现有 alias 变量兜底。
+ */
+.dsh-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.dsh-toggle-row input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.dsh-toggle-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2, #d1d5da);
+  border: 1px solid var(--dsw-alias-border-l2, #d0d7de);
+  flex-shrink: 0;
+  transition: background 0.18s ease, border-color 0.18s ease;
+  margin-top: 1px;
+}
+.dsh-toggle-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.18s ease;
+}
+.dsh-toggle-row input:checked + .dsh-toggle-track {
+  background: var(--dsw-alias-link, #0969da);
+  border-color: var(--dsw-alias-link, #0969da);
+}
+.dsh-toggle-row input:checked + .dsh-toggle-track .dsh-toggle-thumb {
+  transform: translateX(16px);
+}
+.dsh-toggle-row input:focus-visible + .dsh-toggle-track {
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.25);
+}
+.dsh-toggle-row.dsh-toggle-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.dsh-toggle-body {
+  flex: 1;
+  min-width: 0;
+}
+.dsh-toggle-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary, #1f2328);
+  line-height: 20px;
+}
+.dsh-toggle-desc {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, #656d76);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+body[data-ds-dark-theme] .dsh-toggle-track {
+  background: var(--dsw-alias-bg-layer-2, #30363d);
+  border-color: var(--dsw-alias-border-l1, #30363d);
+}
+body[data-ds-dark-theme] .dsh-toggle-row input:checked + .dsh-toggle-track {
+  background: #1f6feb;
+  border-color: #1f6feb;
+}
+
+/* 二级开关缩进：跟随系统代理是「启用代理」的子项，整体右移表达层级 */
+.dsh-toggle-sub {
+  margin-left: 46px;
+  padding-left: 12px;
+  border-left: 2px solid var(--dsw-alias-border-l1, #eaeef2);
+}
+
 .dsh-github-cache-info-box {
   padding: 10px 12px;
   border-radius: 6px;
