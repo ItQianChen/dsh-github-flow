@@ -217,6 +217,14 @@ console.log('\n--- 5. UI 与路由接线（源码级契约）---');
   ok(/proxyEnabled \? h\("div", \{ className: "dsh-toggle-sub"/.test(modalSrc), '跟随系统代理仅在总开关开启时渲染（层级显示）', '缺少 dsh-toggle-sub 条件渲染');
   ok(modalSrc.includes('proxyAutoFollow\n') || /proxyAutoFollow\s*\?\s*h\(/.test(modalSrc) || modalSrc.includes('proxyAutoFollow\n                ? h(') || /proxyAutoFollow\s*\n?\s*\?/.test(modalSrc), '跟随开启显示状态卡、关闭显示手动表单（三级内容切换）');
   ok(modalSrc.includes('各项设置会记住，下次开启时恢复'), '总开关描述明示状态记忆语义');
+
+  // 2026-11-23 交互改版二：开关即时生效，保存按钮只服务手动地址
+  ok((modalSrc.match(/persistProxy\(\{[^}]*\}, true\)/g) || []).length === 3, '三个开关 onChange 均走 persistProxy(..., true) 即时保存', String((modalSrc.match(/persistProxy\(\{[^}]*\}, true\)/g) || []).length));
+  ok(modalSrc.includes('dsh-proxy-level1'), '「测试连通性」与总开关同级（同一行容器）');
+  ok(modalSrc.includes('保存地址配置'), '手动表单的保存按钮文案改为「保存地址配置」（只服务地址）');
+  ok(modalSrc.includes('proxyAutoTip'), '开关即时保存后有轻量回执');
+  ok(modalSrc.includes('savedProxyUrl') && modalSrc.includes('silent ? savedProxyUrl : proxyUrl.trim()'), '静默保存只带已保存值，不顺手提交未保存的输入框内容');
+  ok(modalSrc.includes('proxySaveSeqRef'), '保存请求有序号守卫，快速连点不会被旧响应覆盖');
   const routeSrc = readFileSync(path.join(ROOT, 'src/api/routes-proxy.ts'), 'utf8');
   ok(routeSrc.includes('proxyManager.save(body'), '保存路由透传请求体（autoFollowSystem 经由 body 到达）');
   const proxySrc = readFileSync(path.join(ROOT, 'src/proxy.ts'), 'utf8');
