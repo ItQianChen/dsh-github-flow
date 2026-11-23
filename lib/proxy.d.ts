@@ -18,6 +18,20 @@ export interface ProxyConfig {
     noProxy: string;
     /** 是否同步应用于 npm registry 探测与一键升级链路（包管理器走环境变量，天然支持） */
     applyToPackageManager: boolean;
+    /**
+     * 自动跟随 Windows 系统代理（注册表 Internet Settings）。
+     * 优先级：手动配置的 url 永远优先——本开关只在 url 为空时生效；
+     * 系统代理关闭时自动回落直连，不做任何残留。
+     */
+    autoFollowSystem: boolean;
+}
+/** 一次系统代理检测的结果。enabled=false 表示系统代理已关；null 表示平台不支持或检测失败 */
+export interface SystemProxyInfo {
+    enabled: boolean;
+    /** 规范化后的代理地址（enabled 时非空），如 "http://127.0.0.1:7890" */
+    url: string;
+    /** 检测完成时间戳 */
+    at: number;
 }
 export interface ProxyProbeResult {
     ok: boolean;
@@ -30,7 +44,36 @@ export interface ProxyStateSnapshot {
     /** fetch 链路（undici dispatcher）是否可用。不可用时 npm 探测保持直连，GitHub 链路不受影响 */
     fetchProxyAvailable: boolean;
     lastProbe?: ProxyProbeResult;
+    /** 最近一次系统代理检测（null = 未检测到 / 平台不支持）。UI 据此展示跟随状态 */
+    systemProxy?: SystemProxyInfo | null;
+    /** 实际生效的代理地址（手动配置优先，其次自动跟随的系统代理，空串 = 直连） */
+    effectiveUrl: string;
 }
+/**
+ * 解析 Windows 注册表 ProxyServer 值为规范化代理地址（纯函数，供单测直接覆盖）。
+ *
+ * 注册表里这个值的写法五花八门，实测至少四种形态：
+ * - "127.0.0.1:7890"                  —— 单一地址，适用于所有协议（clash 系工具最常见）
+ * - "http=127.0.0.1:7890;https=..."   —— 按协议分写，取 https 优先、http 兜底（ftp 无用丢弃）
+ * - "=127.0.0.1:7890"                 —— 某些工具的等号开头写法，语义同单一地址
+ * - "socks=127.0.0.1:7891"            —— 仅 socks；gh 原生支持 socks5，直接采用
+ *
+ * 返回已带 scheme 的完整地址；无法解析出 host:port 时返回空串（调用方按「未检测到」处理）。
+ */
+export declare function parseProxyServer(raw: unknown): string;
+/**
+ * 解析 reg query 单值查询的 stdout（纯函数，供单测覆盖）。
+ * 典型输出两行：首行是键路径，第二行形如 "    ProxyEnable    REG_DWORD    0x1"。
+ * 查询不存在的值时 reg 以非零码退出，stdout 为空——这里只管解析文本，错误由调用方处理。
+ */
+export declare function parseRegQueryValue(stdout: unknown): string;
+/**
+ * 检测 Windows 系统代理（读注册表 Internet Settings）。
+ * 非 Windows 平台、reg 不存在、注册表查询失败一律返回 null——
+ * 「检测不到」不是错误，绝不向上抛异常打断主流程。
+ * reader 参数供测试注入 mock；生产路径走 reg query 子进程（3s 超时防挂起）。
+ */
+export declare function detectSystemProxy(reader?: (key: string, value: string) => Promise<string>): Promise<SystemProxyInfo | null>;
 /**
  * 校验用户输入的代理地址。
  * 为什么白名单 scheme：地址将注入到全部 gh/npm 子进程环境变量并可能驱动 fetch dispatcher，
@@ -48,9 +91,32 @@ export declare class ProxyManager {
     private activeDispatcherUrl;
     /** 安装代理 dispatcher 前的进程默认 dispatcher 快照（关闭代理时恢复，防残留） */
     private defaultDispatcher;
-    constructor(presetUrl?: string);
+    /** 最近一次系统代理检测结果（缓存 + 定时刷新；getEnv 是同步热路径，绝不能在这里起子进程） */
+    private systemProxy;
+    private systemProxyTimer;
+    private systemProxyReader;
+    constructor(presetUrl?: string, systemProxyReader?: (key: string, value: string) => Promise<string>);
     /** 读取持久化文件；不存在时回落 cordis.patch.yml 预置值；再无则保持默认直连 */
     private load;
+    /**
+     * 系统代理轮询：启动即检测一次，此后每 30s 刷新。
+     * 为什么轮询而不是注册表监听：RegNotifyChangeKeyValue 需要常驻句柄与原生绑定，
+     * 收益（毫秒级跟随）撑不起复杂度；30s 对「开关代理」这个动作的感知延迟完全够用。
+     * unref 让定时器不阻止进程退出——DSH 宿主关闭时插件不该成为悬挂理由。
+     */
+    private startSystemProxyWatch;
+    /**
+     * 刷新系统代理缓存。检测失败静默保持旧值（下次轮询再试）；
+     * 自动跟随模式下 effectiveUrl 可能因此变化，dispatcher 需要跟着重应用。
+     */
+    refreshSystemProxy(): Promise<SystemProxyInfo | null>;
+    /**
+     * 实际生效的代理地址（唯一裁决点，两种模式互斥）：
+     * - 自动跟随开：只看系统代理——系统开就用系统地址，系统关就直连，手动填写的 url 被完全无视；
+     *   这样不会出现「我填了地址怎么不生效」的双源歧义，开关即模式。
+     * - 自动跟随关：纯手动模式，有 url 用 url，没有就零干预（gh 继承宿主环境变量 / 直连）。
+     */
+    getEffectiveUrl(): string;
     /**
      * 原子写持久化文件：先写临时文件再 rename，杜绝并发/崩溃产生半截 JSON。
      * 写盘失败（目录权限/沙箱）不抛出：代理是「尽力持久化」语义——内存态已生效，

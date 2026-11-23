@@ -59,6 +59,8 @@ export function GlobalSyncSettingsModal(props: {
   var [proxyUrl, setProxyUrl] = React.useState("");
   var [proxyNoProxy, setProxyNoProxy] = React.useState("localhost,127.0.0.1");
   var [proxyApplyNpm, setProxyApplyNpm] = React.useState(true);
+  var [proxyAutoFollow, setProxyAutoFollow] = React.useState(false);
+  var [proxySystemProxy, setProxySystemProxy] = React.useState(null as { enabled: boolean; url: string } | null);
   var [proxyBusy, setProxyBusy] = React.useState(false);
   var [proxyMsg, setProxyMsg] = React.useState(null as { kind: "ok" | "err" | "info"; text: string } | null);
   var [proxyProbe, setProxyProbe] = React.useState(null as { ok: boolean; latencyMs?: number; error?: string } | null);
@@ -73,6 +75,8 @@ export function GlobalSyncSettingsModal(props: {
           setProxyUrl((j.state.config && j.state.config.url) || "");
           setProxyNoProxy((j.state.config && j.state.config.noProxy) || "localhost,127.0.0.1");
           setProxyApplyNpm(j.state.config ? j.state.config.applyToPackageManager !== false : true);
+          setProxyAutoFollow(Boolean(j.state.config && j.state.config.autoFollowSystem));
+          setProxySystemProxy(j.state.systemProxy || null);
           if (j.state.lastProbe) setProxyProbe(j.state.lastProbe);
         }
       })
@@ -162,17 +166,25 @@ export function GlobalSyncSettingsModal(props: {
         url: proxyEnabled ? proxyUrl.trim() : "",
         noProxy: proxyNoProxy,
         applyToPackageManager: proxyApplyNpm,
+        autoFollowSystem: proxyAutoFollow,
       }),
     })
       .then(function (r: any) { return r.json(); })
       .then(function (j: any) {
         setProxyBusy(false);
         if (j && j.ok) {
+          if (j.state && j.state.systemProxy !== undefined) setProxySystemProxy(j.state.systemProxy);
+          var effective = j.state && j.state.effectiveUrl;
+          var autoOn = j.state && j.state.config && j.state.config.autoFollowSystem;
           setProxyMsg({
             kind: "ok",
             text: j.state && j.state.config && j.state.config.url
               ? "🌐 代理已保存并全局生效（驾驶舱 / 右侧栏 / Agent 工具 / 升级链路），无需重启"
-              : "已切换为系统默认网络（直连或系统环境代理），无需重启",
+              : autoOn && effective
+                ? "自动跟随已开启：当前跟随系统代理 " + effective + "，系统代理开关变化后 30 秒内自动同步"
+                : autoOn
+                  ? "自动跟随已开启：当前未检测到开启中的系统代理，将保持直连（系统代理开启后 30 秒内自动跟进）"
+                  : "已切换为系统默认网络（直连或系统环境代理），无需重启",
           });
           if (j.state && j.state.lastProbe) setProxyProbe(j.state.lastProbe);
         } else {
@@ -451,15 +463,39 @@ export function GlobalSyncSettingsModal(props: {
             h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.5" } },
               "设置后插件的 GitHub 数据链路（本页面、右侧栏、Agent 工具调用、版本升级）全部经代理访问；未启用时默认使用系统环境代理或直连。保存后立即生效，无需重启。"
             ),
-            h("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px", cursor: "pointer", fontSize: "13px" } },
+            h("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", cursor: "pointer", fontSize: "13px" } },
               h("input", {
                 type: "checkbox",
-                checked: proxyEnabled,
+                checked: proxyAutoFollow,
+                onChange: function (e: any) {
+                  var next = Boolean(e.target.checked);
+                  setProxyAutoFollow(next);
+                  // 模式互斥：跟随系统时代理来源是注册表，手动开关与地址都失去意义，直接置灰防误配
+                  if (next) setProxyEnabled(false);
+                },
+              }),
+              "自动跟随系统代理"
+            ),
+            h("div", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "10px", lineHeight: "1.5", paddingLeft: "24px" } },
+              "开启后读取 Windows 注册表的系统代理（clash / v2rayN 等工具的「系统代理」开关）：系统开则自动使用，系统关则自动直连，30 秒内同步，代理地址等手动设置停用。" +
+              (proxyAutoFollow
+                ? (proxySystemProxy
+                  ? proxySystemProxy.enabled
+                    ? "当前跟随系统代理 " + proxySystemProxy.url
+                    : "当前系统代理处于关闭状态，插件保持直连"
+                  : "尚未检测（保存后立即检测一次）")
+                : "关闭时使用下方手动配置")
+            ),
+            h("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px", cursor: proxyAutoFollow ? "not-allowed" : "pointer", fontSize: "13px", opacity: proxyAutoFollow ? 0.45 : 1 } },
+              h("input", {
+                type: "checkbox",
+                checked: proxyEnabled && !proxyAutoFollow,
+                disabled: proxyAutoFollow,
                 onChange: function (e: any) { setProxyEnabled(Boolean(e.target.checked)); },
               }),
-              "启用代理"
+              proxyAutoFollow ? "启用代理（自动跟随模式下停用）" : "启用代理"
             ),
-            proxyEnabled ? h("div", null,
+            proxyEnabled && !proxyAutoFollow ? h("div", null,
               h("div", { style: { fontSize: "12px", marginBottom: "4px" } }, "代理地址"),
               h("input", {
                 className: "dsh-github-input",
@@ -488,9 +524,9 @@ export function GlobalSyncSettingsModal(props: {
               h("button", {
                 className: "dsh-github-btn-sm",
                 style: { padding: "5px 12px", fontSize: "12px" },
-                disabled: proxyBusy || !proxyEnabled,
+                disabled: proxyBusy || (!proxyEnabled && !proxyAutoFollow),
                 onClick: handleProxyProbe,
-                title: "经当前配置探测 GitHub API 连通性（约 2.5 秒）",
+                title: "经实际生效的代理配置探测 GitHub API 连通性（约 2.5 秒）",
               }, "🧪 测试连通性"),
               h("button", {
                 className: "dsh-github-btn-sm",

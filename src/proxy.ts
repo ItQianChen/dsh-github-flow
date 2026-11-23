@@ -15,6 +15,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 export interface ProxyConfig {
@@ -24,6 +25,21 @@ export interface ProxyConfig {
   noProxy: string;
   /** 是否同步应用于 npm registry 探测与一键升级链路（包管理器走环境变量，天然支持） */
   applyToPackageManager: boolean;
+  /**
+   * 自动跟随 Windows 系统代理（注册表 Internet Settings）。
+   * 优先级：手动配置的 url 永远优先——本开关只在 url 为空时生效；
+   * 系统代理关闭时自动回落直连，不做任何残留。
+   */
+  autoFollowSystem: boolean;
+}
+
+/** 一次系统代理检测的结果。enabled=false 表示系统代理已关；null 表示平台不支持或检测失败 */
+export interface SystemProxyInfo {
+  enabled: boolean;
+  /** 规范化后的代理地址（enabled 时非空），如 "http://127.0.0.1:7890" */
+  url: string;
+  /** 检测完成时间戳 */
+  at: number;
 }
 
 export interface ProxyProbeResult {
@@ -38,13 +54,131 @@ export interface ProxyStateSnapshot {
   /** fetch 链路（undici dispatcher）是否可用。不可用时 npm 探测保持直连，GitHub 链路不受影响 */
   fetchProxyAvailable: boolean;
   lastProbe?: ProxyProbeResult;
+  /** 最近一次系统代理检测（null = 未检测到 / 平台不支持）。UI 据此展示跟随状态 */
+  systemProxy?: SystemProxyInfo | null;
+  /** 实际生效的代理地址（手动配置优先，其次自动跟随的系统代理，空串 = 直连） */
+  effectiveUrl: string;
 }
 
 const DEFAULT_CONFIG: ProxyConfig = {
   url: '',
   noProxy: 'localhost,127.0.0.1',
   applyToPackageManager: true,
+  autoFollowSystem: false,
 };
+
+/** Windows 系统代理所在的注册表键（clash / v2rayN / Mihomo 等工具「系统代理」开关写入的就是这里） */
+const WIN_INTERNET_SETTINGS_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
+
+/**
+ * 解析 Windows 注册表 ProxyServer 值为规范化代理地址（纯函数，供单测直接覆盖）。
+ *
+ * 注册表里这个值的写法五花八门，实测至少四种形态：
+ * - "127.0.0.1:7890"                  —— 单一地址，适用于所有协议（clash 系工具最常见）
+ * - "http=127.0.0.1:7890;https=..."   —— 按协议分写，取 https 优先、http 兜底（ftp 无用丢弃）
+ * - "=127.0.0.1:7890"                 —— 某些工具的等号开头写法，语义同单一地址
+ * - "socks=127.0.0.1:7891"            —— 仅 socks；gh 原生支持 socks5，直接采用
+ *
+ * 返回已带 scheme 的完整地址；无法解析出 host:port 时返回空串（调用方按「未检测到」处理）。
+ */
+export function parseProxyServer(raw: unknown): string {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+
+  // 按协议分写形态：切分出各段，https 优先、http 兜底、socks 次之
+  if (s.includes('=')) {
+    const parts: Record<string, string> = {};
+    for (const seg of s.split(';')) {
+      const eq = seg.indexOf('=');
+      if (eq < 0) continue;
+      const proto = seg.slice(0, eq).trim().toLowerCase();
+      const addr = seg.slice(eq + 1).trim();
+      if (proto && addr) parts[proto] = addr;
+    }
+    // https 优先于 http（GitHub 链路主要是 https 流量），socks 兜底
+    const pick = parts['https'] || parts['http'] || parts['socks'];
+    if (pick) return normalizeProxyAddr(pick, parts['socks'] !== undefined && !parts['https'] && !parts['http']);
+    return '';
+  }
+
+  // 单一地址形态
+  return normalizeProxyAddr(s, false);
+}
+
+/** 给裸 host:port 补 scheme；socks 形态补 socks5://，其余补 http:// */
+function normalizeProxyAddr(addr: string, isSocks: boolean): string {
+  const s = addr.trim();
+  if (!s) return '';
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return validateSchemeOnly(s);
+  if (!/^[^/]+:\d+$/.test(s) && !/^[^/]+:\d+\/?.*$/.test(s)) {
+    // 不是 host:port 结构（可能是 PAC URL 等不支持形态），交给 URL 校验兜底
+    return validateSchemeOnly(isSocks ? 'socks5://' + s : 'http://' + s);
+  }
+  return validateSchemeOnly((isSocks ? 'socks5://' : 'http://') + s);
+}
+
+/** 借 validateProxyUrl 的白名单做最终把关，失败返回空串（不抛错——检测失败不算事故） */
+function validateSchemeOnly(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname || !parsed.port) return '';
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'socks5:' && parsed.protocol !== 'socks5h:') return '';
+    return url;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 解析 reg query 单值查询的 stdout（纯函数，供单测覆盖）。
+ * 典型输出两行：首行是键路径，第二行形如 "    ProxyEnable    REG_DWORD    0x1"。
+ * 查询不存在的值时 reg 以非零码退出，stdout 为空——这里只管解析文本，错误由调用方处理。
+ */
+export function parseRegQueryValue(stdout: unknown): string {
+  const lines = String(stdout || '').split(/\r?\n/);
+  for (const line of lines.slice(1)) {
+    const m = line.match(/^\s{2,}\S+\s+REG_(?:SZ|DWORD)\s+(.+)$/i);
+    if (m) return m[1].trim();
+  }
+  return '';
+}
+
+/**
+ * 检测 Windows 系统代理（读注册表 Internet Settings）。
+ * 非 Windows 平台、reg 不存在、注册表查询失败一律返回 null——
+ * 「检测不到」不是错误，绝不向上抛异常打断主流程。
+ * reader 参数供测试注入 mock；生产路径走 reg query 子进程（3s 超时防挂起）。
+ */
+export async function detectSystemProxy(
+  reader?: (key: string, value: string) => Promise<string>
+): Promise<SystemProxyInfo | null> {
+  if (process.platform !== 'win32') return null;
+  const at = Date.now();
+  const run = reader || defaultRegReader;
+  try {
+    const [enableOut, serverOut] = await Promise.all([
+      run(WIN_INTERNET_SETTINGS_KEY, 'ProxyEnable'),
+      run(WIN_INTERNET_SETTINGS_KEY, 'ProxyServer').catch(() => ''),
+    ]);
+    const enableRaw = parseRegQueryValue(enableOut);
+    const enabled = /^0x1$/i.test(enableRaw) || enableRaw === '1';
+    if (!enabled) return { enabled: false, url: '', at };
+    const url = parseProxyServer(parseRegQueryValue(serverOut));
+    if (!url) return { enabled: false, url: '', at };
+    return { enabled: true, url, at };
+  } catch {
+    return null;
+  }
+}
+
+function defaultRegReader(key: string, value: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('reg', ['query', key, '/v', value], { timeout: 3000 }, (err, stdout) => {
+      if (err) reject(err);
+      else resolve(String(stdout || ''));
+    });
+  });
+}
 
 /** 持久化路径：~/.dsh/data/dsh-github-flow/proxy.json（与 DSH 用户数据目录规范对齐） */
 function resolveStorePath(): string {
@@ -119,10 +253,16 @@ export class ProxyManager {
   private activeDispatcherUrl: string | null = null;
   /** 安装代理 dispatcher 前的进程默认 dispatcher 快照（关闭代理时恢复，防残留） */
   private defaultDispatcher: unknown = null;
+  /** 最近一次系统代理检测结果（缓存 + 定时刷新；getEnv 是同步热路径，绝不能在这里起子进程） */
+  private systemProxy: SystemProxyInfo | null = null;
+  private systemProxyTimer: any = null;
+  private systemProxyReader: (key: string, value: string) => Promise<string>;
 
-  constructor(presetUrl?: string) {
+  constructor(presetUrl?: string, systemProxyReader?: (key: string, value: string) => Promise<string>) {
+    this.systemProxyReader = systemProxyReader || defaultRegReader;
     this.load(presetUrl);
     this.applyFetchDispatcher();
+    this.startSystemProxyWatch();
   }
 
   /** 读取持久化文件；不存在时回落 cordis.patch.yml 预置值；再无则保持默认直连 */
@@ -139,6 +279,7 @@ export class ProxyManager {
             url: validateProxyUrl(url).ok ? url : '',
             noProxy: normalizeNoProxy(cfg.noProxy),
             applyToPackageManager: cfg.applyToPackageManager !== false,
+            autoFollowSystem: cfg.autoFollowSystem === true,
           };
           if (typeof raw.lastProbe === 'object' && raw.lastProbe) this.lastProbe = raw.lastProbe;
           return;
@@ -150,6 +291,47 @@ export class ProxyManager {
     if (presetUrl && validateProxyUrl(presetUrl).ok) {
       this.config = { ...DEFAULT_CONFIG, url: presetUrl.trim() };
     }
+  }
+
+  /**
+   * 系统代理轮询：启动即检测一次，此后每 30s 刷新。
+   * 为什么轮询而不是注册表监听：RegNotifyChangeKeyValue 需要常驻句柄与原生绑定，
+   * 收益（毫秒级跟随）撑不起复杂度；30s 对「开关代理」这个动作的感知延迟完全够用。
+   * unref 让定时器不阻止进程退出——DSH 宿主关闭时插件不该成为悬挂理由。
+   */
+  private startSystemProxyWatch(): void {
+    void this.refreshSystemProxy();
+    if (typeof setInterval === 'function') {
+      this.systemProxyTimer = setInterval(() => { void this.refreshSystemProxy(); }, 30_000);
+      if (this.systemProxyTimer && typeof this.systemProxyTimer.unref === 'function') this.systemProxyTimer.unref();
+    }
+  }
+
+  /**
+   * 刷新系统代理缓存。检测失败静默保持旧值（下次轮询再试）；
+   * 自动跟随模式下 effectiveUrl 可能因此变化，dispatcher 需要跟着重应用。
+   */
+  async refreshSystemProxy(): Promise<SystemProxyInfo | null> {
+    const next = await detectSystemProxy(this.systemProxyReader);
+    if (next) {
+      const prevUrl = this.getEffectiveUrl();
+      this.systemProxy = next;
+      if (this.getEffectiveUrl() !== prevUrl) this.applyFetchDispatcher();
+    }
+    return this.systemProxy;
+  }
+
+  /**
+   * 实际生效的代理地址（唯一裁决点，两种模式互斥）：
+   * - 自动跟随开：只看系统代理——系统开就用系统地址，系统关就直连，手动填写的 url 被完全无视；
+   *   这样不会出现「我填了地址怎么不生效」的双源歧义，开关即模式。
+   * - 自动跟随关：纯手动模式，有 url 用 url，没有就零干预（gh 继承宿主环境变量 / 直连）。
+   */
+  getEffectiveUrl(): string {
+    if (this.config.autoFollowSystem) {
+      return this.systemProxy && this.systemProxy.enabled && this.systemProxy.url ? this.systemProxy.url : '';
+    }
+    return this.config.url;
   }
 
   /**
@@ -177,13 +359,14 @@ export class ProxyManager {
    * socks5 对 gh（Go runtime）原生有效；对 npm 同样有效（pacote/agent-base 支持）。
    */
   getEnv(scope: 'gh' | 'package-manager' = 'gh'): Record<string, string> {
-    if (!this.config.url) return {};
+    const url = this.getEffectiveUrl();
+    if (!url) return {};
     if (scope === 'package-manager' && !this.config.applyToPackageManager) return {};
     return {
-      HTTPS_PROXY: this.config.url,
-      HTTP_PROXY: this.config.url,
-      https_proxy: this.config.url,
-      http_proxy: this.config.url,
+      HTTPS_PROXY: url,
+      HTTP_PROXY: url,
+      https_proxy: url,
+      http_proxy: url,
       NO_PROXY: this.config.noProxy,
       no_proxy: this.config.noProxy,
     };
@@ -200,7 +383,7 @@ export class ProxyManager {
    * 「启用→关闭」后 npm 探测仍走死代理直到进程重启。首次安装前先快照原 dispatcher。
    */
   applyFetchDispatcher(): boolean {
-    const url = this.config.url;
+    const url = this.getEffectiveUrl();
     if (!url || url.startsWith('socks5://') || url.startsWith('socks5h://')) {
       // 回滚残留的代理 dispatcher（仅在我们曾经安装过时）
       if (this.activeDispatcherUrl !== null) {
@@ -242,11 +425,17 @@ export class ProxyManager {
       if (!v.ok) return { ok: false, error: v.error, state: this.snapshot() };
     }
     const nextUrl = input.url !== undefined ? (typeof input.url === 'string' ? input.url.trim() : '') : this.config.url;
+    const prevAuto = this.config.autoFollowSystem;
     this.config = {
       url: nextUrl,
       noProxy: normalizeNoProxy(input.noProxy !== undefined ? input.noProxy : this.config.noProxy),
       applyToPackageManager: typeof input.applyToPackageManager === 'boolean' ? input.applyToPackageManager : this.config.applyToPackageManager,
+      autoFollowSystem: typeof input.autoFollowSystem === 'boolean' ? input.autoFollowSystem : prevAuto,
     };
+    // 刚打开自动跟随：不等下一轮 30s 轮询，立即检测一次，开关拨上去就能看到结果
+    if (!prevAuto && this.config.autoFollowSystem) {
+      void this.refreshSystemProxy();
+    }
     this.applyFetchDispatcher();
     this.lastProbe = undefined; // 配置变更后旧探测结果失效
     this.persist();
@@ -256,8 +445,9 @@ export class ProxyManager {
   /** 经当前代理配置探测 GitHub API 连通性（2.5s 超时）。失败不回滚保存——离线预配置是合法场景 */
   async probe(): Promise<ProxyProbeResult> {
     const started = Date.now();
-    if (!this.config.url) {
-      this.lastProbe = { ok: false, at: started, error: '未配置代理地址（当前为系统默认直连）' };
+    const effectiveUrl = this.getEffectiveUrl();
+    if (!effectiveUrl) {
+      this.lastProbe = { ok: false, at: started, error: '未配置代理地址且未检测到系统代理（当前为直连）' };
       return this.lastProbe;
     }
     const controller = new AbortController();
@@ -286,6 +476,8 @@ export class ProxyManager {
       config: { ...this.config, noProxy: this.config.noProxy },
       fetchProxyAvailable: this.fetchProxyAvailable,
       lastProbe: this.lastProbe ? { ...this.lastProbe } : undefined,
+      systemProxy: this.systemProxy ? { ...this.systemProxy } : null,
+      effectiveUrl: this.getEffectiveUrl(),
     };
   }
 }
