@@ -38,7 +38,7 @@ ok(parseProxyServer('http=127.0.0.1:7890;https=127.0.0.1:7891;ftp=127.0.0.1:7892
 ok(parseProxyServer('http=127.0.0.1:7890') === 'http://127.0.0.1:7890', '分协议只有 http 时用它', parseProxyServer('http=127.0.0.1:7890'));
 ok(parseProxyServer('socks=127.0.0.1:7891') === 'socks5://127.0.0.1:7891', '仅 socks → socks5://', parseProxyServer('socks=127.0.0.1:7891'));
 ok(parseProxyServer('=127.0.0.1:7890') === '', '等号开头无协议段的空段不产出地址', parseProxyServer('=127.0.0.1:7890'));
-ok(parseProxyServer('proxy.example.com:8080') === 'http://proxy.example.com:8080', '域名形态同样补 http://', parseProxyServer('proxy.example.com:8080'));
+ok(parseProxyServer('proxy.mycompany.com:8080') === 'http://proxy.mycompany.com:8080', '域名形态同样补 http://', parseProxyServer('proxy.mycompany.com:8080'));
 ok(parseProxyServer('http://127.0.0.1:7890') === 'http://127.0.0.1:7890', '已带 scheme 的原样保留', parseProxyServer('http://127.0.0.1:7890'));
 ok(parseProxyServer('') === '', '空串 → 空串');
 ok(parseProxyServer(null) === '', 'null → 空串');
@@ -88,12 +88,14 @@ const boom = await detectSystemProxy(async () => { throw new Error('reg gone'); 
 ok(boom === null, 'reader 抛错 → null（检测失败不是事故）', JSON.stringify(boom));
 
 console.log('\n--- 4. ProxyManager：两种模式互斥裁决 ---');
-const tmp = mkdtempSync(path.join(os.tmpdir(), 'dsh-proxy50-'));
-const realStore = path.join(os.homedir(), '.dsh', 'data', 'dsh-github-flow', 'proxy.json');
-// save→persist 会写真实用户目录，测试后无论成败都要还原，避免污染用户的代理配置
-let storeExisted = false;
-let storeContent = null;
-try { storeContent = readFileSync(realStore, 'utf8'); storeExisted = true; } catch {}
+// 铁律：测试绝不写用户真实配置。
+// 2026-11-23 事故复盘：本测试原先把占位代理 http://manual2.example:8888 写进
+// 真实 ~/.dsh/data/dsh-github-flow/proxy.json，而还原逻辑误用了 ESM 里不存在的
+// require()，异常被空 catch 吞掉 → 占位地址长期残留，重启后插件把宿主进程的
+// 全局 undici dispatcher 指向死地址，整个 DSH 的外联全部瘫痪。
+// 现在改用 storePath 注入 + 临时目录，测试与用户配置物理隔离。
+const tmpDir = mkdtempSync(path.join(os.tmpdir(), 'dsh-proxy50-'));
+const storePath = path.join(tmpDir, 'proxy.json');
 
 try {
   const sysReader = readerOf(
@@ -102,7 +104,7 @@ try {
   );
 
   // 4a. 自动跟随开：系统代理开 → 用系统地址，手动 url 被无视（互斥语义的核心）
-  const m1 = new ProxyManager('http://manual.example:9999', sysReader);
+  const m1 = new ProxyManager('http://127.0.0.1:9999', sysReader, storePath);
   await m1.refreshSystemProxy();
   m1.save({ url: '', autoFollowSystem: true });
   ok(m1.getEffectiveUrl() === 'http://127.0.0.1:7890', '自动跟随开 + 系统开 → 系统地址（无视手动 url）', m1.getEffectiveUrl());
@@ -114,7 +116,7 @@ try {
     'HKEY...\r\n    ProxyEnable    REG_DWORD    0x0\r\n',
     'HKEY...\r\n    ProxyServer    REG_SZ    127.0.0.1:7890\r\n'
   );
-  const m2 = new ProxyManager('', sysReaderOff);
+  const m2 = new ProxyManager('', sysReaderOff, storePath);
   await m2.refreshSystemProxy();
   m2.save({ url: '', autoFollowSystem: true });
   ok(m2.getEffectiveUrl() === '', '自动跟随开 + 系统关 → 直连（空 env）', JSON.stringify(m2.getEffectiveUrl()));
@@ -122,15 +124,15 @@ try {
 
   // 4d. 持久化往返：save 后新实例读回 autoFollowSystem
   //     （必须在 4c 之前：三个实例共享同一份持久化文件，最后一次 save 的状态才是读回的状态）
-  const roundtrip = new ProxyManager('', sysReader);
+  const roundtrip = new ProxyManager('', sysReader, storePath);
   ok(roundtrip.snapshot().config.autoFollowSystem === true, '持久化读回 autoFollowSystem=true', JSON.stringify(roundtrip.snapshot().config));
 
-  // 4c. 自动跟随关：纯手动模式（原有语义不变；这次 save 也把文件还原为手动形态）
-  const m3 = new ProxyManager('http://manual.example:9999', sysReader);
+  // 4c. 自动跟随关：纯手动模式（原有语义不变）
+  const m3 = new ProxyManager('http://127.0.0.1:9999', sysReader, storePath);
   await m3.refreshSystemProxy();
-  m3.save({ url: 'http://manual2.example:8888', autoFollowSystem: false });
-  ok(m3.getEffectiveUrl() === 'http://manual2.example:8888', '自动跟随关 → 手动 url 生效', m3.getEffectiveUrl());
-  ok((m3.getEnv('gh').HTTPS_PROXY || '') === 'http://manual2.example:8888', '手动模式 env 注入手动地址');
+  m3.save({ url: 'http://127.0.0.1:8888', autoFollowSystem: false });
+  ok(m3.getEffectiveUrl() === 'http://127.0.0.1:8888', '自动跟随关 → 手动 url 生效', m3.getEffectiveUrl());
+  ok((m3.getEnv('gh').HTTPS_PROXY || '') === 'http://127.0.0.1:8888', '手动模式 env 注入手动地址');
 
   // 4e. snapshot 暴露 systemProxy + effectiveUrl（UI 展示数据源）
   const snap = m1.snapshot();
@@ -140,8 +142,40 @@ try {
   // 4f. NO_PROXY 强制包含 localhost（防回环劫持的既有不变量在自动跟随下同样成立）
   ok((m1.getEnv('gh').NO_PROXY || '').includes('127.0.0.1'), 'NO_PROXY 恒含 127.0.0.1', m1.getEnv('gh').NO_PROXY);
 } finally {
-  try { if (storeExisted) require('node:fs').writeFileSync(realStore, storeContent); else rmSync(realStore, { force: true }); } catch {}
-  try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+  // 只清临时目录：真实配置全程未被触碰（storePath 注入把读写都导向 tmpDir）
+  try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+}
+
+console.log('\n--- 4g. 保留域名防护（2026-11-23 事故的直接触发点）---');
+{
+  // 事故复盘：http://manual2.example:8888 这种占位符能通过纯格式校验并落盘，
+  // 重启后把宿主进程全局 dispatcher 指向死地址。这里钉死"保留域名一律拒绝"。
+  const v = proxyMod.validateProxyUrl;
+  const bad1 = v('http://manual2.example:8888');
+  ok(bad1.ok === false && /保留测试域名/.test(bad1.error || ''), '.example 占位符被拒绝保存', JSON.stringify(bad1));
+  ok(v('http://foo.invalid:8080').ok === false, '.invalid 被拒绝');
+  ok(v('http://foo.test:8080').ok === false, '.test 被拒绝');
+  ok(v('http://example.com:8080').ok === false, 'example.com 被拒绝');
+  ok(v('http://127.0.0.1:7890').ok === true, '真实回环地址照常放行');
+  ok(v('http://192.168.1.10:8080').ok === true, '内网地址照常放行');
+  ok(proxyMod.isReservedHostname('manual2.example') === true, 'isReservedHostname 命中 .example');
+  ok(proxyMod.isReservedHostname('proxy.mycorp.com') === false, 'isReservedHostname 不误伤正常域名');
+}
+
+console.log('\n--- 4h. 全局 dispatcher 不复存在的静态契约（架构级防护）---');
+{
+  const proxySrc = readFileSync(path.join(ROOT, 'src/proxy.ts'), 'utf8');
+  const updaterSrc = readFileSync(path.join(ROOT, 'src/updater.ts'), 'utf8');
+  // 只检查代码行：注释里保留事故复盘的历史表述是有价值的，不该被这条断言误伤
+  const codeOnly = (src) => src.split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n');
+  ok(!codeOnly(proxySrc).includes('setGlobalDispatcher'), 'proxy.ts 代码中不再调用 setGlobalDispatcher（禁止进程级劫持）');
+  ok(!codeOnly(proxySrc).includes('getGlobalDispatcher'), 'proxy.ts 代码中不再快照全局 dispatcher');
+  ok(proxySrc.includes('getDispatcher()'), 'proxy.ts 改为暴露局部 dispatcher');
+  ok(updaterSrc.includes('init.dispatcher = dispatcher'), 'updater 的 fetch 显式携带 dispatcher（作用域限定自身）');
+
+  // lib 产物同样不得残留全局劫持
+  const proxyLib = readFileSync(path.join(ROOT, 'lib/proxy.js'), 'utf8');
+  ok(!codeOnly(proxyLib).includes('setGlobalDispatcher'), 'lib/proxy.js 产物中亦无 setGlobalDispatcher');
 }
 
 console.log('\n--- 5. UI 与路由接线（源码级契约）---');

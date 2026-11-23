@@ -84,18 +84,30 @@ export declare function validateProxyUrl(input: unknown): {
     url?: string;
     error?: string;
 };
+/**
+ * 是否为 RFC 2606 / RFC 6761 保留域名（保证不可解析）。
+ * 纯函数，供 validateProxyUrl 调用与单测直接覆盖。
+ */
+export declare function isReservedHostname(hostname: unknown): boolean;
 export declare class ProxyManager {
     private config;
     private lastProbe;
     private fetchProxyAvailable;
     private activeDispatcherUrl;
-    /** 安装代理 dispatcher 前的进程默认 dispatcher 快照（关闭代理时恢复，防残留） */
-    private defaultDispatcher;
+    /** 局部 ProxyAgent 实例（**不**装到全局 dispatcher，只供本插件自己的 fetch 显式使用） */
+    private activeDispatcher;
+    /**
+     * 持久化文件路径覆盖（测试注入用）。
+     * 为什么必须有这个入口：单元测试需要 save/persist 的真实语义，但绝不能写
+     * 用户真实的 ~/.dsh/data/dsh-github-flow/proxy.json——2026-11-23 的事故就是
+     * 测试把占位代理写进真实配置，导致宿主进程全局 dispatcher 指向死地址。
+     */
+    private storePathOverride;
     /** 最近一次系统代理检测结果（缓存 + 定时刷新；getEnv 是同步热路径，绝不能在这里起子进程） */
     private systemProxy;
     private systemProxyTimer;
     private systemProxyReader;
-    constructor(presetUrl?: string, systemProxyReader?: (key: string, value: string) => Promise<string>);
+    constructor(presetUrl?: string, systemProxyReader?: (key: string, value: string) => Promise<string>, storePath?: string);
     /** 读取持久化文件；不存在时回落 cordis.patch.yml 预置值；再无则保持默认直连 */
     private load;
     /**
@@ -131,16 +143,28 @@ export declare class ProxyManager {
      */
     getEnv(scope?: 'gh' | 'package-manager'): Record<string, string>;
     /**
-     * 应用 fetch dispatcher（npm registry 探测链路）。
-     * undici 的 ProxyAgent 不支持 socks5：该场景显式标记不可用并保持直连，
-     * UI 需如实提示差异（GitHub 链路正常走 socks5），不做静默降级。
-     * dispatcher 按 url 缓存重建，url 未变化时零开销。
+     * 构建本插件自己的 ProxyAgent（**不**写入进程全局 dispatcher）。
      *
-     * 关闭代理时必须恢复默认全局 dispatcher：setGlobalDispatcher 是进程级副作用，
-     * 若只清空本实例状态而不回滚 dispatcher，此前安装的 ProxyAgent 会永久残留，
-     * 「启用→关闭」后 npm 探测仍走死代理直到进程重启。首次安装前先快照原 dispatcher。
+     * 2026-11-23 事故复盘后的架构修正：
+     * 旧实现在这里把 ProxyAgent 装成了进程的全局 dispatcher。那个 API 的
+     * 作用域是整个 DSH 宿主进程——插件本来只需要让自己的 npm 版本探测走代理，
+     * 结果连模型推理、账号资料、CodeArts token 续期全部被改道。一旦代理地址写错
+     * （例如测试占位符 http://manual2.example:8888 落进配置），整个应用会哑掉，
+     * 表现为「UI 能开、所有网络全挂」的割裂故障，且排查时最容易被误判成网络问题。
+     *
+     * 现在只创建并在实例内缓存 ProxyAgent，由 updater 在自己的 fetch 上显式传
+     * dispatcher。全局 dispatcher 一行都不碰：插件配置再错，坏掉的也只是插件的
+     * 版本探测，宿主进程与其他插件完全不受影响。
+     *
+     * socks5 仍显式不可用（undici 的 ProxyAgent 只认 http/https）：该场景 npm 探测
+     * 保持直连，GitHub 链路照常走 socks5，UI 如实提示差异，不做静默降级。
      */
     applyFetchDispatcher(): boolean;
+    /**
+     * 当前生效的代理 dispatcher（null = 直连）。
+     * 供本插件自己的 fetch 显式使用——这是唯一正确的代理作用域。
+     */
+    getDispatcher(): unknown | null;
     /** 保存新配置并立即生效（写文件 + 重应用 dispatcher），返回完整状态快照 */
     save(input: Partial<ProxyConfig>): {
         ok: boolean;
