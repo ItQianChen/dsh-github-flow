@@ -19,7 +19,16 @@ import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 export interface ProxyConfig {
-  /** 代理地址，如 "http://127.0.0.1:7890"。空串 = 未启用（回落系统环境/直连） */
+  /**
+   * 代理总开关（独立于 url）。
+   *
+   * 为什么必须是独立字段：2026-11-23 的层级开关上线后发现，用「url 是否非空」
+   * 反推总开关状态会出错——跟随系统代理时 url 本来就是空的，于是重新打开设置页
+   * 时总开关被读成 false，用户明明保存过的配置整个子区域都不渲染。
+   * 总开关与代理来源（手动 url / 系统代理）是两件事，必须分别持久化。
+   */
+  enabled: boolean;
+  /** 手动模式的代理地址，如 "http://127.0.0.1:7890"。跟随系统时可为空 */
   url: string;
   /** NO_PROXY 排除列表（逗号分隔）。localhost,127.0.0.1 恒被强制前置，防止本机 Web API 回环请求被代理劫持 */
   noProxy: string;
@@ -61,6 +70,7 @@ export interface ProxyStateSnapshot {
 }
 
 const DEFAULT_CONFIG: ProxyConfig = {
+  enabled: false,
   url: '',
   noProxy: 'localhost,127.0.0.1',
   applyToPackageManager: true,
@@ -314,11 +324,16 @@ export class ProxyManager {
           const cfg = typeof raw.config === 'object' && raw.config ? raw.config : raw;
           const url = typeof cfg.url === 'string' ? cfg.url.trim() : '';
           // 文件中的 url 仍走校验：文件可能被手改出非法值，持久化不能成为绕过校验的后门
+          const autoFollow = cfg.autoFollowSystem === true;
+          const validUrl = validateProxyUrl(url).ok ? url : '';
           this.config = {
-            url: validateProxyUrl(url).ok ? url : '',
+            // 兼容老配置（没有 enabled 字段）：此前「有 url 即视为启用」，
+            // 现在跟随系统模式下 url 可以为空，故开=True 的条件要带上 autoFollow。
+            enabled: typeof cfg.enabled === 'boolean' ? cfg.enabled : Boolean(validUrl || autoFollow),
+            url: validUrl,
             noProxy: normalizeNoProxy(cfg.noProxy),
             applyToPackageManager: cfg.applyToPackageManager !== false,
-            autoFollowSystem: cfg.autoFollowSystem === true,
+            autoFollowSystem: autoFollow,
           };
           if (typeof raw.lastProbe === 'object' && raw.lastProbe) this.lastProbe = raw.lastProbe;
           return;
@@ -328,7 +343,7 @@ export class ProxyManager {
 
     // 无持久化文件：使用 Cordis Config 预置（若管理员在 cordis.patch.yml 配置且合法）
     if (presetUrl && validateProxyUrl(presetUrl).ok) {
-      this.config = { ...DEFAULT_CONFIG, url: presetUrl.trim() };
+      this.config = { ...DEFAULT_CONFIG, enabled: true, url: presetUrl.trim() };
     }
   }
 
@@ -367,6 +382,8 @@ export class ProxyManager {
    * - 自动跟随关：纯手动模式，有 url 用 url，没有就零干预（gh 继承宿主环境变量 / 直连）。
    */
   getEffectiveUrl(): string {
+    // 总开关关闭 = 明确要求直连，无论设了什么来源都不生效（用户显式意图优先）
+    if (!this.config.enabled) return '';
     if (this.config.autoFollowSystem) {
       return this.systemProxy && this.systemProxy.enabled && this.systemProxy.url ? this.systemProxy.url : '';
     }
@@ -473,7 +490,16 @@ export class ProxyManager {
     }
     const nextUrl = input.url !== undefined ? (typeof input.url === 'string' ? input.url.trim() : '') : this.config.url;
     const prevAuto = this.config.autoFollowSystem;
+    // enabled 的缺省推断（向后兼容）：
+    // - 调用方显式给了 enabled → 以它为准（UI 走这条）；
+    // - 没给 enabled 但传了非空 url → 视为「要启用」（老调用方 save({url}) 的语义）；
+    // - 其余保持现状。
+    // 不做这个推断的话，所有只传 url 的老调用都会静默失效（phase5 就是这么暴露的）。
+    const inferredEnabled = typeof input.enabled === 'boolean'
+      ? input.enabled
+      : (input.url !== undefined && String(input.url || '').trim() ? true : this.config.enabled);
     this.config = {
+      enabled: inferredEnabled,
       url: nextUrl,
       noProxy: normalizeNoProxy(input.noProxy !== undefined ? input.noProxy : this.config.noProxy),
       applyToPackageManager: typeof input.applyToPackageManager === 'boolean' ? input.applyToPackageManager : this.config.applyToPackageManager,

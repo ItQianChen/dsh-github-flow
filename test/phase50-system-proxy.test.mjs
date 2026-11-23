@@ -8,7 +8,7 @@
 // 「明明没配代理却走了代理」或「开了自动跟随却直连」，用户极难自查。
 // 所以这里把解析纯函数、模式互斥语义、持久化、注入 env 四层全部钉死。
 
-import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -141,6 +141,35 @@ try {
 
   // 4f. NO_PROXY 强制包含 localhost（防回环劫持的既有不变量在自动跟随下同样成立）
   ok((m1.getEnv('gh').NO_PROXY || '').includes('127.0.0.1'), 'NO_PROXY 恒含 127.0.0.1', m1.getEnv('gh').NO_PROXY);
+
+  // 4i. 总开关必须独立持久化（2026-11-23 用户反馈的 bug：改完保存，重开设置页配置消失）
+  //
+  // 复现路径：开总开关 → 开跟随系统（此时 url 为空）→ 保存 → 重开弹窗。
+  // 旧实现用「url 是否非空」反推总开关，url 为空让总开关读成 false，整个子区域不渲染，
+  // 用户看到的就是「保存了但什么都没生效」。
+  const m4 = new ProxyManager('', sysReader, storePath);
+  m4.save({ enabled: true, url: '', autoFollowSystem: true });
+  const reload = new ProxyManager('', sysReader, storePath);
+  // 构造器里的首次系统代理检测是异步的（reg 子进程），必须等它落地再断言生效地址
+  await reload.refreshSystemProxy();
+  ok(reload.snapshot().config.enabled === true, '跟随系统且 url 为空 → 总开关读回仍为 true（不再靠 url 反推）', JSON.stringify(reload.snapshot().config));
+  ok(reload.snapshot().config.autoFollowSystem === true, '跟随开关同样读回');
+  ok(reload.getEffectiveUrl() === 'http://127.0.0.1:7890', '重载后系统代理仍然生效');
+
+  // 4j. 总开关关闭 = 显式要求直连，优先于任何残留配置
+  const m5 = new ProxyManager('', sysReader, storePath);
+  m5.save({ enabled: false, url: 'http://127.0.0.1:8888', autoFollowSystem: false });
+  ok(m5.getEffectiveUrl() === '', '总开关关闭 → 直连（即使保留着 url）', JSON.stringify(m5.getEffectiveUrl()));
+  ok(Object.keys(m5.getEnv('gh')).length === 0, '总开关关闭 → env 零干预');
+
+  // 4k. 老配置向后兼容：没有 enabled 字段时按「有 url 即启用」推断
+  const legacyPath = path.join(tmpDir, 'legacy.json');
+  writeFileSync(legacyPath, JSON.stringify({
+    config: { url: 'http://127.0.0.1:7777', noProxy: 'localhost,127.0.0.1', applyToPackageManager: true },
+  }), 'utf8');
+  const legacy = new ProxyManager('', sysReader, legacyPath);
+  ok(legacy.snapshot().config.enabled === true, '老配置（无 enabled 字段、有 url）推断为启用', JSON.stringify(legacy.snapshot().config));
+  ok(legacy.getEffectiveUrl() === 'http://127.0.0.1:7777', '老配置仍按原地址生效');
 } finally {
   // 只清临时目录：真实配置全程未被触碰（storePath 注入把读写都导向 tmpDir）
   try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
