@@ -490,6 +490,19 @@ export function GlobalSyncSettingsModal(props: {
                   h("div", { className: "dsh-toggle-desc" }, "读取 Windows 注册表的系统代理（clash / v2rayN 等工具的「系统代理」开关），开启则自动使用、关闭则自动直连，30 秒内同步")
                 )
               ),
+              /* npm 同步与「跟随系统代理」同级：无论代理来自系统还是手动地址，这个选项都控制 npm 链路是否跟随 */
+              h("label", { className: "dsh-toggle-row" },
+                h("input", {
+                  type: "checkbox",
+                  checked: proxyApplyNpm,
+                  onChange: function (e: any) { setProxyApplyNpm(Boolean(e.target.checked)); },
+                }),
+                h("span", { className: "dsh-toggle-track" }, h("span", { className: "dsh-toggle-thumb" })),
+                h("div", { className: "dsh-toggle-body" },
+                  h("div", { className: "dsh-toggle-title" }, "同时应用于 npm 版本探测与一键升级"),
+                  h("div", { className: "dsh-toggle-desc" }, "npm registry 探测与一键升级流量是否也经当前代理访问（socks5 时探测保持直连）")
+                )
+              ),
               /* 三级内容：跟随开 → 检测状态卡；跟随关 → 手动表单 */
               proxyAutoFollow
                 ? h("div", {
@@ -525,15 +538,7 @@ export function GlobalSyncSettingsModal(props: {
                       style: { width: "100%", boxSizing: "border-box", padding: "6px 10px", fontSize: "12px", marginBottom: "10px" },
                       value: proxyNoProxy,
                       onChange: function (e: any) { setProxyNoProxy(e.target.value); },
-                    }),
-                    h("label", { style: { display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", cursor: "pointer", fontSize: "12px" } },
-                      h("input", {
-                        type: "checkbox",
-                        checked: proxyApplyNpm,
-                        onChange: function (e: any) { setProxyApplyNpm(Boolean(e.target.checked)); },
-                      }),
-                      "同时应用于 npm 版本探测与一键升级"
-                    )
+                    })
                   )
             ) : null,
             proxyEnabled ? h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },

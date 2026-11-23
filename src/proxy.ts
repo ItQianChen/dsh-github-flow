@@ -173,7 +173,10 @@ export async function detectSystemProxy(
 
 function defaultRegReader(key: string, value: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('reg', ['query', key, '/v', value], { timeout: 3000 }, (err, stdout) => {
+    // windowsHide 必须加：DSH 是无控制台的 GUI 进程，从这里 spawn reg.exe（控制台程序）
+    // 会在用户桌面弹出一个黑色命令行窗口——30 秒一次的轮询等于每半分钟骚扰一次用户。
+    // 全项目其余 spawn（executor.ts）均有此选项，这里不能成为例外。
+    execFile('reg', ['query', key, '/v', value], { timeout: 3000, windowsHide: true }, (err, stdout) => {
       if (err) reject(err);
       else resolve(String(stdout || ''));
     });
