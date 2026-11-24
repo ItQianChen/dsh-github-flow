@@ -20,6 +20,7 @@ import { registerOverviewRoutes } from './routes-overview.js';
 import { registerActionRoutes } from './routes-actions.js';
 import { registerLifecycleRoutes } from './routes-lifecycle.js';
 import { registerProxyRoutes, type ProxyRouteManager } from './routes-proxy.js';
+import { registerOrgRoutes } from './routes-org.js';
 
 // 再导出历史公共接口：globalCacheTtlMs 曾被测试直接 import，保持路径稳定避免破坏消费方
 export { globalCacheTtlMs };
@@ -92,4 +93,6 @@ export function registerApiRoutes(
   registerActionRoutes(deps, executor, cacheMap, globalCache);
   registerLifecycleRoutes(deps, executor, checker, upgrader);
   registerProxyRoutes(deps, checker, proxyManager);
+  // 组织只读浏览（issue #17 的「查看」诉求）：独立分组，纯 GET，无写操作
+  registerOrgRoutes(deps, executor);
 }

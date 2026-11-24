@@ -786,6 +786,58 @@ export interface GlobalIssueItem {
   categories: IssueCategory[];
 }
 
+/** 当前账号加入的 GitHub 组织 */
+export interface OrgItem {
+  login: string;
+  description: string;
+  avatarUrl: string;
+}
+
+/**
+ * 组织聚合视图（只读）。
+ *
+ * 为什么与 GlobalOverviewData 分开：全局概览是「我的」账号级视角（author:@me），
+ * 组织视图是「某个组织下所有仓库」的视角，两者的查询语义与缓存键都不同；
+ * 混在一个响应里会让「切组织」牵动整块全局缓存失效。
+ */
+export interface OrgOverviewData {
+  org: { login: string };
+  /** 该组织下的仓库（点进去可下钻到单仓库视图） */
+  repos: UserRepoItem[];
+  /** 组织级 PR（gh search prs --owner=<org>） */
+  prs: OrgPrItem[];
+  /** 组织级 Issue（gh search issues --owner=<org>） */
+  issues: OrgIssueItem[];
+  /** 列表触及上限（有更多但未返回） */
+  prsTruncated?: boolean;
+  issuesTruncated?: boolean;
+  reposTruncated?: boolean;
+  /** 下钻到单仓库时的仓库标识；组织聚合视图不下发 */
+  repo?: string;
+}
+
+export interface OrgPrItem {
+  number: number;
+  title: string;
+  state?: 'OPEN' | 'CLOSED' | 'MERGED';
+  repository: { name?: string; nameWithOwner: string };
+  url: string;
+  updatedAt: string;
+  isDraft?: boolean;
+  author?: { login: string };
+}
+
+export interface OrgIssueItem {
+  number: number;
+  title: string;
+  state?: 'OPEN' | 'CLOSED';
+  repository: { name?: string; nameWithOwner: string };
+  author?: { login: string };
+  labels?: Array<{ name: string; color: string }>;
+  url: string;
+  updatedAt: string;
+}
+
 export interface GlobalOverviewData {
   auth: AuthStatus;
   userRepos: UserRepoItem[];
