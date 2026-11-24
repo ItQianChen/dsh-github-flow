@@ -149,8 +149,12 @@ console.log('\n--- 6. update check parallelization ---');
   for (const re of gatedPatterns) {
     assert(!re.test(cs), `不再存在 data 门控的 check-update: ${re.source.slice(0, 50)}`);
   }
-  // 空依赖挂载（[], 300ms 微延迟）形态应出现两次：fetch 后 ~275 字符处收尾 "}, 300);"（放宽至 350 容错）
-  const parallelCount = (cs.match(/fetch\("\/api\/github\/check-update"\)[\s\S]{0,350}?\}, 300\);/g) || []).length;
+  // 空依赖挂载（[], 300ms 微延迟）形态应出现两次：fetch 后收尾 "}, 300);"。
+  // 窗口为什么是 500 而不是更小的数：两处触发点分别来自 client.ts 与 workspace-panel.ts，
+  // 后者内联进 bundle 时整段缩进变深（每层多 4 个空格），"fetch → }, 300);" 的字符距离
+  // 会随缩进层级浮动（实测 323 / 387）。窗口卡死会把「缩进变化」误报成「触发点丢失」，
+  // 所以只约束「两者在同一个 effect 内」，不约束精确字符数。
+  const parallelCount = (cs.match(/fetch\("\/api\/github\/check-update"\)[\s\S]{0,500}?\}, 300\);/g) || []).length;
   assert(parallelCount === 2, `两处 check-update 均为挂载即触发（实际: ${parallelCount}）`);
   const mountDepCount = (cs.match(/\}, 300\);[\s\S]{0,80}?\}, \[\]\);/g) || []).length;
   assert(mountDepCount === 2, `两处 effect 依赖均为空数组 []（实际: ${mountDepCount}）`);
