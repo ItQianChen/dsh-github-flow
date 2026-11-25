@@ -171,17 +171,20 @@ export function parseRegQueryValue(stdout: unknown): string {
 
 /**
  * 检测 Windows 系统代理（读注册表 Internet Settings）。
- * 非 Windows 平台、reg 不存在、注册表查询失败一律返回 null——
- * 「检测不到」不是错误，绝不向上抛异常打断主流程。
+ * reg 不存在、注册表查询失败一律返回 null——「检测不到」不是错误，
+ * 绝不向上抛异常打断主流程；非 Windows 返回 supported=false 的信息对象。
  * reader 参数供测试注入 mock；生产路径走 reg query 子进程（3s 超时防挂起）。
  */
 export async function detectSystemProxy(
   reader?: (key: string, value: string) => Promise<string>
 ): Promise<SystemProxyInfo | null> {
   const at = Date.now();
-  // 非 Windows 明确回报「不支持」，而不是 null——null 表示「检测失败」，
-  // 两者在 UI 上是完全不同的提示（「本平台不支持」vs「尚未检测，稍后自动重试」）。
-  if (process.platform !== 'win32') {
+  // 平台门禁只约束**真实注册表读取**路径。注入的 reader 是测试接缝，
+  // 必须优先于平台判断——否则所有注册表解析逻辑在 Linux/macOS 上根本不可测，
+  // 而 CI 恰恰跑在 ubuntu 上（phase50 会整片红，实测 13 条断言失败）。
+  if (!reader && process.platform !== 'win32') {
+    // 非 Windows 明确回报「不支持」，而不是 null——null 表示「检测失败」，
+    // 两者在 UI 上是完全不同的提示（「本平台不支持」vs「尚未检测，稍后自动重试」）。
     return { supported: false, enabled: false, url: '', at, reason: 'unsupported-platform' };
   }
   const run = reader || defaultRegReader;
@@ -331,14 +334,20 @@ export class ProxyManager {
   /** 最近一次系统代理检测结果（缓存 + 定时刷新；getEnv 是同步热路径，绝不能在这里起子进程） */
   private systemProxy: SystemProxyInfo | null = null;
   private systemProxyTimer: any = null;
-  private systemProxyReader: (key: string, value: string) => Promise<string>;
+  /**
+   * 系统代理读取器（测试注入用）。
+   * 必须保持「未注入时就是 undefined」，**不能**兜底成 defaultRegReader：
+   * detectSystemProxy 用 `!reader` 判定是否走真实注册表路径，若这里预先塞了
+   * 默认读取器，Linux/macOS 上就会绕过平台门禁去 spawn `reg.exe`。
+   */
+  private systemProxyReader?: (key: string, value: string) => Promise<string>;
 
   constructor(
     presetUrl?: string,
     systemProxyReader?: (key: string, value: string) => Promise<string>,
     storePath?: string
   ) {
-    this.systemProxyReader = systemProxyReader || defaultRegReader;
+    this.systemProxyReader = systemProxyReader;
     if (storePath) this.storePathOverride = storePath;
     this.load(presetUrl);
     this.applyFetchDispatcher();

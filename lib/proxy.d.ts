@@ -94,8 +94,8 @@ export declare function parseProxyServer(raw: unknown): string;
 export declare function parseRegQueryValue(stdout: unknown): string;
 /**
  * 检测 Windows 系统代理（读注册表 Internet Settings）。
- * 非 Windows 平台、reg 不存在、注册表查询失败一律返回 null——
- * 「检测不到」不是错误，绝不向上抛异常打断主流程。
+ * reg 不存在、注册表查询失败一律返回 null——「检测不到」不是错误，
+ * 绝不向上抛异常打断主流程；非 Windows 返回 supported=false 的信息对象。
  * reader 参数供测试注入 mock；生产路径走 reg query 子进程（3s 超时防挂起）。
  */
 export declare function detectSystemProxy(reader?: (key: string, value: string) => Promise<string>): Promise<SystemProxyInfo | null>;
@@ -131,7 +131,13 @@ export declare class ProxyManager {
     /** 最近一次系统代理检测结果（缓存 + 定时刷新；getEnv 是同步热路径，绝不能在这里起子进程） */
     private systemProxy;
     private systemProxyTimer;
-    private systemProxyReader;
+    /**
+     * 系统代理读取器（测试注入用）。
+     * 必须保持「未注入时就是 undefined」，**不能**兜底成 defaultRegReader：
+     * detectSystemProxy 用 `!reader` 判定是否走真实注册表路径，若这里预先塞了
+     * 默认读取器，Linux/macOS 上就会绕过平台门禁去 spawn `reg.exe`。
+     */
+    private systemProxyReader?;
     constructor(presetUrl?: string, systemProxyReader?: (key: string, value: string) => Promise<string>, storePath?: string);
     /** 读取持久化文件；不存在时回落 cordis.patch.yml 预置值；再无则保持默认直连 */
     private load;
