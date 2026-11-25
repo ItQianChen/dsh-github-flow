@@ -36,7 +36,7 @@ async function runTests() {
     // --- 1. URL 校验矩阵 ---
     console.log('\n--- 1. URL validation matrix ---');
     // socks5h://（DNS 由代理端解析，抗污染）与 IPv6 字面量均为合法形态
-    const validCases = ['http://127.0.0.1:7890', 'http://proxy.corp.local:8080', 'https://proxy.example.com:3128', 'socks5://127.0.0.1:1080', 'socks5h://127.0.0.1:1080', 'socks5://[::1]:1080'];
+    const validCases = ['http://127.0.0.1:7890', 'http://proxy.corp.local:8080', 'https://proxy.mycompany.com:3128', 'socks5://127.0.0.1:1080', 'socks5h://127.0.0.1:1080', 'socks5://[::1]:1080'];
     for (const c of validCases) {
       assert(validateProxyUrl(c).ok === true, `accepts valid: ${c}`);
     }

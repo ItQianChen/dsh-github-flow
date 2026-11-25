@@ -101,6 +101,8 @@ export function isNewerVersion(current: string, latest: string): boolean {
 export class UpdateChecker {
   private cachedInfo: UpdateInfo | null = null;
   private inFlightPromise: Promise<UpdateInfo> | null = null;
+  /** 代理管理器引用：fetch 时显式取 dispatcher，代理作用域仅限本类请求 */
+  private proxyManager: { getDispatcher(): unknown | null } | null = null;
   private readonly intervalMs: number;
   private readonly customRegistry?: string;
   /** 配置总开关（checkUpdate: false 时的自动探测熔断），见 check() 内注释 */
@@ -122,10 +124,15 @@ export class UpdateChecker {
 
   /**
    * 应用代理到 npm 探测的 fetch 链路。
-   * 由 main.ts 在 ProxyManager 初始化/变更后调用：undici dispatcher 是进程级全局，
-   * 这里只做一次转发，真正的缓存/重建逻辑在 ProxyManager.applyFetchDispatcher 内。
+   *
+   * 2026-11-23 修正：这里持有 manager 引用，在每次 fetch 时**显式**取用它的
+   * ProxyAgent 作为 dispatcher。旧实现转发 applyFetchDispatcher()，而后者内部
+   * 调 undici.setGlobalDispatcher —— 那是整个宿主进程的副作用，插件配置写错
+   * 会连带模型推理/账号/CodeArts 全部改道（详见 proxy.ts 的事故复盘注释）。
+   * 现在代理作用域严格限制在本类自己的 fetch 调用上。
    */
-  applyProxy(manager: { applyFetchDispatcher(): boolean } | null): void {
+  applyProxy(manager: { applyFetchDispatcher(): boolean; getDispatcher(): unknown | null } | null): void {
+    this.proxyManager = manager;
     if (manager) manager.applyFetchDispatcher();
   }
 
@@ -237,13 +244,19 @@ export class UpdateChecker {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-        const res = await fetch(url, {
+        // dispatcher 是本插件自己的 ProxyAgent（未配置时为 null → 直连）。
+        // 只有这一处 fetch 走代理：node 的 fetch 接受 undici 的 dispatcher 扩展，
+        // 但 RequestInit 类型里没有它，故用 as any 收口。
+        const dispatcher = this.proxyManager ? this.proxyManager.getDispatcher() : null;
+        const init: any = {
           signal: controller.signal,
           headers: {
             'Accept': 'application/json',
             'User-Agent': `dsh-plugin-updater/${CURRENT_PLUGIN_VERSION}`,
           },
-        });
+        };
+        if (dispatcher) init.dispatcher = dispatcher;
+        const res = await fetch(url, init);
         clearTimeout(timer);
 
         if (res.ok) {
