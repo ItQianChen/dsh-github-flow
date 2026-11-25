@@ -34,13 +34,29 @@ export interface ProxyConfig {
      */
     autoFollowSystem: boolean;
 }
-/** 一次系统代理检测的结果。enabled=false 表示系统代理已关；null 表示平台不支持或检测失败 */
+/**
+ * 一次系统代理检测的结果。
+ *
+ * enabled=false 既可能是「用户关了系统代理」，也可能是「开着但用 PAC / 地址解析不出来」——
+ * 两者对用户的含义完全不同，所以用 reason 区分，UI 才能如实提示而不是笼统说「未检测到」。
+ */
 export interface SystemProxyInfo {
+    /** 当前平台是否支持自动检测（目前仅 Windows）。false 时其余字段恒为关闭态 */
+    supported: boolean;
+    /** 系统代理是否被判定为可用且已启用 */
     enabled: boolean;
     /** 规范化后的代理地址（enabled 时非空），如 "http://127.0.0.1:7890" */
     url: string;
     /** 检测完成时间戳 */
     at: number;
+    /**
+     * 未跟随时的人话原因：
+     * - unsupported-platform：非 Windows
+     * - disabled：ProxyEnable=0，用户确实关了
+     * - pac：启用了 PAC 自动配置脚本（AutoConfigURL 非空），插件不支持
+     * - unparsable：ProxyEnable=1 但 ProxyServer 解析不出可用地址
+     */
+    reason?: 'unsupported-platform' | 'disabled' | 'pac' | 'unparsable';
 }
 export interface ProxyProbeResult {
     ok: boolean;
@@ -126,6 +142,21 @@ export declare class ProxyManager {
      * unref 让定时器不阻止进程退出——DSH 宿主关闭时插件不该成为悬挂理由。
      */
     private startSystemProxyWatch;
+    /**
+     * 依据当前配置启停系统代理轮询。
+     * 只在 autoFollowSystem=true 时运行定时器——否则纯手动模式白白每 30 秒 spawn 两次 reg.exe。
+     */
+    private syncSystemProxyWatch;
+    /** 停止轮询并释放句柄。插件卸载/热重载时必须调用，否则旧定时器会持续 spawn reg.exe */
+    stopSystemProxyWatch(): void;
+    /**
+     * 插件卸载钩子：释放轮询与代理连接池。
+     * Cordis 热重载后若不调用，旧实例的 setInterval 会继续跑，
+     * N 次重载就叠 N 个定时器，每个每 30s spawn 两次 reg.exe。
+     */
+    dispose(): void;
+    /** 关闭当前 ProxyAgent（undici 的 agent 持有连接池，丢弃前必须 close，否则连接泄漏） */
+    private closeActiveDispatcher;
     /**
      * 刷新系统代理缓存。检测失败静默保持旧值（下次轮询再试）；
      * 自动跟随模式下 effectiveUrl 可能因此变化，dispatcher 需要跟着重应用。

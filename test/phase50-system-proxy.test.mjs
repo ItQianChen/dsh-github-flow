@@ -37,7 +37,7 @@ ok(parseProxyServer('127.0.0.1:7890') === 'http://127.0.0.1:7890', '单一地址
 ok(parseProxyServer('http=127.0.0.1:7890;https=127.0.0.1:7891;ftp=127.0.0.1:7892') === 'http://127.0.0.1:7891', '分协议写法取 https', parseProxyServer('http=127.0.0.1:7890;https=127.0.0.1:7891'));
 ok(parseProxyServer('http=127.0.0.1:7890') === 'http://127.0.0.1:7890', '分协议只有 http 时用它', parseProxyServer('http=127.0.0.1:7890'));
 ok(parseProxyServer('socks=127.0.0.1:7891') === 'socks5://127.0.0.1:7891', '仅 socks → socks5://', parseProxyServer('socks=127.0.0.1:7891'));
-ok(parseProxyServer('=127.0.0.1:7890') === '', '等号开头无协议段的空段不产出地址', parseProxyServer('=127.0.0.1:7890'));
+ok(parseProxyServer('=127.0.0.1:7890') === 'http://127.0.0.1:7890', '等号开头（空 proto）按单一地址处理，与注释一致', parseProxyServer('=127.0.0.1:7890'));
 ok(parseProxyServer('proxy.mycompany.com:8080') === 'http://proxy.mycompany.com:8080', '域名形态同样补 http://', parseProxyServer('proxy.mycompany.com:8080'));
 ok(parseProxyServer('http://127.0.0.1:7890') === 'http://127.0.0.1:7890', '已带 scheme 的原样保留', parseProxyServer('http://127.0.0.1:7890'));
 ok(parseProxyServer('') === '', '空串 → 空串');
@@ -86,6 +86,42 @@ const noServer = await detectSystemProxy(readerOf(
 ok(noServer && noServer.enabled === false, 'ProxyServer 值不存在（reg 报错）→ 视为关闭不炸', JSON.stringify(noServer));
 const boom = await detectSystemProxy(async () => { throw new Error('reg gone'); });
 ok(boom === null, 'reader 抛错 → null（检测失败不是事故）', JSON.stringify(boom));
+
+// 关闭态要能区分「用户关了」与「用 PAC」——两者对用户的含义完全不同
+const offInfo = await detectSystemProxy(readerOf(
+  'HKEY...\r\n    ProxyEnable    REG_DWORD    0x0\r\n',
+  'HKEY...\r\n    ProxyServer    REG_SZ    127.0.0.1:7890\r\n'
+));
+ok(offInfo && offInfo.supported === true && offInfo.reason === 'disabled', 'ProxyEnable=0 → reason=disabled（真关闭）', JSON.stringify(offInfo));
+
+function readerWithPac(enable, server, pac) {
+  return async (key, value) => {
+    if (value === 'ProxyEnable') return enable;
+    if (value === 'ProxyServer') return server;
+    if (value === 'AutoConfigURL') return pac;
+    return '';
+  };
+}
+const pacOn = await detectSystemProxy(readerWithPac(
+  'HKEY...\r\n    ProxyEnable    REG_DWORD    0x1\r\n',
+  'HKEY...\r\n    ProxyServer    REG_SZ    \r\n',
+  'HKEY...\r\n    AutoConfigURL    REG_SZ    http://pac.corp/proxy.pac\r\n'
+));
+ok(pacOn && pacOn.enabled === false && pacOn.reason === 'pac', '开启代理但用 PAC → reason=pac（不再谎报「已关闭」）', JSON.stringify(pacOn));
+
+const pacDisabled = await detectSystemProxy(readerWithPac(
+  'HKEY...\r\n    ProxyEnable    REG_DWORD    0x0\r\n',
+  'HKEY...\r\n    ProxyServer    REG_SZ    \r\n',
+  'HKEY...\r\n    AutoConfigURL    REG_SZ    http://pac.corp/proxy.pac\r\n'
+));
+ok(pacDisabled && pacDisabled.reason === 'pac', 'ProxyEnable=0 但配了 PAC → 仍报 pac', JSON.stringify(pacDisabled));
+
+const unparsable = await detectSystemProxy(readerWithPac(
+  'HKEY...\r\n    ProxyEnable    REG_DWORD    0x1\r\n',
+  'HKEY...\r\n    ProxyServer    REG_SZ    not-a-valid-value\r\n',
+  ''
+));
+ok(unparsable && unparsable.reason === 'unparsable', '开着但地址解析不出 → reason=unparsable', JSON.stringify(unparsable));
 
 console.log('\n--- 4. ProxyManager：两种模式互斥裁决 ---');
 // 铁律：测试绝不写用户真实配置。
@@ -161,6 +197,44 @@ try {
   m5.save({ enabled: false, url: 'http://127.0.0.1:8888', autoFollowSystem: false });
   ok(m5.getEffectiveUrl() === '', '总开关关闭 → 直连（即使保留着 url）', JSON.stringify(m5.getEffectiveUrl()));
   ok(Object.keys(m5.getEnv('gh')).length === 0, '总开关关闭 → env 零干预');
+
+  // 4l. probe() 必须携带 dispatcher（作者指出的功能回归：移除全局劫持后漏了这里）
+  //
+  // 这是本 PR 最容易复发的点：一旦 probe 走直连，GFW 下「代理正常」会被报成失败，
+  // 「代理写错」反而报成功——探测结果与真实可用性正好相反。
+  {
+    const pmProbe = new ProxyManager('http://127.0.0.1:7897', sysReader, storePath);
+    pmProbe.save({ enabled: true, url: 'http://127.0.0.1:7897' });
+    const dispatcher = pmProbe.getDispatcher();
+    const originalFetch = globalThis.fetch;
+    let capturedInit = null;
+    globalThis.fetch = (async (url, init) => { capturedInit = init; return { ok: true, status: 200 }; });
+    try {
+      await pmProbe.probe();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    if (dispatcher) {
+      ok(capturedInit && capturedInit.dispatcher === dispatcher, 'probe 的 fetch 携带了当前 dispatcher', JSON.stringify(Object.keys(capturedInit || {})));
+    } else {
+      // undici 不可用时 dispatcher 为 null，probe 应当不带 dispatcher（等价直连）
+      ok(capturedInit && capturedInit.dispatcher === undefined, 'undici 不可用时 probe 不带 dispatcher', JSON.stringify(Object.keys(capturedInit || {})));
+    }
+    // 静态契约兜底：源码里 probe 内部必须出现 dispatcher 赋值
+    const proxySrcText = readFileSync(path.join(ROOT, 'src/proxy.ts'), 'utf8');
+    const probeBody = proxySrcText.slice(proxySrcText.indexOf('async probe()'));
+    ok(probeBody.slice(0, 1200).includes('init.dispatcher = dispatcher'), 'probe 源码中显式传 dispatcher（防止再次漏掉）');
+  }
+
+  // 4m. 轮询生命周期：默认不轮询、开启后轮询、dispose 后停止
+  {
+    const pmLife = new ProxyManager('', sysReader, storePath);
+    ok(!pmLife.systemProxyTimer, '默认（未开跟随）不起轮询定时器');
+    pmLife.save({ autoFollowSystem: true });
+    ok(Boolean(pmLife.systemProxyTimer), '开启跟随后开始轮询');
+    pmLife.dispose();
+    ok(!pmLife.systemProxyTimer, 'dispose 后定时器已清理（否则热重载会叠加 N 个）');
+  }
 
   // 4k. 老配置向后兼容：没有 enabled 字段时按「有 url 即启用」推断
   const legacyPath = path.join(tmpDir, 'legacy.json');

@@ -42,13 +42,29 @@ export interface ProxyConfig {
   autoFollowSystem: boolean;
 }
 
-/** 一次系统代理检测的结果。enabled=false 表示系统代理已关；null 表示平台不支持或检测失败 */
+/**
+ * 一次系统代理检测的结果。
+ *
+ * enabled=false 既可能是「用户关了系统代理」，也可能是「开着但用 PAC / 地址解析不出来」——
+ * 两者对用户的含义完全不同，所以用 reason 区分，UI 才能如实提示而不是笼统说「未检测到」。
+ */
 export interface SystemProxyInfo {
+  /** 当前平台是否支持自动检测（目前仅 Windows）。false 时其余字段恒为关闭态 */
+  supported: boolean;
+  /** 系统代理是否被判定为可用且已启用 */
   enabled: boolean;
   /** 规范化后的代理地址（enabled 时非空），如 "http://127.0.0.1:7890" */
   url: string;
   /** 检测完成时间戳 */
   at: number;
+  /**
+   * 未跟随时的人话原因：
+   * - unsupported-platform：非 Windows
+   * - disabled：ProxyEnable=0，用户确实关了
+   * - pac：启用了 PAC 自动配置脚本（AutoConfigURL 非空），插件不支持
+   * - unparsable：ProxyEnable=1 但 ProxyServer 解析不出可用地址
+   */
+  reason?: 'unsupported-platform' | 'disabled' | 'pac' | 'unparsable';
 }
 
 export interface ProxyProbeResult {
@@ -103,11 +119,13 @@ export function parseProxyServer(raw: unknown): string {
       if (eq < 0) continue;
       const proto = seg.slice(0, eq).trim().toLowerCase();
       const addr = seg.slice(eq + 1).trim();
-      if (proto && addr) parts[proto] = addr;
+      // 空 proto（如 "=127.0.0.1:7890"）是某些工具的实际写法，语义同单一地址：
+      // 记到空键上，下面优先取具体协议，最后兜底用它。
+      if (addr) parts[proto] = addr;
     }
-    // https 优先于 http（GitHub 链路主要是 https 流量），socks 兜底
-    const pick = parts['https'] || parts['http'] || parts['socks'];
-    if (pick) return normalizeProxyAddr(pick, parts['socks'] !== undefined && !parts['https'] && !parts['http']);
+    // https 优先于 http（GitHub 链路主要是 https 流量），socks 次之，空 proto 兜底
+    const pick = parts['https'] || parts['http'] || parts['socks'] || parts[''];
+    if (pick) return normalizeProxyAddr(pick, parts['socks'] !== undefined && !parts['https'] && !parts['http'] && !parts['']);
     return '';
   }
 
@@ -120,10 +138,8 @@ function normalizeProxyAddr(addr: string, isSocks: boolean): string {
   const s = addr.trim();
   if (!s) return '';
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return validateSchemeOnly(s);
-  if (!/^[^/]+:\d+$/.test(s) && !/^[^/]+:\d+\/?.*$/.test(s)) {
-    // 不是 host:port 结构（可能是 PAC URL 等不支持形态），交给 URL 校验兜底
-    return validateSchemeOnly(isSocks ? 'socks5://' + s : 'http://' + s);
-  }
+  // 已带 scheme 的原样校验；其余一律补默认 scheme 后交给 URL 校验兜底
+  // （不是 host:port 结构、或 PAC 之类不支持的形态，会在 validateSchemeOnly 里被拒）
   return validateSchemeOnly((isSocks ? 'socks5://' : 'http://') + s);
 }
 
@@ -162,20 +178,35 @@ export function parseRegQueryValue(stdout: unknown): string {
 export async function detectSystemProxy(
   reader?: (key: string, value: string) => Promise<string>
 ): Promise<SystemProxyInfo | null> {
-  if (process.platform !== 'win32') return null;
   const at = Date.now();
+  // 非 Windows 明确回报「不支持」，而不是 null——null 表示「检测失败」，
+  // 两者在 UI 上是完全不同的提示（「本平台不支持」vs「尚未检测，稍后自动重试」）。
+  if (process.platform !== 'win32') {
+    return { supported: false, enabled: false, url: '', at, reason: 'unsupported-platform' };
+  }
   const run = reader || defaultRegReader;
   try {
-    const [enableOut, serverOut] = await Promise.all([
+    const [enableOut, serverOut, autoConfigOut] = await Promise.all([
       run(WIN_INTERNET_SETTINGS_KEY, 'ProxyEnable'),
       run(WIN_INTERNET_SETTINGS_KEY, 'ProxyServer').catch(() => ''),
+      // AutoConfigURL = PAC 自动配置脚本。必须单独读：仅看 ProxyEnable/ProxyServer
+      // 会把「企业 PAC 用户」误判成「系统代理已关闭」，进而静默直连。
+      run(WIN_INTERNET_SETTINGS_KEY, 'AutoConfigURL').catch(() => ''),
     ]);
     const enableRaw = parseRegQueryValue(enableOut);
     const enabled = /^0x1$/i.test(enableRaw) || enableRaw === '1';
-    if (!enabled) return { enabled: false, url: '', at };
-    const url = parseProxyServer(parseRegQueryValue(serverOut));
-    if (!url) return { enabled: false, url: '', at };
-    return { enabled: true, url, at };
+    const autoConfigUrl = parseRegQueryValue(autoConfigOut).trim();
+
+    // 手动代理可用时优先跟它（即使同时配了 PAC，ProxyServer 是更明确的意图）
+    if (enabled) {
+      const url = parseProxyServer(parseRegQueryValue(serverOut));
+      if (url) return { supported: true, enabled: true, url, at };
+      // 开着代理却解析不出地址：PAC 存在就说 PAC，否则报不可解析
+      return { supported: true, enabled: false, url: '', at, reason: autoConfigUrl ? 'pac' : 'unparsable' };
+    }
+    // 手动代理关着，但配了 PAC：用户确实在用自动配置，只是本插件不支持
+    if (autoConfigUrl) return { supported: true, enabled: false, url: '', at, reason: 'pac' };
+    return { supported: true, enabled: false, url: '', at, reason: 'disabled' };
   } catch {
     return null;
   }
@@ -354,11 +385,68 @@ export class ProxyManager {
    * unref 让定时器不阻止进程退出——DSH 宿主关闭时插件不该成为悬挂理由。
    */
   private startSystemProxyWatch(): void {
-    void this.refreshSystemProxy();
-    if (typeof setInterval === 'function') {
-      this.systemProxyTimer = setInterval(() => { void this.refreshSystemProxy(); }, 30_000);
-      if (this.systemProxyTimer && typeof this.systemProxyTimer.unref === 'function') this.systemProxyTimer.unref();
+    // 懒启停：没开「跟随系统代理」时轮询毫无意义（每 30s 两次 reg.exe 子进程）。
+    // 开关打开时才启动，关掉即停；save() 里会同步调用本方法 reconcile。
+    this.syncSystemProxyWatch();
+  }
+
+  /**
+   * 依据当前配置启停系统代理轮询。
+   * 只在 autoFollowSystem=true 时运行定时器——否则纯手动模式白白每 30 秒 spawn 两次 reg.exe。
+   */
+  private syncSystemProxyWatch(): void {
+    const shouldWatch = this.config.autoFollowSystem;
+    if (shouldWatch && !this.systemProxyTimer) {
+      void this.refreshSystemProxy();
+      if (typeof setInterval === 'function') {
+        this.systemProxyTimer = setInterval(() => { void this.refreshSystemProxy(); }, 30_000);
+        // unref 让定时器不阻止进程退出
+        if (this.systemProxyTimer && typeof this.systemProxyTimer.unref === 'function') this.systemProxyTimer.unref();
+      }
+      return;
     }
+    if (!shouldWatch && this.systemProxyTimer) {
+      this.stopSystemProxyWatch();
+    }
+  }
+
+  /** 停止轮询并释放句柄。插件卸载/热重载时必须调用，否则旧定时器会持续 spawn reg.exe */
+  stopSystemProxyWatch(): void {
+    if (!this.systemProxyTimer) return;
+    try {
+      if (typeof clearInterval === 'function') clearInterval(this.systemProxyTimer);
+    } catch { /* 清理失败不影响后续 */ }
+    this.systemProxyTimer = null;
+  }
+
+  /**
+   * 插件卸载钩子：释放轮询与代理连接池。
+   * Cordis 热重载后若不调用，旧实例的 setInterval 会继续跑，
+   * N 次重载就叠 N 个定时器，每个每 30s spawn 两次 reg.exe。
+   */
+  dispose(): void {
+    this.stopSystemProxyWatch();
+    this.closeActiveDispatcher();
+    if (this.activeDispatcherUrl !== null) {
+      this.activeDispatcher = null;
+      this.activeDispatcherUrl = null;
+      this.fetchProxyAvailable = false;
+    }
+  }
+
+  /** 关闭当前 ProxyAgent（undici 的 agent 持有连接池，丢弃前必须 close，否则连接泄漏） */
+  private closeActiveDispatcher(): void {
+    const agent: any = this.activeDispatcher;
+    if (!agent) return;
+    try {
+      if (typeof agent.close === 'function') {
+        // close() 返回 Promise；不 await——卸载路径上不能阻塞，失败也无害
+        const p = agent.close();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } else if (typeof agent.destroy === 'function') {
+        agent.destroy();
+      }
+    } catch { /* 关闭失败不阻断卸载 */ }
   }
 
   /**
@@ -448,6 +536,7 @@ export class ProxyManager {
   applyFetchDispatcher(): boolean {
     const url = this.getEffectiveUrl();
     if (!url || url.startsWith('socks5://') || url.startsWith('socks5h://')) {
+      this.closeActiveDispatcher();
       this.activeDispatcher = null;
       this.activeDispatcherUrl = null;
       this.fetchProxyAvailable = false;
@@ -459,8 +548,9 @@ export class ProxyManager {
       return false;
     }
     try {
-      // url 变更才重建：高频 apply()（如 UI 反复保存）不会泄漏 agent 连接池
+      // url 变更才重建；重建前关掉旧 agent，否则每换一次地址就漏一个连接池
       if (this.activeDispatcherUrl !== url || !this.activeDispatcher) {
+        this.closeActiveDispatcher();
         this.activeDispatcher = new undici.ProxyAgent(url);
         this.activeDispatcherUrl = url;
       }
@@ -505,10 +595,11 @@ export class ProxyManager {
       applyToPackageManager: typeof input.applyToPackageManager === 'boolean' ? input.applyToPackageManager : this.config.applyToPackageManager,
       autoFollowSystem: typeof input.autoFollowSystem === 'boolean' ? input.autoFollowSystem : prevAuto,
     };
-    // 刚打开自动跟随：不等下一轮 30s 轮询，立即检测一次，开关拨上去就能看到结果
+    // 依配置启停轮询：打开跟随 → 立即检测一次并开始轮询；关闭跟随 → 停掉定时器
     if (!prevAuto && this.config.autoFollowSystem) {
       void this.refreshSystemProxy();
     }
+    this.syncSystemProxyWatch();
     this.applyFetchDispatcher();
     this.lastProbe = undefined; // 配置变更后旧探测结果失效
     this.persist();
@@ -526,12 +617,19 @@ export class ProxyManager {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 2_500);
     try {
-      const res = await fetch('https://api.github.com/rate_limit', {
+      // dispatcher 必须显式带上：移除进程级全局劫持后，裸 fetch 一律直连。
+      // 漏了这一步，探测就变成「测直连通不通」——GFW 下代理完全正常却报失败，
+      // 代理地址写错但本机能直连却报成功，正好把功能靶心打反。
+      const dispatcher = this.getDispatcher();
+      const init: any = {
         signal: controller.signal,
         headers: { 'User-Agent': 'dsh-github-flow-proxy-probe' },
-      });
-      // 探测走的是 Node fetch：只有 http/https 代理且 undici 可用时才真经代理。
-      // socks5 场景 fetch 仍直连——探测结果仅代表「GitHub 可达性」，代理有效性以 gh 链路为准。
+      };
+      if (dispatcher) init.dispatcher = dispatcher;
+      const res = await fetch('https://api.github.com/rate_limit', init);
+      // 只有 http/https 代理且 undici 可用时 dispatcher 才非 null，才会真的过代理。
+      // socks5 场景 dispatcher 恒为 null：探测仍直连，结果仅代表「GitHub 可达性」，
+      // 代理有效性以 gh 链路为准（UI 需要如实提示这个差异）。
       this.lastProbe = res.ok
         ? { ok: true, at: started, latencyMs: Date.now() - started }
         : { ok: false, at: started, error: `GitHub API 响应 ${res.status}` };
