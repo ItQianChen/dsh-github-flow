@@ -11,7 +11,7 @@
  * （自愈清理），分组文件只消费注入的 RouteDeps，不感知 Cordis 上下文。
  */
 import type { GhExecutor } from '../executor.js';
-import { TtlCache } from '../cache.js';
+import { TtlCache, CacheRegistry } from '../cache.js';
 import { UpdateChecker } from '../updater.js';
 import { UpgradeManager } from '../upgrade-manager.js';
 import type { GitHubOverviewData, GlobalOverviewData, OrgOverviewData } from '../types.js';
@@ -53,17 +53,22 @@ export function registerApiRoutes(
   const checker = updateChecker || new UpdateChecker();
   const upgrader = upgradeManager || new UpgradeManager();
 
-  const cacheMap = new TtlCache<GitHubOverviewData>(cacheTtlMs);
-  const globalCache = new TtlCache<GlobalOverviewData>(globalCacheTtlMs(cacheTtlMs));
+  /*
+   * 缓存统一由注册表登记：刷新端点只调 `deps.caches.clearAll()`，
+   * 新增缓存不必再去改刷新代码（组织视图上线时就漏过这一步）。
+   */
+  const cacheRegistry = new CacheRegistry();
+  const cacheMap = cacheRegistry.register('overview', new TtlCache<GitHubOverviewData>(cacheTtlMs));
+  const globalCache = cacheRegistry.register('global', new TtlCache<GlobalOverviewData>(globalCacheTtlMs(cacheTtlMs)));
   /**
    * 组织视图缓存。
    *
    * 为什么必须独立且用与全局驾驶舱同量级的 TTL：组织聚合一次要 spawn 最多 3 个 gh
    * （PR / Issue / 仓库列表），实测秒级；而「切组织-看仓库-下钻-退回」是典型的来回操作，
-   * 没有缓存时每次点击都要重等一轮。键是 `org|repo`，切组织只影响自己的条目，
+   * 没有缓存时每次点击都要重等一轮。键是 `org|repo|limit`，切组织只影响自己的条目，
    * 不会让全局驾驶舱缓存失效（两者本来就是不同数据集）。
    */
-  const orgCache = new TtlCache<OrgOverviewData>(globalCacheTtlMs(cacheTtlMs));
+  const orgCache = cacheRegistry.register('org', new TtlCache<OrgOverviewData>(globalCacheTtlMs(cacheTtlMs)));
 
   /**
    * 注册单个路由并返回注销器。
@@ -96,10 +101,10 @@ export function registerApiRoutes(
   };
 
   // 各分组共享的依赖包：分组内部不再触碰 ctx/webServer 全局
-  const deps: RouteDeps = { bindRoute, sendJson, readJsonBody };
+  const deps: RouteDeps = { bindRoute, sendJson, readJsonBody, caches: cacheRegistry };
 
   registerOverviewRoutes(deps, executor, cacheMap, globalCache, checker);
-  registerActionRoutes(deps, executor, cacheMap, globalCache, orgCache);
+  registerActionRoutes(deps, executor, cacheMap, globalCache);
   registerLifecycleRoutes(deps, executor, checker, upgrader);
   registerProxyRoutes(deps, checker, proxyManager, executor);
   // 组织只读浏览（issue #17 的「查看」诉求）：独立分组，纯 GET，无写操作

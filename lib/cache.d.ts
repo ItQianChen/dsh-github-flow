@@ -75,3 +75,28 @@ export declare class TtlCache<T> {
      */
     invalidateIfFingerprintChanged(key: string, currentFingerprint: string | null | undefined): boolean;
 }
+/**
+ * 缓存注册表：把「有哪些缓存」与「刷新时清哪些」收敛到一处。
+ *
+ * 为什么需要：`/api/github/refresh` 原先手写三行 clear（overview / global / org），
+ * 每新增一个缓存都得记得回来补一行——组织视图上线时就漏了，
+ * 表现为「点了刷新，驾驶舱更新了、组织 Tab 仍返回 TTL 内的陈数据」，
+ * 界面上没有任何提示。这类漏接线靠 code review 拦不住。
+ *
+ * 现在新增缓存的正确做法变成「注册一下」，刷新端点只调 clearAll()。
+ *
+ * 注意：本表只负责**全量刷新**语义。「某个仓库刚合并了 PR、只作废该仓库缓存」
+ * 这类精确失效仍直接调对应 TtlCache.clear()，不要塞进 clearAll——
+ * 两者语义不同，混在一处会让刷新退化成「要么全清要么不清」。
+ */
+export declare class CacheRegistry {
+    private caches;
+    /** 登记并原样返回实例：`const c = registry.register('x', new TtlCache(...))` */
+    register<T>(name: string, cache: TtlCache<T>): TtlCache<T>;
+    /** 全量清空：刷新按钮与「重试」语义用它 */
+    clearAll(options?: {
+        keepFallback?: boolean;
+    }): void;
+    /** 已登记的缓存名（诊断与测试用：一眼看出哪些缓存会被刷新清掉） */
+    names(): string[];
+}

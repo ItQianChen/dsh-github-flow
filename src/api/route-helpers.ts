@@ -7,6 +7,7 @@
  */
 import path from 'node:path';
 import type { IssueCategory, IssueStats } from '../types.js';
+import type { CacheRegistry } from '../cache.js';
 
 /**
  * 依据当前登录账号判定 Issue 的归属身份维度 (可多选):
@@ -204,4 +205,14 @@ export interface RouteDeps {
   bindRoute: (route: any) => void;
   sendJson: typeof sendJson;
   readJsonBody: typeof readJsonBody;
+  /**
+   * 缓存注册表。
+   *
+   * 为什么挂在 deps 上而不是再加一个位置参数：deps 已经流到全部 5 个路由分组，
+   * 从这里注入不需要改任何 `register*Routes(...)` 签名（改签名会波及 9 个测试文件
+   * 的 20 处调用点）。分组只需要 `deps.caches?.clearAll()` 就能参与全量刷新。
+   *
+   * 可选：简易单测构造 deps 时不传也不会抛错，刷新端点退化为「没有可清缓存」。
+   */
+  caches?: CacheRegistry;
 }

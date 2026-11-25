@@ -20,11 +20,4 @@ export declare function buildTerminalCommand(command: string): {
 } | null;
 /** 测试辅助：重置 Linux 终端探测缓存（便于单测注入不同探测环境） */
 export declare function resetLinuxTerminalCache(): void;
-export declare function registerActionRoutes(deps: RouteDeps, executor: GhExecutor, cacheMap: TtlCache<GitHubOverviewData>, globalCache: TtlCache<GlobalOverviewData>, 
-/**
- * 组织视图缓存（可选）。
- * 为什么必须从这里清：刷新按钮的语义是「把这个面板的数据全部作废重拉」。
- * 组织视图是独立缓存，不一起清的话用户点完刷新，驾驶舱更新了、组织 Tab
- * 仍会继续返回 TTL 内的陈数据，而界面上没有任何提示。
- */
-orgCache?: TtlCache<any>): void;
+export declare function registerActionRoutes(deps: RouteDeps, executor: GhExecutor, cacheMap: TtlCache<GitHubOverviewData>, globalCache: TtlCache<GlobalOverviewData>): void;

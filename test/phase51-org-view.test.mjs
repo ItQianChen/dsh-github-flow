@@ -287,18 +287,29 @@ console.log('\n--- 11. 前端竞态与失败态契约（防回退）---');
   ok(panel.includes('orgsLoaded ?'), 'Tab 计数在加载完成前不显示 0');
 }
 
-console.log('\n--- 12. 刷新链路必须一并清空组织缓存 ---');
+console.log('\n--- 12. 刷新链路经 CacheRegistry 一并清空全部缓存 ---');
 {
   const { registerActionRoutes } = await import(lib('lib/api/routes-actions.js'));
-  const orgCache = new TtlCache(60_000);
+  const { CacheRegistry } = await import(lib('lib/cache.js'));
+  const registry = new CacheRegistry();
+  const orgCache = registry.register('org', new TtlCache(60_000));
+  const lateCache = registry.register('late', new TtlCache(60_000));
   const mapCache = new TtlCache(60_000);
   const globalCache = new TtlCache(60_000);
   orgCache.set('o/r|', { marker: 'stale' }, Date.now());
+  lateCache.set('k', 1, Date.now());
   ok(orgCache.get('o/r|', Date.now()) !== undefined, '预置组织缓存条目');
+  ok(registry.names().length === 2, '注册表记录了已登记的缓存名', registry.names().join(','));
+  ok(orgCache === registry.register('org', orgCache), '重复 register 同一名字返回同一实例（幂等）');
 
   const routes = [];
-  const deps = { bindRoute: (r) => routes.push(r), sendJson: (res, s, p) => { res.status = s; res.body = p; }, readJsonBody: async () => ({}) };
-  registerActionRoutes(deps, { run: async () => ({ ok: true, data: [] }) }, mapCache, globalCache, orgCache);
+  const deps = {
+    bindRoute: (r) => routes.push(r),
+    sendJson: (res, s, p) => { res.status = s; res.body = p; },
+    readJsonBody: async () => ({}),
+    caches: registry,
+  };
+  registerActionRoutes(deps, { run: async () => ({ ok: true, data: [] }) }, mapCache, globalCache);
   const refresh = routes.find((r) => r.path === '/api/github/refresh');
   ok(Boolean(refresh), '刷新路由已注册');
   // 该分组用的是模块级 sendJson（直接操作 http.ServerResponse），
@@ -312,12 +323,27 @@ console.log('\n--- 12. 刷新链路必须一并清空组织缓存 ---');
   ok(res.statusCode === 200 && res.body.ok === true, '刷新返回成功');
   ok(orgCache.get('o/r|', Date.now()) === undefined,
     '刷新按钮同时清空组织缓存（否则驾驶舱更新了、组织 Tab 仍是陈数据）');
+  ok(lateCache.get('k', Date.now()) === undefined,
+    '后注册的缓存同样被清空——新增缓存不必再改刷新端点代码');
 
-  // 接线契约：缓存实例必须真的从注册器传下来，而不是各自 new 一份
+  // 没有注册表的简易 deps 不得抛错（deps.caches 是可选字段）
+  const noRegRoutes = [];
+  registerActionRoutes(
+    { bindRoute: (r) => noRegRoutes.push(r), sendJson: (res2, s, p) => { res2.status = s; res2.body = p; }, readJsonBody: async () => ({}) },
+    { run: async () => ({ ok: true, data: [] }) }, new TtlCache(1000), new TtlCache(1000)
+  );
+  const res2 = { headers: {}, setHeader() {}, end(raw) { this.body = JSON.parse(raw); } };
+  await noRegRoutes.find((r) => r.path === '/api/github/refresh').handler({ method: 'POST', headers: {} }, res2);
+  ok(res2.body.ok === true, 'deps 不含注册表时刷新不抛错（可选字段降级）');
+
+  // 接线契约：注册器集中建缓存并放进 deps，刷新端点不再手写第三个 clear
   const routesSrc = readFileSync(path.join(ROOT, 'src/api/routes.ts'), 'utf8');
-  ok(routesSrc.includes('registerActionRoutes(deps, executor, cacheMap, globalCache, orgCache)'),
-    '注册器把同一个 orgCache 同时交给组织路由与刷新路由');
+  const actionSrc = readFileSync(path.join(ROOT, 'src/api/routes-actions.ts'), 'utf8');
+  ok(routesSrc.includes('cacheRegistry.register(') && routesSrc.includes('caches: cacheRegistry'),
+    '注册器集中登记缓存并注入 deps');
   ok(routesSrc.includes('TtlCache<OrgOverviewData>'), '组织缓存使用具体类型而非 any');
+  ok(actionSrc.includes('deps.caches?.clearAll('), '刷新端点经注册表统一清空');
+  ok(!actionSrc.includes('orgCache'), '刷新端点不再单独持有 orgCache 参数（收口到注册表）');
 }
 
 console.log('\n--- 13. 组织 Tab 的错误态可恢复 ---');
