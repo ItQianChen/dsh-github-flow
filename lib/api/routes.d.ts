@@ -11,6 +11,7 @@
  * （自愈清理），分组文件只消费注入的 RouteDeps，不感知 Cordis 上下文。
  */
 import type { GhExecutor } from '../executor.js';
+import type { AuditStore } from '../audit.js';
 import { UpdateChecker } from '../updater.js';
 import { UpgradeManager } from '../upgrade-manager.js';
 import { globalCacheTtlMs } from './route-helpers.js';
@@ -26,4 +27,14 @@ export declare function registerApiRoutes(ctxOrWebServer: any, executor: GhExecu
  * 的 Proxy get 陷阱）。所以 `ctx?.webServer` 这种"安全回退"根本不安全：它在
  * CLI/TUI profile 里会把插件从「PENDING」变成「加载失败」。
  */
-webServerOverride?: any): void;
+webServerOverride?: any, 
+/**
+ * 操作记录存储。
+ *
+ * 为什么由调用方注入而不是在这里 new：同一个实例必须**同时**喂给
+ * `tools/result` 切面（写入）与本分组（读取），否则内存队列与查询视图是两份，
+ * 表现为「刚做完的操作要等重启才出现」——与 `CacheRegistry` 那次的教训同源。
+ *
+ * 缺省不注册审计路由（测试里大量调用本函数，不该因为没传 store 就落盘到用户主目录）。
+ */
+auditStore?: AuditStore): void;

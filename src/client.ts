@@ -46,6 +46,7 @@ import { IssueDetailModal } from './ui/issue-modal.js';
 import { RunDetailModal } from './ui/run-modal.js';
 import { GlobalSyncSettingsModal } from './ui/sync-settings-modal.js';
 import { GithubHelpModal } from './ui/help-modal.js';
+import { AuditModal } from './ui/audit-modal.js';
 import { GithubWorkspacePanel } from './ui/workspace-panel.js';
 
 export {
@@ -90,6 +91,7 @@ export {
   RunDetailModal,
   GlobalSyncSettingsModal,
   GithubHelpModal,
+  AuditModal,
   GithubWorkspacePanel,
 };
 
@@ -182,7 +184,12 @@ window.__ModuleLoader__.load({
        * Actions 卡片点击 → Run 详情弹窗。
        * 同样必须追加在形参末尾（理由见上一条：位置参数错位不会报错，只会静默串值）。
        */
-      onSelectRun: ((target: { runId: number; repo: string }) => void) | null = null
+      onSelectRun: ((target: { runId: number; repo: string }) => void) | null = null,
+      /**
+       * 打开「操作记录」大窗口。
+       * 同样必须追加在形参末尾：位置参数错位不会报错，只会静默串值。
+       */
+      onOpenAudit: (() => void) | null = null
     ) {
       var auth = data ? data.auth : null;
       var repo = data ? data.repo : null;
@@ -314,6 +321,16 @@ window.__ModuleLoader__.load({
             },
             loading ? "刷新中..." : "🔄 刷新"
           ),
+          onOpenAudit ? h(
+            "button",
+            {
+              className: "dsh-github-btn-sm",
+              onClick: onOpenAudit,
+              title: "查看 Agent 对 PR / Issue 的历史操作记录（保存在本地，可筛选与删除）",
+              style: { padding: "4px 8px", fontSize: "12px" },
+            },
+            "🕘"
+          ) : null,
           (onOpenHelp || onOpenSettings) ? h(
             "button",
             {
@@ -1701,6 +1718,8 @@ window.__ModuleLoader__.load({
       var [rightbarModalOpen, setRightbarModalOpen] = React.useState(false);
       var [rightbarModalSection, setRightbarModalSection] = React.useState("sync");
       var [helpModalOpen, setHelpModalOpen] = React.useState(false);
+      // 操作记录大窗口：与帮助窗口同构，按需挂载（关闭即卸载，零常驻开销）
+      var [auditModalOpen, setAuditModalOpen] = React.useState(false);
       var [selectedCommit, setSelectedCommit] = React.useState(null as any);
       // PR 在线审阅弹窗状态：{ number, repo }；为 null 时不挂载弹窗（零常驻开销）
       var [activePr, setActivePr] = React.useState(null as { number: number; repo: string } | null);
@@ -2093,7 +2112,9 @@ window.__ModuleLoader__.load({
           // 必须追加在形参末尾（该函数 30+ 个位置参数，插中间会静默错位）
           loadMoreTabList,
           listLoading,
-          (target: { runId: number; repo: string }) => setActiveRun(target)
+          (target: { runId: number; repo: string }) => setActiveRun(target),
+          // 必须追加在形参末尾（与上面同一条纪律）
+          () => setAuditModalOpen(true)
         ),
         h(GlobalSyncSettingsModal, {
           isOpen: aboutModalOpen,
@@ -2118,6 +2139,13 @@ window.__ModuleLoader__.load({
         h(GithubHelpModal, {
           isOpen: helpModalOpen,
           onClose: () => setHelpModalOpen(false),
+        }),
+        h(AuditModal, {
+          isOpen: auditModalOpen,
+          onClose: () => setAuditModalOpen(false),
+          // 右栏是「当前工作区」视角：只显示本工作区产生的记录；驾驶舱入口是全局视角
+          scope: "workspace",
+          cwd: cwd,
         }),
         selectedCommit
           ? h(CommitDetailModal, {

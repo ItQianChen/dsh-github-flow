@@ -82,8 +82,9 @@ const bundledCount = (bundle.match(/---- \[Bundled: /g) || []).length;
 ok(bundle.includes('---- [Bundled: state-badges.js]'), '共享状态徽章模块 state-badges.js 已内联（服务端与 UI 共用同一份映射）');
 // 计数口径：leadingModules + trailingModules 全部命中才会出现该标记。
 // phase49 起多了 diff-utils.js（补丁切分纯函数）与 file-diff-modal.js（Diff 弹窗），
-// 21 UI + 1 shared = 22。
-ok(bundledCount === 22, '22 个 Bundle 子模块已内联（21 UI + 1 shared）', `实际 ${bundledCount}`);
+// phase52 起多了 audit-modal.js（操作记录大窗口）。
+// 22 UI + 1 shared = 23。
+ok(bundledCount === 23, '23 个 Bundle 子模块已内联（22 UI + 1 shared）', `实际 ${bundledCount}`);
 // 子模块被内联进闭包后不得残留 ESM 导出语法，否则整段在浏览器里语法错误
 ok(!/^export\s+(const|function|class|default)\s/m.test(bundle), 'Bundle 内无残留 ESM export 语句');
 

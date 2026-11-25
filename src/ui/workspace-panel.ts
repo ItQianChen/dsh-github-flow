@@ -15,6 +15,7 @@ declare function UpgradeNotificationCard(props: any): any;
 declare function AuthGuideCard(props: any): any;
 declare function GlobalSyncSettingsModal(props: any): any;
 declare function GithubHelpModal(props: any): any;
+declare function AuditModal(props: any): any;
 declare function fetchWithRetry(url: string, options?: any, config?: any): Promise<any>;
 declare function PrDetailModal(props: any): any;
 declare function IssueDetailModal(props: any): any;
@@ -35,6 +36,12 @@ export function GithubWorkspacePanel() {
   var [isSettingsModalOpen, setIsSettingsModalOpen] = React.useState(false);
   var [settingsInitialSection, setSettingsInitialSection] = React.useState("sync");
   var [isHelpModalOpen, setIsHelpModalOpen] = React.useState(false);
+  /**
+   * 操作记录大窗口（全局视角）。
+   * 为什么驾驶舱用 global、右栏用 workspace：驾驶舱回答「本机都发生了什么」，
+   * 右栏回答「这个工作区刚才被改了什么」——同一个组件，两种作用域，由入口决定。
+   */
+  var [isAuditModalOpen, setIsAuditModalOpen] = React.useState(false);
   var [error, setError] = React.useState(null as string | null);
   var [updateInfo, setUpdateInfo] = React.useState(null as any);
   var [activeTab, setActiveTab] = React.useState("workspaces");
@@ -440,6 +447,16 @@ export function GithubWorkspacePanel() {
           disabled: loading,
         },
         loading ? "同步中..." : "🔄 刷新全局数据"
+      ),
+      h(
+        "button",
+        {
+          className: "dsh-github-btn-sm",
+          onClick: () => setIsAuditModalOpen(true),
+          title: "查看 Agent 对 Issue / PR 的历史操作记录（全局视角，保存在本地，可筛选与删除）",
+          style: { padding: "6px 12px" },
+        },
+        "🕘 操作记录"
       ),
       h(
         "button",
@@ -1253,6 +1270,12 @@ export function GithubWorkspacePanel() {
     h(GithubHelpModal, {
       isOpen: isHelpModalOpen,
       onClose: () => setIsHelpModalOpen(false),
+    }),
+    // 操作记录（全局视角）：驾驶舱没有绑定单一工作区，因此 scope 固定为 global
+    h(AuditModal, {
+      isOpen: isAuditModalOpen,
+      onClose: () => setIsAuditModalOpen(false),
+      scope: "global",
     }),
     // PR 在线审阅工作台：仅在用户点击某个 PR 时挂载，关闭即卸载（零常驻开销）
     activePrModal

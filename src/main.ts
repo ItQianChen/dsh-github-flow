@@ -21,6 +21,7 @@ import { createCodespaceTool } from './tools/codespace.js';
 import { createHelpTool } from './tools/help.js';
 import { createTaskTool } from './tools/task.js';
 import { defaultTelemetryCollector } from './telemetry.js';
+import { AuditStore, resolveScopeFromExec } from './audit.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
 import { UpdateChecker } from './updater.js';
@@ -163,6 +164,25 @@ export function apply(ctx: Context, config: Config = Config({})) {
     }, 'github-flow: proxy manager lifecycle');
   }
   executor.attachProxyManager(proxyManager);
+  /*
+   * 操作记录存储。
+   *
+   * 创建顺序必须早于 `tools/result` 切面（写入方）与 webServer 路由（读取方）：
+   * 两个消费方共用同一个实例，否则内存队列与查询视图是两份。
+   *
+   * AuditStore 构造期自带 try/catch 降级（目录不可写、JSONL 损坏时变 no-op），
+   * 因此这一行不会把 apply() 打崩——Cordis 里 apply 抛错 = Fiber FAILED = 19 个工具全丢。
+   */
+  const auditStore = new AuditStore({
+    scopeResolver: (exec, args) => resolveScopeFromExec(executor, exec, args),
+  });
+  // 生命周期纳管：内部有攒批刷盘定时器，不挂 effect 的话热重载会留下跑着的定时器
+  // （与 proxyManager 的 30s 轮询同一类问题）。
+  if (typeof (ctx as any).effect === 'function') {
+    (ctx as any).effect(() => () => {
+      void auditStore.dispose();
+    }, 'github-flow: audit store lifecycle');
+  }
   const updateChecker = new UpdateChecker({
     intervalMs: plain.updateCheckIntervalMs,
     customRegistry: plain.registryUrl,
@@ -191,6 +211,14 @@ export function apply(ctx: Context, config: Config = Config({})) {
       if (typeof toolName === 'string' && toolName.startsWith('github_')) {
         const args = exec?.arguments || exec?.args || {};
         defaultTelemetryCollector.recordCall(toolName, args, result);
+        /*
+         * 操作记录与遥测共用**同一个监听器**：宿主对同一事件的多个监听器顺序无保证，
+         * 各解包一次会出现「遥测说失败、记录说成功」这类无法自我解释的不一致。
+         *
+         * recordCall 内部自带全部兜底（Fail-Open + 双载荷形状兼容），因此这里
+         * 不需要再套一层 try——它不会抛。
+         */
+        auditStore.recordCall(toolName, args, result, exec);
       }
     } catch {
       // Fail-Open 非阻塞防线：严禁打点逻辑异常影响主工具调用
@@ -256,7 +284,9 @@ export function apply(ctx: Context, config: Config = Config({})) {
       updateChecker,
       upgradeManager,
       proxyManager,
-      c.get('webServer')
+      c.get('webServer'),
+      // 操作记录存储：与上方 tools/result 切面是**同一个实例**
+      auditStore
     );
   });
 

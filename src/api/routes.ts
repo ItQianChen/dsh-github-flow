@@ -12,6 +12,7 @@
  */
 import type { GhExecutor } from '../executor.js';
 import { TtlCache, CacheRegistry } from '../cache.js';
+import type { AuditStore } from '../audit.js';
 import { UpdateChecker } from '../updater.js';
 import { UpgradeManager } from '../upgrade-manager.js';
 import type { GitHubOverviewData, GlobalOverviewData, OrgOverviewData } from '../types.js';
@@ -21,6 +22,7 @@ import { registerActionRoutes } from './routes-actions.js';
 import { registerLifecycleRoutes } from './routes-lifecycle.js';
 import { registerProxyRoutes, type ProxyRouteManager } from './routes-proxy.js';
 import { registerOrgRoutes } from './routes-org.js';
+import { registerAuditRoutes } from './routes-audit.js';
 
 // 再导出历史公共接口：globalCacheTtlMs 曾被测试直接 import，保持路径稳定避免破坏消费方
 export { globalCacheTtlMs };
@@ -41,7 +43,17 @@ export function registerApiRoutes(
    * 的 Proxy get 陷阱）。所以 `ctx?.webServer` 这种"安全回退"根本不安全：它在
    * CLI/TUI profile 里会把插件从「PENDING」变成「加载失败」。
    */
-  webServerOverride?: any
+  webServerOverride?: any,
+  /**
+   * 操作记录存储。
+   *
+   * 为什么由调用方注入而不是在这里 new：同一个实例必须**同时**喂给
+   * `tools/result` 切面（写入）与本分组（读取），否则内存队列与查询视图是两份，
+   * 表现为「刚做完的操作要等重启才出现」——与 `CacheRegistry` 那次的教训同源。
+   *
+   * 缺省不注册审计路由（测试里大量调用本函数，不该因为没传 store 就落盘到用户主目录）。
+   */
+  auditStore?: AuditStore
 ) {
   const ctx = ctxOrWebServer;
   // 只对「真 Context」走 ctx.get()：ctx.get 是 Context 原型方法，读它永远安全；
@@ -109,4 +121,6 @@ export function registerApiRoutes(
   registerProxyRoutes(deps, checker, proxyManager, executor);
   // 组织只读浏览（issue #17 的「查看」诉求）：独立分组，纯 GET，无写操作
   registerOrgRoutes(deps, executor, orgCache);
+  // 操作记录：同样独立分组，读 + 删除（无写操作产生，写入在 tools/result 切面）
+  if (auditStore) registerAuditRoutes(deps, auditStore);
 }

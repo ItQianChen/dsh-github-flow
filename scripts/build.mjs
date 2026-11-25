@@ -146,6 +146,10 @@ function bundleClient() {
     'run-modal.js',
     'sync-settings-modal.js',
     'help-modal.js',
+    // audit-modal 依赖 utils 的 formatRelativeTime 与既有的 .dsh-github-modal-* 样式，
+    // 因此必须排在 utils.js / styles.js 之后。漏登记不会报错，只会在浏览器里表现为
+    // undefined（点 🕘 白屏），顺序与登记都必须显式维护。
+    'audit-modal.js',
   ];
 
   let leadingCode = '';

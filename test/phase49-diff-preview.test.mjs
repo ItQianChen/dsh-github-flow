@@ -343,12 +343,18 @@ const phaseList = phasesMatch
   : [];
 ok(phaseList.includes('phase49-diff-preview.test.mjs'),
   'run-all.mjs 的 phases 已登记 phase49-diff-preview.test.mjs', String(phaseList.length));
-ok(phaseList[phaseList.length - 1] === 'phase51-org-view.test.mjs' && phaseList.includes('phase49-diff-preview.test.mjs'),
+// 断言口径：末尾必须就是编号最大的那个阶段（「追加而非插队」）。
+// 不写死文件名：每加一个阶段就要回来改一次的话，这条断言迟早会被改成 "总是通过"。
+const phaseNums = phaseList.map((f) => Number((f.match(/^phase(\d+)/) || [])[1] || 0));
+const lastPhase = phaseList[phaseList.length - 1];
+ok(phaseNums[phaseNums.length - 1] === Math.max(...phaseNums) && phaseList.includes('phase49-diff-preview.test.mjs'),
   'phase49 已登记且最新阶段位于 phases 数组末尾（追加而非插队）', phaseList.slice(-2).join(' , '));
 
 const archSrc = readFileSync(path.join(ROOT, 'docs/architecture.md'), 'utf8');
-ok(archSrc.includes('51 个独立阶段'),
-  'docs/architecture.md 声明 51 个独立阶段（phase35 与 run-all 对账）');
+// 阶段数从 run-all 派生，不写死：写死等于每加一个阶段就红一次（phase35 已做严格对账，
+// 这里只是"architecture 别写错量级"的软提示，不该成为第二个维护点）。
+ok(archSrc.includes(`${phaseList.length} 个独立阶段`),
+  `docs/architecture.md 声明的阶段数与 run-all 一致（${phaseList.length}）`);
 ok(archSrc.includes('phase49'),
   'docs/architecture.md 的阶段要点列表含 phase49 条目');
 
