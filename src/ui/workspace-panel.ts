@@ -44,7 +44,98 @@ export function GithubWorkspacePanel() {
   // 实测账号可能零 open PR（当前账号 7 个 PR 全为 merged/closed），
   // 默认 Open 会让列表恒为空白，等于没修「看不到数据」这个原始问题。
   var [prStateFilter, setPrStateFilter] = React.useState("all");
+  // ---- 组织只读浏览（issue #17 的「查看」诉求）----
+  var [orgs, setOrgs] = React.useState([] as any[]);
+  var [orgsLoaded, setOrgsLoaded] = React.useState(false);
+  var [selectedOrg, setSelectedOrg] = React.useState(null as string | null);
+  var [orgData, setOrgData] = React.useState(null as any);
+  /** 下钻中的仓库全名；null = 组织聚合视图 */
+  var [drillRepo, setDrillRepo] = React.useState(null as string | null);
+  var [orgLoading, setOrgLoading] = React.useState(false);
+  var [orgError, setOrgError] = React.useState(null as string | null);
+  /** 组织列表是否触顶截断（per_page=100），触顶时 UI 如实提示而不是假装列全了 */
+  var [orgsTruncated, setOrgsTruncated] = React.useState(false);
+  /**
+   * 组织视图请求序号：切组织 / 下钻是连点高频操作，响应不保证按发出顺序返回。
+   * 只让最后一次请求的响应落地，否则会出现「面包屑是新组织、内容是旧组织」的串味。
+   */
+  var orgSeqRef = React.useRef(0);
+  /** 组织列表独立序号：与概览请求分开，避免列表响应被概览请求的序号判废 */
+  var orgsSeqRef = React.useRef(0);
+  /**
+   * 当前 orgData 对应的作用域键（`org|repo`）。
+   * 为什么需要它：仅靠「请求开始时清空数据」还不够——渲染期必须能判断
+   * 手上这份数据是否属于当前作用域，否则任何时序意外都会渲染出错配内容。
+   */
+  var [orgDataKey, setOrgDataKey] = React.useState(null as string | null);
   var [toastMsg, setToastMsg] = React.useState(null as string | null);
+
+  /** 拉取当前账号加入的组织（只读，失败不阻断其它 Tab） */
+  var loadOrgs = React.useCallback(function () {
+    setOrgLoading(true);
+    setOrgError(null);
+    var seq = ++orgsSeqRef.current;
+    fetch("/api/github/orgs")
+      .then(function (r: any) { return r.json(); })
+      .then(function (j: any) {
+        if (seq !== orgsSeqRef.current) return; // 旧响应，丢弃
+        setOrgLoading(false);
+        setOrgsLoaded(true);
+        if (j && j.ok && j.data) {
+          setOrgs(Array.isArray(j.data.orgs) ? j.data.orgs : []);
+          setOrgsTruncated(Boolean(j.data.truncated));
+        } else {
+          setOrgError((j && j.message) || "读取组织列表失败");
+        }
+      })
+      .catch(function (e: any) {
+        if (seq !== orgsSeqRef.current) return;
+        setOrgLoading(false);
+        setOrgsLoaded(true);
+        setOrgError("读取组织列表失败: " + (e && e.message ? e.message : e));
+      });
+  }, []);
+
+  /** 拉取组织聚合视图（repo 为空）或单仓库下钻（repo 非空） */
+  var loadOrgOverview = React.useCallback(function (org: string, repo: string | null) {
+    var key = org + "|" + (repo || "");
+    setOrgLoading(true);
+    setOrgError(null);
+    /*
+     * 先清空上一个作用域的数据再发请求。
+     * 不清的话：请求失败（或还没回来）时渲染仍会拿 orgData 渲染，
+     * 而错误态的判断条件是「有数据就不显示错误」——结果是面包屑写着组织 B、
+     * 列表里全是组织 A 的仓库与 PR。数据错配比空态更难被用户察觉。
+     */
+    setOrgData(null);
+    setOrgDataKey(null);
+    var seq = ++orgSeqRef.current;
+    var url = "/api/github/org-overview?org=" + encodeURIComponent(org) + (repo ? "&repo=" + encodeURIComponent(repo) : "");
+    fetch(url)
+      .then(function (r: any) { return r.json(); })
+      .then(function (j: any) {
+        if (seq !== orgSeqRef.current) return; // 旧响应，丢弃（连点切组织时必然发生）
+        setOrgLoading(false);
+        // 只在 ok 时接受数据：整体失败时服务端仍会带一份空 data，
+        // 若照收就会把「失败」渲染成「这个组织什么都没有」。
+        if (j && j.ok && j.data) {
+          setOrgData(j.data);
+          setOrgDataKey(key);
+        } else {
+          setOrgError((j && j.message) || "查询失败");
+        }
+      })
+      .catch(function (e: any) {
+        if (seq !== orgSeqRef.current) return;
+        setOrgLoading(false);
+        setOrgError("查询失败: " + (e && e.message ? e.message : e));
+      });
+  }, []);
+
+  // 懒加载：只有进到组织 Tab 才拉组织列表
+  React.useEffect(function () {
+    if (activeTab === "orgs" && !orgsLoaded && !orgLoading) loadOrgs();
+  }, [activeTab, orgsLoaded, orgLoading, loadOrgs]);
   // PR 在线审阅弹窗状态：{ number, repo } 二元组；为 null 时弹窗不渲染
   var [activePrModal, setActivePrModal] = React.useState(null as { number: number; repo: string } | null);
   // Issue 在线查看弹窗状态：与 PR 完全同构的 { number, repo } 二元组
@@ -514,7 +605,8 @@ export function GithubWorkspacePanel() {
     h("button", { className: `dsh-github-tab-btn ${activeTab === 'workspaces' ? 'active' : ''}`, onClick: () => setActiveTab('workspaces') }, `📂 本地工作区矩阵 (${workspaceMatrix.length})`),
     h("button", { className: `dsh-github-tab-btn ${activeTab === 'repos' ? 'active' : ''}`, onClick: () => setActiveTab('repos') }, `☁️ 我的 GitHub 仓库 (${userRepos.length})`),
     h("button", { className: `dsh-github-tab-btn ${activeTab === 'prs' ? 'active' : ''}`, onClick: () => setActiveTab('prs') }, `🔀 Pull Requests (${myPrs.length})`),
-    h("button", { className: `dsh-github-tab-btn ${activeTab === 'issues' ? 'active' : ''}`, onClick: () => setActiveTab('issues') }, `📝 任务与待办 Issues (${myIssues.length})`)
+    h("button", { className: `dsh-github-tab-btn ${activeTab === 'issues' ? 'active' : ''}`, onClick: () => setActiveTab('issues') }, `📝 任务与待办 Issues (${myIssues.length})`),
+    h("button", { className: `dsh-github-tab-btn ${activeTab === 'orgs' ? 'active' : ''}`, onClick: () => setActiveTab('orgs'), title: "浏览你所属组织下的仓库、PR 与 Issue（只读）" }, orgsLoaded ? `🏢 组织 (${orgs.length})` : "🏢 组织")
   );
 
   var contentEl = null;
@@ -745,6 +837,188 @@ export function GithubWorkspacePanel() {
           })
         )
       );
+    }
+  } else if (activeTab === 'orgs') {
+    // ---- 组织只读浏览：组织列表 → 组织聚合（仓库/PR/Issue）→ 单仓库下钻 ----
+    /** 当前选择对应的作用域键；渲染前必须与 orgDataKey 对齐，杜绝串味 */
+    var expectedOrgKey = (selectedOrg || "") + "|" + (drillRepo || "");
+    if (!auth?.loggedIn) {
+      contentEl = h("div", { className: "dsh-github-empty" }, "当前尚未认证登录 GitHub 账号，无法读取组织信息。请先完成上方的安装或登录指引。");
+    } else if (orgLoading) {
+      // 请求开始时已清空 orgData，因此「加载中」必然是真空态，不会把旧数据顶上来
+      contentEl = h("div", { className: "dsh-github-empty" }, "⏳ 正在读取组织数据…");
+    } else if (orgError) {
+      contentEl = h("div", null,
+        h("div", { className: "dsh-github-empty" }, "⚠️ " + orgError),
+        // 错误态必须自带退路：此前只显示一行错误，用户被卡在死页上只能关面板重来
+        h("div", { style: { marginTop: "10px" } },
+          h("button", {
+            className: "dsh-github-btn-sm",
+            onClick: function () {
+              setSelectedOrg(null);
+              setDrillRepo(null);
+              setOrgData(null);
+              setOrgDataKey(null);
+              setOrgError(null);
+            },
+          }, "◀ 返回组织列表"))
+      );
+    } else if (selectedOrg && orgDataKey !== expectedOrgKey) {
+      // 不变量兜底：数据与当前作用域不匹配时宁可等，也不渲染错配内容
+      contentEl = h("div", { className: "dsh-github-empty" }, "⏳ 正在对齐组织数据…");
+    } else {
+      var orgContent: any[] = [];
+
+      // 组织选择胶囊（多组织时显示）
+      if (orgs.length > 1) {
+        orgContent.push(
+          h("div", { key: "orgs", style: { display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "12px" } },
+            orgs.map(function (o: any) {
+              return h("button", {
+                key: o.login,
+                className: "dsh-github-pill-btn " + (selectedOrg === o.login ? "active" : ""),
+                onClick: function () { setSelectedOrg(o.login); setDrillRepo(null); loadOrgOverview(o.login, null); },
+              }, "🏢 " + o.login);
+            })
+          )
+        );
+      }
+
+      if (!selectedOrg) {
+        orgContent.push(
+          h("div", { key: "pick", className: "dsh-github-list" },
+            orgs.length === 0
+              ? h("div", { className: "dsh-github-empty" }, "当前账号没有加入任何 GitHub 组织。")
+              : orgs.map(function (o: any) {
+                  return h("div", {
+                    key: o.login,
+                    className: "dsh-github-item",
+                    style: { cursor: "pointer" },
+                    onClick: function () { setSelectedOrg(o.login); setDrillRepo(null); loadOrgOverview(o.login, null); },
+                  },
+                    h("div", { className: "dsh-github-item-title" }, "🏢 " + o.login),
+                    o.description ? h("div", { className: "dsh-github-item-desc" }, o.description) : null,
+                    h("div", { className: "dsh-github-item-meta" }, h("span", null, "点击查看该组织的仓库与 PR / Issue"))
+                  );
+                })
+          )
+        );
+        // 组织列表触顶（per_page=100）时如实提示，不做「列表就是全部」的暗示
+        if (orgsTruncated) {
+          orgContent.push(h("div", {
+            key: "orgs-truncated",
+            style: { fontSize: "11px", opacity: 0.6, marginTop: "8px", lineHeight: 1.6 },
+          }, "⚠️ 所属组织超过 100 个，此处仅显示前 100 个。"));
+        }
+      } else {
+        var d = orgData || { repos: [], prs: [], issues: [] };
+
+        // 面包屑：组织 / 仓库
+        orgContent.push(
+          h("div", { key: "crumb", style: { display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", marginBottom: "10px", fontSize: "12px" } },
+            h("button", {
+              className: "dsh-github-btn-sm",
+              style: { padding: "2px 8px", fontSize: "11px" },
+              onClick: function () { setSelectedOrg(null); setDrillRepo(null); setOrgData(null); setOrgDataKey(null); },
+              title: "返回组织列表",
+            }, "◀ 组织"),
+            h("span", { style: { opacity: 0.7 } }, drillRepo ? selectedOrg + " / " + drillRepo.split("/")[1] : selectedOrg),
+            drillRepo
+              ? h("button", {
+                  className: "dsh-github-btn-sm",
+                  style: { padding: "2px 8px", fontSize: "11px" },
+                  onClick: function () { setDrillRepo(null); if (selectedOrg) loadOrgOverview(selectedOrg, null); },
+                  title: "回到组织聚合视图",
+                }, "▲ 回到组织")
+              : null,
+            orgLoading ? h("span", { style: { opacity: 0.6, fontSize: "11px" } }, "加载中…") : null
+          )
+        );
+
+        // 仓库列表（仅组织聚合视图显示）
+        if (!drillRepo && d.repos && d.repos.length > 0) {
+          orgContent.push(
+            h("div", { key: "repos", className: "dsh-github-section" },
+              h("div", { className: "dsh-github-section-header" },
+                h("h3", null, "📁 组织仓库（" + d.repos.length + (d.reposTruncated ? "+" : "") + "）")),
+              h("div", { className: "dsh-github-list" },
+                d.repos.map(function (rr: any) {
+                  return h("div", {
+                    key: rr.nameWithOwner,
+                    className: "dsh-github-item",
+                    style: { cursor: "pointer" },
+                    onClick: function () { if (selectedOrg) { setDrillRepo(rr.nameWithOwner); loadOrgOverview(selectedOrg, rr.nameWithOwner); } },
+                    title: "下钻查看该仓库的 PR 与 Issue",
+                  },
+                    h("div", { className: "dsh-github-item-title" }, rr.nameWithOwner),
+                    rr.description ? h("div", { className: "dsh-github-item-desc" }, rr.description) : null,
+                    h("div", { className: "dsh-github-item-meta" },
+                      rr.isPrivate ? h("span", { className: "dsh-github-badge dsh-badge-yellow" }, "Private") : h("span", { className: "dsh-github-badge dsh-badge-green" }, "Public"),
+                      h("span", null, "⭐ " + (rr.stargazerCount || 0)),
+                      formatRelativeTime(rr.updatedAt) ? h("span", null, "活跃于 " + formatRelativeTime(rr.updatedAt)) : null)
+                  );
+                })
+              )
+            )
+          );
+        }
+
+        // PR 列表
+        orgContent.push(
+          h("div", { key: "prs", className: "dsh-github-section" },
+            h("div", { className: "dsh-github-section-header" },
+              h("h3", null, "🔀 Pull Requests（" + (d.prs || []).length + (d.prsTruncated ? "+" : "") + "）")),
+            (d.prs || []).length === 0
+              ? h("div", { className: "dsh-github-empty" }, "该范围内暂无 PR")
+              : h("div", { className: "dsh-github-list" },
+                  d.prs.map(function (p: any) {
+                    var pb = prStateBadge(p.state, p.isDraft);
+                    return h("div", { key: (p.repository && p.repository.nameWithOwner) + "#" + p.number, className: "dsh-github-item" },
+                      h("a", { className: "dsh-github-item-title", href: p.url, target: "_blank", rel: "noopener noreferrer", style: { textDecoration: "none" } },
+                        "#" + p.number + " " + p.title),
+                      h("div", { className: "dsh-github-item-meta" },
+                        h("span", null, (p.repository && p.repository.nameWithOwner) || ""),
+                        pb ? h("span", { className: "dsh-github-badge dsh-badge-" + pb.tone }, pb.label) : null,
+                        p.author && p.author.login ? h("span", null, "@" + p.author.login) : null,
+                        formatRelativeTime(p.updatedAt) ? h("span", null, "更新于 " + formatRelativeTime(p.updatedAt)) : null)
+                    );
+                  })
+                )
+          )
+        );
+
+        // Issue 列表
+        orgContent.push(
+          h("div", { key: "issues", className: "dsh-github-section" },
+            h("div", { className: "dsh-github-section-header" },
+              h("h3", null, "📋 Issues（" + (d.issues || []).length + (d.issuesTruncated ? "+" : "") + "）")),
+            (d.issues || []).length === 0
+              ? h("div", { className: "dsh-github-empty" }, "该范围内暂无 Issue")
+              : h("div", { className: "dsh-github-list" },
+                  d.issues.map(function (is: any) {
+                    var ib = issueStateBadge(is.state);
+                    return h("div", { key: (is.repository && is.repository.nameWithOwner) + "#" + is.number, className: "dsh-github-item" },
+                      h("a", { className: "dsh-github-item-title", href: is.url, target: "_blank", rel: "noopener noreferrer", style: { textDecoration: "none" } },
+                        "#" + is.number + " " + is.title),
+                      h("div", { className: "dsh-github-item-meta" },
+                        h("span", null, (is.repository && is.repository.nameWithOwner) || ""),
+                        ib ? h("span", { className: "dsh-github-badge dsh-badge-" + ib.tone }, ib.label) : null,
+                        is.author && is.author.login ? h("span", null, "@" + is.author.login) : null,
+                        is.labels && is.labels.length > 0
+                          ? is.labels.slice(0, 3).map(function (lbl: any) { return h("span", { key: lbl.name, className: "dsh-github-badge dsh-badge-yellow" }, lbl.name); })
+                          : null,
+                        formatRelativeTime(is.updatedAt) ? h("span", null, "更新于 " + formatRelativeTime(is.updatedAt)) : null)
+                    );
+                  })
+                )
+          )
+        );
+
+        orgContent.push(h("div", { key: "note", style: { fontSize: "11px", opacity: 0.55, marginTop: "10px", lineHeight: 1.6 } },
+          "组织视图为只读浏览：点击条目在浏览器打开详情。对该组织仓库的写操作（建 PR / 评论 / 合并等）请让 Agent 调用对应工具并显式传 repo 参数。"));
+      }
+
+      contentEl = h("div", null, orgContent);
     }
   } else {
     if (!auth?.loggedIn) {

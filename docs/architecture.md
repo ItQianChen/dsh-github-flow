@@ -209,7 +209,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **50 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
+项目配备了 **51 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
 - 阶段数与 `test/run-all.mjs` 的 `phases` 数组由 `test/phase35-doc.test.mjs` 对账，改一处漏一处会直接红；
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；
@@ -260,3 +260,4 @@
 - `phase48`：**本地文件入参契约测试**（`resolveBodySource` 的语义表逐行对账：文件来源走 `[fileFlag, '-']` + stdin、内联来源的 argv 与改造前**逐字节一致**、`body` 与 `body_file` 同时给出直接报错而不是静默选一个、空文件等同无正文；相对路径按工作区解析、严格 UTF-8 拒绝 GBK/ANSI 与 NUL 二进制、BOM 剥除、4MB 字节与 65,536 字符双上限（`input_file` 与 `notes_file` 关闭字符校验）；七个工具的 flag 接线——`--body-file -` / `--notes-file -` / `--input -` / `--from-file -`，`review` 写回走 REST 请求体而非 flag）。
 - `phase49`：**提交详情 / 未提交清单的文件 Diff 弹窗契约测试**（`diff-utils.ts` 四个纯函数：`parseDiffGitLine` 对含空格路径按**最后一个** `" b/"` 切出 b 侧（截错就点开是空的）、`normalizeRenamePath` 把 `src/{old => new}.ts` 与 `old => new` 两种 `--stat` 写法归一成新路径、`splitUnifiedPatch` 按 `diff --git` 边界切段并**丢弃首个 `diff --git` 之前的提交头**（否则第一段会渲染成幽灵差异）、`Binary files` 判二进制、`rename from`/`rename to` 定新旧路径、**按「首个 `@@` 之前才算文件头」的状态机解析**（正文里以 `---`/`+++` 开头的行是 Markdown 分隔线，按行首前缀判会把它们当文件头，导致增删计数为 0 且染错颜色）、`findPatchSection` 支持新路径 / 旧路径 / `{old => new}` 原文三态命中；`executor.getCommitDiff` 在临时 git 仓库真跑——两文件提交切出两段且 `truncated=false`、`git mv` 提交的 patch 含 `rename from`/`rename to`、非法 sha 在触达子进程前拒绝；整包 patch 超过 400k 字符时在**最后一个 `diff --git` 边界**截断（绝不切半个 hunk，只有单文件巨型 diff 找不到边界才硬切）并置 `truncated`；`/api/github/commit-diff` 路由与 `get_commit_diff` action 双向可用；`lib/client.js` 内联 `FileDiffModal`/`splitUnifiedPatch`、`commit-modal.ts` 的文件变更统计行绑 `onClick` 弹窗）。
 - `phase50`：**系统代理自动跟随契约测试**（`parseProxyServer` 覆盖注册表 ProxyServer 的四种实测形态——单一地址补 `http://`、分协议取 https 兜底 http、`socks=` 映射 `socks5://`、无端口结构不硬造；`detectSystemProxy` 对 ProxyEnable=0 / ProxyServer 缺失 / reader 抛错三类异常全部返回关闭态或 null 而非抛错；**模式互斥裁决**：自动跟随开 + 系统开 → 系统地址无视手动 url、系统关 → 直连零 env、自动跟随关 → 手动 url 生效，gh 与 npm 两条链路的 env 注入各自断言；`snapshot` 带 `systemProxy` + `effectiveUrl` 供 UI 展示；NO_PROXY 恒含 `127.0.0.1` 防回环劫持的不变量在两种模式下都成立；UI 提交 `autoFollowSystem` 且自动跟随时手动开关置灰）；
+- `phase51`：**Organizations 只读浏览契约测试**（issue #17 的「查看」诉求：组织列表 `/api/github/orgs` + 组织聚合/单仓库下钻 `/api/github/org-overview`；组织名与仓库全名白名单防 argv 注入——放行空白/分号/路径穿越会让 gh 把它们当 flag；只读静态契约：源码中不得出现 create/edit/merge/delete/comment/close/reopen/transfer 任一写子命令；组织聚合用 `--owner=<org>`、下钻用 `--repo=<owner/name>`，两者不得串味；PR 满页标记 truncated、单路失败不拖垮整体；前端组织 Tab 的下钻与回退接线；本分支不含 svg-icons，面板不得调用 iconWithText/renderIcon/renderDot）；

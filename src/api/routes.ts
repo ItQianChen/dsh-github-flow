@@ -20,6 +20,7 @@ import { registerOverviewRoutes } from './routes-overview.js';
 import { registerActionRoutes } from './routes-actions.js';
 import { registerLifecycleRoutes } from './routes-lifecycle.js';
 import { registerProxyRoutes, type ProxyRouteManager } from './routes-proxy.js';
+import { registerOrgRoutes } from './routes-org.js';
 
 // 再导出历史公共接口：globalCacheTtlMs 曾被测试直接 import，保持路径稳定避免破坏消费方
 export { globalCacheTtlMs };
@@ -54,6 +55,15 @@ export function registerApiRoutes(
 
   const cacheMap = new TtlCache<GitHubOverviewData>(cacheTtlMs);
   const globalCache = new TtlCache<GlobalOverviewData>(globalCacheTtlMs(cacheTtlMs));
+  /**
+   * 组织视图缓存。
+   *
+   * 为什么必须独立且用与全局驾驶舱同量级的 TTL：组织聚合一次要 spawn 最多 3 个 gh
+   * （PR / Issue / 仓库列表），实测秒级；而「切组织-看仓库-下钻-退回」是典型的来回操作，
+   * 没有缓存时每次点击都要重等一轮。键是 `org|repo`，切组织只影响自己的条目，
+   * 不会让全局驾驶舱缓存失效（两者本来就是不同数据集）。
+   */
+  const orgCache = new TtlCache<any>(globalCacheTtlMs(cacheTtlMs));
 
   /**
    * 注册单个路由并返回注销器。
@@ -92,4 +102,6 @@ export function registerApiRoutes(
   registerActionRoutes(deps, executor, cacheMap, globalCache);
   registerLifecycleRoutes(deps, executor, checker, upgrader);
   registerProxyRoutes(deps, checker, proxyManager);
+  // 组织只读浏览（issue #17 的「查看」诉求）：独立分组，纯 GET，无写操作
+  registerOrgRoutes(deps, executor, orgCache);
 }
