@@ -85,18 +85,35 @@ export class TelemetryCollector {
 
   /**
    * 记录一次工具调用结果（Fail-Open 保护，绝不阻滞主流程）
+   *
+   * **两种载荷形状都认**（这是本函数长期读错层级的地方）：
+   * - 运行时：宿主 `tools/result` 传的是**归一化后**的 `ToolExecutionResult`
+   *   `{ isError, content, value, meta }`（`dsh-tools/src/pipeline.ts:381-425`），
+   *   工具的原始返回值在 `value` 里。只读 `result.status` 的话生产环境里
+   *   `degraded` / `confirmBlocked` / `success` 全是错的。
+   * - 单元测试（`test/phase20`）直接拿**原始载荷**调本函数。
    */
   recordCall(name: string, args: any, result: any, durationMs?: number): void {
     try {
       if (!name || typeof name !== 'string') return;
       this.callCounter++;
 
+      // 归一化：有 isError 字段即视为宿主包装形状
+      const wrapped = Boolean(result) && typeof result === 'object' && 'isError' in (result as any);
+      const payload: any = wrapped ? (result as any).value : result;
+      const wrappedError = wrapped ? (result as any).error : undefined;
+
       const action = typeof args?.action === 'string' ? args.action : undefined;
-      const isScopeBlocked = result?.status === 'SCOPE_REQUIRED';
-      const isConfirmBlocked = result?.status === 'AWAITING_CONFIRMATION';
+      const isScopeBlocked = payload?.status === 'SCOPE_REQUIRED';
+      const isConfirmBlocked = payload?.status === 'AWAITING_CONFIRMATION';
       const isBlocked = isScopeBlocked || isConfirmBlocked;
-      const isDegraded = result?.degraded === true || result?.data?.degraded === true;
-      const isFailed = !isBlocked && (result?.ok === false || result?.success === false || !!result?.error);
+      const isDegraded = payload?.degraded === true || payload?.data?.degraded === true;
+      const isFailed =
+        !isBlocked &&
+        (wrappedError !== undefined ||
+          payload?.ok === false ||
+          payload?.success === false ||
+          !!payload?.error);
 
       const record: TelemetryRecord = {
         id: `t_${Date.now()}_${this.callCounter}`,
@@ -108,7 +125,9 @@ export class TelemetryCollector {
         degraded: isDegraded,
         scopeBlocked: isScopeBlocked,
         confirmBlocked: isConfirmBlocked,
-        errorType: isFailed ? String(result?.error || 'UNKNOWN_ERROR').slice(0, 50) : undefined,
+        errorType: isFailed
+          ? String(wrappedError?.info?.code || payload?.error || wrappedError?.message || 'UNKNOWN_ERROR').slice(0, 50)
+          : undefined,
       };
 
       this.ringBuffer.push(record);

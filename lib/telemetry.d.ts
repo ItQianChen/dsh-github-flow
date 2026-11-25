@@ -58,6 +58,13 @@ export declare class TelemetryCollector {
     constructor(capacity?: number);
     /**
      * 记录一次工具调用结果（Fail-Open 保护，绝不阻滞主流程）
+     *
+     * **两种载荷形状都认**（这是本函数长期读错层级的地方）：
+     * - 运行时：宿主 `tools/result` 传的是**归一化后**的 `ToolExecutionResult`
+     *   `{ isError, content, value, meta }`（`dsh-tools/src/pipeline.ts:381-425`），
+     *   工具的原始返回值在 `value` 里。只读 `result.status` 的话生产环境里
+     *   `degraded` / `confirmBlocked` / `success` 全是错的。
+     * - 单元测试（`test/phase20`）直接拿**原始载荷**调本函数。
      */
     recordCall(name: string, args: any, result: any, durationMs?: number): void;
     /**
