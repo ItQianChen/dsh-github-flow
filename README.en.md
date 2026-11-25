@@ -426,6 +426,8 @@ Click the **Octocat icon** in DSH's left navigation bar to open the full-screen 
 * **🔀 PR Review Workbench**: Click any PR to review author, branch flow, CI/review status, Markdown description, comment timeline, and the changed-file list with high-fidelity unified diffs — all without leaving DSH (diffs are sliced per file in memory, so switching files is instant);
 * **📝 Issue Online Viewer**: Click any Issue to read the full discussion — body and comments rendered as Markdown, long content collapsed, GitHub-hidden (SPAM) comments explicitly flagged, with label chips, assignees, milestone, sub-issue progress, and linked PRs.
 * **⚡ Actions Run Online Detail**: Click any run card in the sidebar to inspect workflow / branch / commit / trigger event / duration plus the full job & step tree (per-step conclusion and timing, failed steps highlighted, first failed job expanded by default). On failure, pull an anchored log excerpt on demand (up to 3 failed jobs per click, 90s server-side batch budget, 100s client-side abort), while `GitHub ↗` still opens the complete log on GitHub.
+* **🖼️ Inline Body Images**: Markdown images inside PR / Issue modals render as inline, clickable-to-original images (lazy-loaded, **no Referer sent**), limited to GitHub-hosted assets (`user-attachments` / `user-images` / `private-user-images` / `raw` / `camo`). Other https images degrade to clickable links and non-http(s) schemes to plain text; badge links such as `[![CI](badge)](workflow)` render correctly as an image inside a link.
+* **🏢 Organizations (5th tab, read-only)**: lists the organizations you belong to — open one to browse its repositories / PRs / issues, drill into a single repository, and step back via breadcrumbs. Switching and drilling are cached (same TTL tier as the cockpit, cleared by the refresh button), out-of-order responses are dropped, and failures offer a retry. Read-only by design: ask the Agent to run write operations with an explicit `repo` argument.
 
 <p align="center">
   <img src="./docs/images/1.png" alt="GitHub Global Cockpit" width="100%" />
@@ -481,12 +483,15 @@ Click **`[⚙️ Settings]`** in the top right of the Cockpit (or the ⚙️ but
   * **📁 Local Git Real-Time Watch (Right Sidebar Only, Enabled by Default)**: Monitors `.git/HEAD` and `.git/index` metadata directly; staging, commit, and branch changes synchronize to the sidebar within milliseconds with an 800ms debounce, consuming zero external network quota; omitted from the main cockpit to preserve lightweight performance.
 * **Visual Cache Management**: Real-time snapshot size and timestamp visibility with one-click `[🗑️ Clear Cache]`.
 
-**🌐 Network Proxy Section** — route all plugin traffic through your proxy:
-* **Global Scope**: Once configured, the cockpit, right-sidebar panel, all 19 Agent tool invocations, and one-click upgrades route through the proxy;
-* **Protocol Support**: `http://` / `https://` / `socks5://` / `socks5h://` (`socks5h` delegates DNS resolution to the proxy for stronger pollution resistance);
-* **`[🧪 Test Connectivity]`**: One-click latency probe against the GitHub API through the current proxy;
-* **Instant Effect**: Persisted to `~/.dsh/data/dsh-github-flow/proxy.json` (auto-restored on DSH restart) — no restart, no plugin reload;
-* **NO_PROXY Exclusions**: `localhost` and `127.0.0.1` are forcibly included.
+**🌐 Network Proxy Section** — route all plugin traffic through your proxy (hierarchical toggles, applied instantly):
+* **Global Scope**: once enabled, the cockpit, right-sidebar panel, all 19 Agent tool invocations and one-click upgrades go through the proxy. When disabled the plugin stays hands-off — no env vars injected, no process-wide dispatcher touched; `gh` and Node fetch fall back to the host's `HTTPS_PROXY` or go direct;
+* **Follow System Proxy (Windows)**: reads the `Internet Settings` registry key that clash / v2rayN flip, so their "system proxy" switch is followed within 30 seconds and turning it off falls back to direct. Manual address entry only applies when "follow" is off — the two modes are mutually exclusive to avoid dual-source ambiguity;
+* **Four honest states**: following / user-disabled (`ProxyEnable=0`) / PAC auto-config detected (unsupported — explicit notice, falls back to manual) / address unparsable. No more vague "not detected";
+* **Protocol Support**: `http://` / `https://` / `socks5://` / `socks5h://` (`socks5h` delegates DNS to the proxy for stronger pollution resistance);
+* **`[🧪 Test Connectivity]`**: probes the configuration **actually in effect**. http/https go through the plugin's own undici `ProxyAgent`; **socks5 is probed via a `gh api` subprocess** (Node fetch does not support SOCKS — a direct probe would invert the conclusion), and the result is labelled "via gh chain";
+* **npm chain differences are stated**: with socks5 (or when the host cannot resolve undici) npm version probing stays direct while GitHub data paths and Agent tools are unaffected — the manual form says so explicitly;
+* **Instant Effect**: persisted to `~/.dsh/data/dsh-github-flow/proxy.json` (auto-restored on restart) — no restart, no plugin reload. Address / NO_PROXY use their own "Save" button; the three toggles save as you flip them;
+* **NO_PROXY Exclusions**: `localhost` and `127.0.0.1` are forcibly included, so loopback Web API calls are never hijacked.
 
 **⬆️ Update Source Section** — choose which npm registry checks for new versions:
 * **Three options**: 🌍 npm official registry (default — new releases visible immediately) / 🇨🇳 npmmirror (fast in China; minutes-level sync delay) / ⛔ No update checks (only silences the upgrade banner; `/gh upgrade` and one-click upgrade remain available);

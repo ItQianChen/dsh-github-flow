@@ -354,6 +354,14 @@ export function GithubHelpModal(props: {
           q: "Q8: 为什么 Actions 弹窗只能看 3 个失败 job 的日志？",
           a: "一次点击串行拉 3 个 job 已经是 60–90 秒量级；矩阵构建下失败 job 可能有十几个，全拉会把一次点击变成几分钟。当前策略：只取前 3 个失败 job，并在按钮下方明示「共 N 个，其余请到 GitHub 查看」。需要逐个深挖时，让 Agent 用 `github_run(action:'log_failed', run_id:'…')` 或 `github_task(action:'diagnose_ci')` 分批处理更合适。",
         },
+        {
+          q: "Q9: PR / Issue 正文里的图片显示不出来？",
+          a: "内联渲染只对 GitHub 自有图床生效（`user-attachments` / `user-images` / `private-user-images` / `raw` / `camo`）且必须是 https，其它域名的图会退化成可点文字链接，点开仍能在浏览器查看。\n- 显示成链接而不是图：图片不在上述域，或地址是 http；\n- 图裂（alt 文字 + 链接还在）：多半是浏览器到 GitHub 图床不通（开代理后重试），或私有仓库图片需要 `gh` 登录态；\n- 想让 Agent 直接看图：用 `github_issue(action:'view_images', issue_number:N)` 或 `github_pr(action:'view_images', pr_number:N)`。",
+        },
+        {
+          q: "Q10: 驾驶舱的「组织」标签页是空的？能直接在里面操作组织仓库吗？",
+          a: "「组织」是只读浏览视图：组织列表 ➔ 组织聚合（仓库 / PR / Issue）➔ 下钻单仓库，面包屑可逐级退回。\n- 列表为空：当前账号未加入任何组织；也可能是当前 `gh` 登录态缺少组织读取权限，需要在重新授权时勾选 `read:org`（增量授权的操作方式见 Q2）；\n- 组织数上限 100，触顶会在列表下方提示；\n- 写操作：该视图刻意只读，请让 Agent 调对应工具并显式传 repo，例如 `github_pr(action:'create', repo:'org/repo', …)`——工具层本来就支持组织仓库，只是 UI 未开放写入口。",
+        },
       ];
 
       return h("div", null,

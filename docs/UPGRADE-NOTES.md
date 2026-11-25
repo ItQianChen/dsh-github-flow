@@ -81,6 +81,8 @@ git push origin master --tags
 | 无 gh 环境刷新永久卡死 | 前端数据链路 fetch 无 AbortController，代理劫持回环时挂起 | 全部数据 fetch 绑 signal（phase7 第 8 节锚点）；新增前端 fetch 必须带 signal 或显式超时 |
 | React Hook 变量提升 undefined 崩溃 | containerRef 写在 useEffect 下方，组件挂载读取 containerRef.current 抛致命 TypeError 白屏 | 必须在组件生命周期最顶部声明所有 useRef；访问点强制加 `containerRef && containerRef.current` 守卫 |
 | 前端模块目录命名解析冲突 | 在包内创建同名 `src/client/` 目录导致模块解析器在解析 `exports["./client"]` 时发生歧义报错 | 前端拆分子模块统一下沉至独立命名空间（如 `src/ui/`），杜绝同名文件与目录冲突 |
+| 代理「测试连通性」结论与真实可用性相反（2026-11-25） | 移除进程级 `setGlobalDispatcher` 后只给 updater 补了 dispatcher，`probe()` 漏掉 → 裸 fetch 走直连；GFW 下代理正常却报失败、代理写错却报成功 | `probe()` 显式 `getDispatcher()`；phase50 有「mock `globalThis.fetch` 校验 dispatcher」行为断言 + 源码契约双保险；socks5 明确拒绝 Node fetch 探测，改走 `gh api` 子进程 |
+| phase50 在 Linux CI 全红（2026-11-25） | `detectSystemProxy` 的平台门禁排在注入 reader 之前，mock 被无视；另有一条断言要求宿主能解析 undici（CI 没有 `~/.dsh` profile） | 平台门禁只约束真实注册表路径（`!reader && 非 win32`）；新增测试断言不得依赖宿主 undici / 运行平台，本地验证用「Linux 平台 + 空 HOME」模拟 CI |
 
 ## 七、环境陷阱速查（升级验证时必读）
 
