@@ -57,10 +57,15 @@ jobs:
       - name: 全量测试（含 phase34 契约 / phase35 文档对账 / phase36 宿主契约）
         run: node test/run-all.mjs
 
-      # 产物漏提交检查：先只告警。typescript 小版本差异可能产生纯格式 diff，
-      # 直接硬门禁会误伤；但这条检查必须有——docs/UPGRADE-NOTES.md 记着
-      # v0.2.0 事故的一半原因是"发布时 lib/version.js 是旧产物"。
-      # 稳定两周后把 continue-on-error 去掉。
-      - name: 产物一致性（先只告警）
-        continue-on-error: true
+      # 产物漏提交检查：硬门禁。
+      #
+      # 为什么现在可以硬门禁（此前只告警的两个前提都已消除）：
+      # 1) 行尾噪音：仓库已加 .gitattributes（全仓 LF），build 产物与工作区不再
+      #    因 CRLF 差异刷出「假 M」，diff 里只会剩下真实的内容差异；
+      # 2) 编译器漂移：CI 用 `pnpm install --frozen-lockfile`，typescript 版本由
+      #    lockfile 锁死，不存在此前担心的「小版本产生纯格式 diff」。
+      #
+      # 这条必须有——docs/UPGRADE-NOTES.md 记着 v0.2.0 事故的一半原因是
+      # 「发布时 lib/version.js 是旧产物」，靠人肉检查从来没有拦住过。
+      - name: 产物一致性
         run: git diff --exit-code --stat -- lib/

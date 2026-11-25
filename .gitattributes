@@ -1,0 +1,9 @@
+# 统一换行符：tsc 与 scripts/build.mjs 的产物恒为 LF。
+# 若工作区按 CRLF 检出（core.autocrlf=true 的 Windows），每次 pnpm build 都会把
+# lib/ 下所有文件刷成「假 M」——看起来像产物变了，其实只是行尾差异，
+# 既掩盖真实的产物差异，也让「产物是否陈旧」这条门禁形同虚设。
+#
+# 为什么是全局 * text=auto eol=lf 而不是只约束 lib/：
+# 仓库内没有 .bat / .cmd / .ps1，不存在必须 CRLF 的脚本；二进制（png 等）
+# 由 text=auto 的 NUL 探测自动排除。单一纪律比「按目录分治」更难出错。
+* text=auto eol=lf
