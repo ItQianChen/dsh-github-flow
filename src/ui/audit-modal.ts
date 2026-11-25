@@ -79,6 +79,22 @@ export function AuditModal(props: {
   var [selected, setSelected] = React.useState([] as string[]);
   /** 两段式确认：'delete' / 'clear' 时底部按钮进入确认态，再点一次才真正执行 */
   var [armed, setArmed] = React.useState(null as 'delete' | 'clear' | null);
+  /** 用量与开关（服务端 `usage`）：`enabled=false` 时列表为空是"关掉了"，不是"没有记录" */
+  var [usage, setUsage] = React.useState(null as any);
+  /** 设置面板是否展开（开关 + 预算就地改，改完立刻生效、无需重启） */
+  var [settingsOpen, setSettingsOpen] = React.useState(false);
+  var [budgetDraft, setBudgetDraft] = React.useState(8);
+  var [savingSettings, setSavingSettings] = React.useState(false);
+
+  /**
+   * 两个布尔必须分开（服务端 `usage` 也分两个）：
+   * - `recordEnabled`：**用户的开关**，驱动复选框；
+   * - `recordActive`：**实际在工作**（开关开 且 存储没降级），驱动列表与关闭态。
+   * 合并成一个的话，磁盘坏掉时复选框会显示成"未勾选"，用户再点一下又因为
+   * "开关本来就是开的"而无变化——一个怎么点都不动的开关，比明确的错误提示更糟。
+   */
+  var recordEnabled = usage ? usage.enabled === true : true;
+  var recordActive = usage ? usage.active === true : true;
 
   /** 相对时间：记录里是 epoch 毫秒，而 formatRelativeTime 吃 ISO 字符串 */
   var relTime = function (ms: any): string {
@@ -120,6 +136,10 @@ export function AuditModal(props: {
         setItems(Array.isArray(j.data && j.data.items) ? j.data.items : []);
         setTotal(Number(j.data && j.data.total) || 0);
         setDegraded(j.data && j.data.degraded ? String(j.data.degraded) : null);
+        if (j.data && j.data.usage) {
+          setUsage(j.data.usage);
+          setBudgetDraft(Math.max(1, Math.round((Number(j.data.usage.maxBytes) || 0) / 1048576)));
+        }
         setSelected([]);
         setArmed(null);
       })
@@ -127,6 +147,34 @@ export function AuditModal(props: {
         setLoading(false);
         setError('网络请求异常：' + ((err && err.message) || '未知错误'));
       });
+  };
+
+  /** 保存开关/预算：热生效（服务端立即改运行时 + 落 audit-settings.json） */
+  var saveSettings = function (patch: any) {
+    if (savingSettings) return;
+    setSavingSettings(true);
+    fetch('/api/github/audit/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch || {}),
+    })
+      .then(function (r: any) { return r.json().catch(function () { return null; }); })
+      .then(function (j: any) {
+        setSavingSettings(false);
+        if (!j || !j.ok) { setError((j && j.message) || '保存设置失败'); return; }
+        if (j.data && j.data.usage) setUsage(j.data.usage);
+        setError(null);
+        load();
+      })
+      .catch(function (err: any) {
+        setSavingSettings(false);
+        setError('网络请求异常：' + ((err && err.message) || '未知错误'));
+      });
+  };
+
+  var mbText = function (bytes: any) {
+    var mb = (Number(bytes) || 0) / 1048576;
+    return (mb >= 10 ? mb.toFixed(0) : mb.toFixed(1)) + ' MB';
   };
 
   React.useEffect(function () {
@@ -413,9 +461,104 @@ export function AuditModal(props: {
               h('div', { className: 'dsh-github-guide-desc' }, degraded)
             )
           : null,
+        // 设置面板：开关与预算就地改，改完立刻生效（服务端热改 + 落 audit-settings.json）
+        settingsOpen
+          ? h(
+              'div',
+              { className: 'dsh-github-guide-card', style: { marginBottom: '10px' } },
+              h('div', { className: 'dsh-github-guide-header' }, '⚙️ 操作记录设置'),
+              h(
+                'label',
+                { style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', margin: '6px 0' } },
+                h('input', {
+                  type: 'checkbox',
+                  checked: recordEnabled,
+                  disabled: savingSettings,
+                  onChange: function (e: any) { saveSettings({ enabled: e.target.checked === true }); },
+                }),
+                '启用操作记录（关闭后不再写盘，启动也不再加载历史）'
+              ),
+              h(
+                'div',
+                { style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', flexWrap: 'wrap' } },
+                '保留预算：',
+                h(
+                  'select',
+                  {
+                    className: 'dsh-github-select',
+                    value: String(budgetDraft),
+                    disabled: !recordEnabled || savingSettings,
+                    onChange: function (e: any) {
+                      var mb = Number(e.target.value);
+                      setBudgetDraft(mb);
+                      saveSettings({ budgetMB: mb });
+                    },
+                    style: { fontSize: '11px', padding: '2px 6px' },
+                    'aria-label': '保留预算',
+                  },
+                  [1, 2, 4, 8, 16, 32, 64].map(function (mb) {
+                    return h('option', { key: mb, value: String(mb) }, mb + ' MB');
+                  })
+                ),
+                h(
+                  'span',
+                  { style: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary, #656d76)' } },
+                  usage ? '已用 ' + mbText(usage.bytes) + ' / ' + mbText(usage.maxBytes) : ''
+                )
+              ),
+              h(
+                'div',
+                { className: 'dsh-github-guide-desc', style: { marginTop: '4px' } },
+                '超出预算时自动丢弃最早的记录。审核（若已开启）依赖本开关：关掉记录，审核一并停用。'
+              )
+            )
+          : null,
+        // 关闭态：列表没有意义（没加载），只给"开启"与"清空"两个动作。
+        // 判据用 `recordEnabled`（用户关的）而不是 `recordActive`：降级时上面已经有
+        // 「记录功能已禁用」提示，再来一张「已关闭」会让人以为是两个问题。
+        !recordEnabled
+          ? h(
+              'div',
+              { className: 'dsh-github-guide-card warning', style: { marginBottom: '10px' } },
+              h('div', { className: 'dsh-github-guide-header' }, '🕘 操作记录已关闭'),
+              h(
+                'div',
+                { className: 'dsh-github-guide-desc' },
+                '关闭后不再写入新记录、启动也不再加载历史。已有历史文件仍保留在本地，可点「清空历史记录」删除。'
+              ),
+              h(
+                'div',
+                { style: { display: 'flex', gap: '8px', marginTop: '8px' } },
+                h(
+                  'button',
+                  {
+                    className: 'dsh-github-primary-btn',
+                    onClick: function () { saveSettings({ enabled: true }); },
+                    disabled: savingSettings,
+                  },
+                  '立即开启'
+                ),
+                h(
+                  'button',
+                  {
+                    className: 'dsh-github-btn-sm' + (armed === 'clear' ? ' active' : ''),
+                    onClick: handleClear,
+                    disabled: busy,
+                    style: {
+                      color: '#cf222e',
+                      ...(armed === 'clear' ? { fontWeight: 600 } : {}),
+                    },
+                  },
+                  // 两段式确认的第二次点击要给出与首次不同的文案，否则用户不知道
+                  // 这一下就是真删了（共享 handleClear 的 armed 状态，但措辞按此处语境）
+                  armed === 'clear' ? '确认清空历史记录？' : '清空历史记录'
+                )
+              )
+            )
+          : null,
         // 从右栏打开但拿不到工作区路径：如实说明"已退化为全局"，而不是静默显示全部
         // ——否则用户会把别的仓库的记录当成自己的，这比空列表更误导。
-        scope === 'workspace' && !scopedCwd
+        recordActive && scope === 'workspace' && !scopedCwd
           ? h(
               'div',
               { className: 'dsh-github-guide-card warning', style: { marginBottom: '10px' } },
@@ -430,7 +573,7 @@ export function AuditModal(props: {
         error
           ? h('div', { className: 'dsh-github-empty', style: { color: '#cf222e' } }, error)
           : null,
-        items.length === 0 && !loading && !error
+        recordActive && items.length === 0 && !loading && !error
           ? h(
               'div',
               { className: 'dsh-github-empty' },
@@ -441,7 +584,7 @@ export function AuditModal(props: {
                   : '还没有记录。Agent 每次调用 GitHub 工具后，这里会出现一条。'
             )
           : null,
-        items.length > 0
+        recordActive && items.length > 0
           ? h(
               'div',
               {
@@ -470,7 +613,7 @@ export function AuditModal(props: {
               h('div', null, '结果')
             )
           : null,
-        items.map(renderRow)
+        recordActive ? items.map(renderRow) : null
       ),
       // 底栏
       h(
@@ -489,15 +632,34 @@ export function AuditModal(props: {
         h(
           'span',
           { style: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary, #656d76)' } },
-          selected.length > 0 ? '已选 ' + selected.length + ' 条' : '最多显示最近 ' + PAGE_SIZE + ' 条'
+          !recordEnabled
+            ? '记录已关闭'
+            : !recordActive
+              ? '记录不可用（存储降级）'
+              : selected.length > 0
+                ? '已选 ' + selected.length + ' 条'
+                : usage
+                  ? '已用 ' + mbText(usage.bytes) + ' / ' + mbText(usage.maxBytes) + ' · ' + usage.rows + ' 条'
+                  : '最多显示最近 ' + PAGE_SIZE + ' 条'
         ),
         h('div', { style: { flex: 1 } }),
         h(
           'button',
           {
+            className: 'dsh-github-btn-sm' + (settingsOpen ? ' active' : ''),
+            onClick: function () { setSettingsOpen(!settingsOpen); },
+            style: { padding: '4px 10px', fontSize: '11px' },
+            title: '开关操作记录、调整保留预算（改完立刻生效，无需重启）',
+            'aria-expanded': settingsOpen ? 'true' : 'false',
+          },
+          '⚙️ 设置'
+        ),
+        h(
+          'button',
+          {
             className: 'dsh-github-btn-sm' + (armed === 'delete' ? ' active' : ''),
             onClick: handleDelete,
-            disabled: selected.length === 0 || busy,
+            disabled: !recordActive || selected.length === 0 || busy,
             style: {
               padding: '4px 10px',
               fontSize: '11px',

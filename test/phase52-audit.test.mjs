@@ -13,7 +13,7 @@
 //    而老测试直接传原始载荷。两种形状都必须认，否则要么生产全错、要么既有断言静默失效。
 // 5. 客户端模块漏登记 scripts/build.mjs 会**白屏且构建成功**，只能用静态断言守住。
 
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +31,7 @@ function ok(cond, name, extra) {
 const lib = (p) => 'file://' + path.join(ROOT, p).replace(/\\/g, '/');
 const {
   AuditStore, classifyWrite, classifyRisk, summarizeOperation, extractOutcome, pickTarget,
-  resolveRepoFromExec, resolveScopeFromExec,
+  resolveRepoFromExec, resolveScopeFromExec, deriveMaxRows, clampBudget,
 } = await import(lib('lib/audit.js'));
 const { WRITE_ACTIONS } = await import(lib('lib/tool-tiers.js'));
 const { DESTRUCTIVE_ACTIONS } = await import(lib('lib/destructive.js'));
@@ -183,19 +183,20 @@ console.log('\n--- 5. 文件装载：坏行跳过 / intent 无 result ---');
   await store.dispose();
 }
 
-console.log('\n--- 6. 上限与分页 ---');
+console.log('\n--- 6. 派生行数上限与分页 ---');
 {
-  const store = makeStore({ maxRows: 50 });
-  for (let i = 0; i < 60; i++) store.recordCall('github_pr', { action: 'list' }, { ok: true }, { callId: 'k' + i });
-  ok(store.rowCount() === 50, '超过 maxRows 后按时间尾部保留');
+  // 行数下限被 clamp 到 1000（防"极短行"病态），因此这里用 1000 行验证淘汰与分页
+  const store = makeStore({ maxRows: 1000, maxBytes: 64 * 1024 * 1024 });
+  for (let i = 0; i < 1100; i++) store.recordCall('github_pr', { action: 'list' }, { ok: true }, { callId: 'k' + i });
+  ok(store.rowCount() === 1000, '超过行数上限后按时间尾部保留');
   const page = store.list({ limit: 200 });
-  ok(page.total === 50, '折叠后总数等于上限');
-  ok(page.items[0].at > page.items[49].at, '列表按时间倒序（最新在前）');
-  const paged = store.list({ limit: 10, offset: 40 });
-  ok(paged.items.length === 10 && paged.total === 50, 'limit/offset 分页正确');
+  ok(page.total === 1000, '折叠后总数等于上限');
+  ok(page.items[0].at > page.items[99].at, '列表按时间倒序（最新在前）');
+  const paged = store.list({ limit: 10, offset: 990 });
+  ok(paged.items.length === 10 && paged.total === 1000, 'limit/offset 分页正确');
   await store.flush();
   const lines = readFileSync(store.filePath(), 'utf8').trim().split('\n').filter(Boolean);
-  ok(lines.length === 50, '压实后文件行数等于上限（超限部分真被丢弃）');
+  ok(lines.length === 1000, '压实后文件行数等于上限（超限部分真被丢弃）');
   ok(!lines[0].includes('"k0"'), '最早的那条已被截断');
   await store.dispose();
 }
@@ -246,8 +247,8 @@ console.log('\n--- 7. 路由契约 ---');
   };
 
   const { routes, store } = makeHarness();
-  ok(routes.length === 3, '注册 3 条路由');
-  ok(routes.every((r) => r.kind === 'exact'), '三条均为 exact 匹配');
+  ok(routes.length === 4, '注册 4 条路由（列表 / 删除 / 清空 / 设置）');
+  ok(routes.every((r) => r.kind === 'exact'), '四条均为 exact 匹配');
 
   store.recordCall('github_pr', { action: 'merge', pr_number: 19 }, { ok: true }, { callId: 'r1' });
   store.recordCall('github_pr', { action: 'list' }, { ok: true }, { callId: 'r2' });
@@ -300,6 +301,23 @@ console.log('\n--- 7. 路由契约 ---');
   res = await hit(routes, '/api/github/audit/records/clear', { method: 'POST', headers: REQ_OK, body: '{}' });
   ok(res.statusCode === 200, '清空 200');
   ok(store.list().total === 0, '清空后无记录');
+
+  // 设置端点：关与预算（关闭只有一个入口 = enabled，预算 0 非法）
+  res = await hit(routes, '/api/github/audit/records', { method: 'GET', url: '/api/github/audit/records' });
+  ok(Boolean(res.body.data.usage) && res.body.data.usage.enabled === true, '列表响应带 usage（默认开）');
+  res = await hit(routes, '/api/github/audit/settings', { method: 'GET' });
+  ok(res.statusCode === 405, '设置端点拒绝 GET（405）');
+  res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ budgetMB: 0 }) });
+  ok(res.statusCode === 400, 'budgetMB=0 被拒（关闭走 enabled，不是预算 0）');
+  res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ budgetMB: 65 }) });
+  ok(res.statusCode === 400, 'budgetMB 超上限被拒');
+  res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ budgetMB: 'abc' }) });
+  ok(res.statusCode === 400, 'budgetMB 非数字被拒');
+  res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ enabled: false }) });
+  ok(res.statusCode === 200 && res.body.data.usage.enabled === false, '关闭记录 200 且 usage.enabled=false');
+  res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ enabled: true, budgetMB: 4 }) });
+  ok(res.statusCode === 200 && res.body.data.usage.enabled === true, '重新开启 200');
+  ok(res.body.data.usage.maxBytes === 4 * 1024 * 1024, '预算改动随 usage 回显');
   await store.dispose();
 }
 
@@ -487,6 +505,109 @@ console.log('\n--- 12. 集成：真 cordis Context 下 tools/result 切面真的
     if (prevHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = prevHome;
   }
+}
+
+console.log('\n--- 13. 保留预算：派生行数 / 字节闸门 / UTF-8 记账 ---');
+{
+  // 派生行数：纯函数，clamp 到 1000–200000，正常永不触发
+  ok(deriveMaxRows(8 * 1024 * 1024) === Math.floor((8 * 1024 * 1024) / 120), '8 MB 按 120B/行派生行数');
+  ok(deriveMaxRows(1024) === 1000, '极小预算钳到行数下限 1000');
+  ok(deriveMaxRows(1e9) === 200000, '极大预算钳到行数上限 200000');
+  ok(clampBudget(0) === 8 * 1024 * 1024, '预算 0 → 回落默认 8 MB（不是"关闭"）');
+  ok(clampBudget(1e9) === 64 * 1024 * 1024, '预算超上限 → 64 MB');
+  ok(clampBudget(1024 * 1024) === 1024 * 1024, '合法预算原样通过');
+
+  // 字节闸门：一条带 2000 字中文留言的 decision 行 ≈ 6 KB，256 KB 预算约 40 余行就满
+  const store = makeStore({ maxBytes: 256 * 1024 });
+  for (let i = 0; i < 120; i++) {
+    store.recordCall('github_pr', { action: 'merge', pr_number: i }, { ok: true }, { callId: 'z' + i });
+    store.recordDecision('z' + i, 'rejected', '中'.repeat(2000));
+  }
+  const u = store.usage();
+  ok(u.maxBytes === 256 * 1024, '预算按传入值生效');
+  ok(u.bytes <= u.maxBytes, '灌满后记账字节 ≤ 预算（字节闸门生效）');
+  ok(u.rows < 240, '行数远未到派生上限就已淘汰（拦住它的是字节，不是行数）');
+  await store.flush();
+  const size = statSync(store.filePath()).size;
+  ok(size <= u.maxBytes + 8 * 1024, `文件真实大小也 ≤ 预算（实际 ${size} B)`);
+  ok(Math.abs(u.bytes - size) <= 8 * 1024, '记账字节与文件真实大小一致（UTF-8 记账正确）');
+  ok(u.bytes > 200 * 1024, '中文按 3 字节/字记账（若用字符数会少算 3 倍）');
+  ok(store.list({ limit: 1 }).items[0].callId === 'z119', '淘汰只丢最早的：最新一条仍在');
+  await store.dispose();
+}
+
+console.log('\n--- 14. 开关：默认开 / 可关 / 热切 ---');
+{
+  const dir = tmpDir();
+  writeFileSync(
+    path.join(dir, 'audit.jsonl'),
+    JSON.stringify({ v: 1, kind: 'result', id: 'old', at: 1, ok: true, tool: 'github_pr', action: 'list', write: false, risk: 'read', summary: '旧记录' }) + '\n',
+    'utf8'
+  );
+  const off = new AuditStore({ dir, flushDelayMs: 0, enabled: false });
+  ok(off.usage().enabled === false, 'enabled=false 反映在 usage');
+  ok(off.rowCount() === 0, '关闭态不加载历史（零内存、零启动成本）');
+  off.recordCall('github_pr', { action: 'merge', pr_number: 1 }, { ok: true }, { callId: 'off1' });
+  await off.flush();
+  const body = readFileSync(off.filePath(), 'utf8');
+  ok(!body.includes('off1'), '关闭态不写盘');
+  ok(body.includes('"id":"old"'), '关闭态不动历史文件（那是用户的文件）');
+
+  const on = await off.setEnabled(true);
+  ok(on.enabled === true && on.rows === 1, '重新开启后加载历史');
+  off.recordCall('github_pr', { action: 'merge', pr_number: 2 }, { ok: true }, { callId: 'on1' });
+  await off.flush();
+  ok(readFileSync(off.filePath(), 'utf8').includes('on1'), '开启后恢复写盘');
+
+  // 优先级：设置文件（UI 改的） > 构造参数（静态配置）
+  await off.setEnabled(false);
+  ok(existsSync(path.join(dir, 'audit-settings.json')), '开关变化落 audit-settings.json');
+  ok(JSON.parse(readFileSync(path.join(dir, 'audit-settings.json'), 'utf8')).enabled === false, '落盘内容与开关一致');
+  const re = new AuditStore({ dir, flushDelayMs: 0, enabled: true });
+  ok(re.usage().enabled === false, '设置文件优先于静态配置');
+  await re.clear();
+  ok(readFileSync(re.filePath(), 'utf8').trim() === '', '关闭态也能清空历史文件');
+  await re.dispose();
+  await off.dispose();
+}
+
+console.log('\n--- 15. 热改预算 ---');
+{
+  const store = makeStore({ maxBytes: 256 * 1024 });
+  for (let i = 0; i < 60; i++) {
+    store.recordCall('github_pr', { action: 'merge', pr_number: i }, { ok: true }, { callId: 'h' + i });
+    store.recordDecision('h' + i, 'rejected', '中'.repeat(2000));
+  }
+  ok(store.usage().bytes <= 256 * 1024, '初始预算下已淘汰到预算内');
+  const before = store.usage().rows;
+  await store.setBudget(16 * 1024 * 1024);
+  ok(store.usage().maxBytes === 16 * 1024 * 1024, 'setBudget 立即生效（无需重启）');
+  ok(store.usage().rows === before, '放大预算不会凭空补回已淘汰的行');
+  await store.setBudget(256 * 1024);
+  ok(store.usage().maxBytes === 256 * 1024 && store.usage().bytes <= 256 * 1024, '再改小也立即生效并当场淘汰');
+  await store.dispose();
+}
+
+console.log('\n--- 16. 降级与关闭的语义分离 / 单行超预算 ---');
+{
+  // 降级：用户开关仍是"开"，但实际不可用 —— 两者必须分开报，否则开关会显示成关的、
+  // 再点又"无变化"，变成怎么点都不动的死开关
+  const dir = tmpDir();
+  const blocked = path.join(dir, 'blocked');
+  writeFileSync(blocked, 'x', 'utf8');
+  const bad = new AuditStore({ dir: blocked, flushDelayMs: 0 });
+  ok(bad.usage().enabled === true, '降级时 enabled（用户意图）仍为 true');
+  ok(bad.usage().active === false, '降级时 active（实际可用）为 false');
+  ok(typeof bad.usage().degraded === 'string', '降级原因可见');
+  await bad.dispose();
+
+  // 关闭态下 recordDecision 也不许写盘（s2 的 onDisabled 结算会走这里）
+  const off = new AuditStore({ dir: tmpDir(), flushDelayMs: 0, enabled: false });
+  off.recordDecision('x1', 'rejected', '这条不该落盘');
+  await off.flush();
+  const offBody = existsSync(off.filePath()) ? readFileSync(off.filePath(), 'utf8') : '';
+  ok(!offBody.includes('这条不该落盘'), '关闭态下 decision 行不落盘（文件甚至没被创建）');
+  await off.dispose();
 }
 
 for (const d of tmpDirs) {

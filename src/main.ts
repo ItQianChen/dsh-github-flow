@@ -90,6 +90,9 @@ const ConfigSchema = Schema.object({
   // 不设 default，是为了让「用户没配」与「用户显式配了 full」在诊断时仍可区分。
   toolsets: Schema.array(Schema.string()),
   read_only: Schema.boolean(),
+  // 操作记录：默认全开（被动、无打扰），可在设置里关掉；预算只暴露字节一个旋钮
+  auditEnabled: Schema.boolean().default(true),
+  auditBudgetMB: Schema.number().default(8),
 });
 
 /** 校验并补齐默认值后的运行期配置（volatile 字段为稳定引用，非普通值）。 */
@@ -123,6 +126,8 @@ function resolvePluginConfig(config: Config): PluginConfig {
     proxyUrl: config.proxyUrl ?? undefined,
     toolsets: config.toolsets,
     read_only: config.read_only,
+    auditEnabled: config.auditEnabled,
+    auditBudgetMB: config.auditBudgetMB,
   };
 }
 
@@ -174,6 +179,9 @@ export function apply(ctx: Context, config: Config = Config({})) {
    * 因此这一行不会把 apply() 打崩——Cordis 里 apply 抛错 = Fiber FAILED = 19 个工具全丢。
    */
   const auditStore = new AuditStore({
+    // 静态配置只是"文件不存在时的种子"：用户在 UI 里改过之后以 audit-settings.json 为准
+    enabled: plain.auditEnabled,
+    maxBytes: Math.round((plain.auditBudgetMB ?? 8) * 1024 * 1024),
     scopeResolver: (exec, args) => resolveScopeFromExec(executor, exec, args),
   });
   // 生命周期纳管：内部有攒批刷盘定时器，不挂 effect 的话热重载会留下跑着的定时器

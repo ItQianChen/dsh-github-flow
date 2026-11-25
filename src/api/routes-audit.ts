@@ -85,6 +85,8 @@ export function registerAuditRoutes(deps: RouteDeps, store: AuditStore): void {
             // 降级原因非空时 UI 必须显式提示「记录功能已禁用」，而不是显示空列表
             // 让人以为「Agent 什么都没做」——这两种状态的含义天差地别。
             degraded: store.degradedReason,
+            // 用量与开关（默认 8 MB 预算 / 行数上限由它派生）：UI 据此显示「已用 x/y MB」
+            usage: store.usage(),
           },
         });
       } catch (err: any) {
@@ -143,6 +145,44 @@ export function registerAuditRoutes(deps: RouteDeps, store: AuditStore): void {
         sendJson(res, 200, { ok: true, data: { cleared: true } });
       } catch (err: any) {
         sendJson(res, 500, { ok: false, message: err?.message || '清空操作记录失败' });
+      }
+    },
+  });
+
+  // 4. 开关与预算：热生效 + 落盘（store 内部负责 saveAuditSettings）
+  //
+  // 为什么一个端点管两个字段：它们落在同一个设置文件、同一个设置分区，
+  // 分成两个端点只会让"同时改两项"变成两次请求两次重绘。
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/audit/settings',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, message: '仅支持 POST 请求' });
+        return;
+      }
+      if (!guardLocalWrite(req, res, { requireJson: true })) return;
+      try {
+        const body = await readJsonBody(req);
+        if (body?.enabled !== undefined && typeof body.enabled !== 'boolean') {
+          sendJson(res, 400, { ok: false, message: 'enabled 必须是布尔值' });
+          return;
+        }
+        // 预算：1–64 MB。**0 不是合法的"关闭"值**——关闭只有一个入口（enabled），
+        // 两个关闭入口会让「我设了 8 MB 为什么还说不记录」变成必然困惑。
+        if (body?.budgetMB !== undefined) {
+          const mb = Number(body.budgetMB);
+          if (!Number.isFinite(mb) || mb < 1 || mb > 64) {
+            sendJson(res, 400, { ok: false, message: '预算必须是 1–64 之间的 MB 数（关闭请用 enabled: false）' });
+            return;
+          }
+        }
+        let usage = store.usage();
+        if (typeof body?.enabled === 'boolean') usage = await store.setEnabled(body.enabled);
+        if (body?.budgetMB !== undefined) usage = await store.setBudget(Math.round(Number(body.budgetMB) * 1024 * 1024));
+        sendJson(res, 200, { ok: true, data: { usage } });
+      } catch (err: any) {
+        sendJson(res, 400, { ok: false, message: err?.message || '保存操作记录设置失败' });
       }
     },
   });

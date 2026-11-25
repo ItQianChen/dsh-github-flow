@@ -68,6 +68,10 @@ type DeleteRow = {
     ids: string[];
 };
 export type AuditRow = IntentRow | DecisionRow | ResultRow | DeleteRow;
+/** 由字节预算派生行数上限：只兜"极短行"病态，正常永不触发 */
+export declare function deriveMaxRows(maxBytes: number): number;
+/** 预算 clamp：下限 256 KB、上限 64 MB。越界钳住而不是报错——配置值不值得让功能失效。 */
+export declare function clampBudget(bytes: number): number;
 /** ---------------- 分类 ---------------- */
 /**
  * 是否写操作：真源是 `WRITE_ACTIONS`（`src/tool-tiers.ts`），只读档位用的也是它。
@@ -114,13 +118,44 @@ export declare function resolveScopeFromExec(executor: any, exec: any, args: any
 export declare function resolveRepoFromExec(executor: any, exec: any, args: any): string | undefined;
 /** `~/.dsh/data/dsh-github-flow`（与 proxy.json / update-settings.json 同目录树） */
 export declare function auditDataDir(): string;
+/** ---------------- 设置（开关 + 预算）---------------- */
+/**
+ * 操作记录的运行期设置。落在 `audit-settings.json`，与 `proxy.json` / `update-settings.json`
+ * 同范式：**文件（UI 改的）优先于 cordis 静态配置**，因为 UI 是用户最后表达意图的地方。
+ */
+export interface AuditSettings {
+    enabled: boolean;
+    budgetBytes: number;
+    /** `file` = 用户曾在 UI 里改过；`default` = 文件不存在或损坏。决定它与静态配置的优先级 */
+    source: 'file' | 'default';
+}
+export declare function auditSettingsPath(dir?: string): string;
+/**
+ * 读设置。任何异常都回落到默认值——设置文件坏掉不该让记录功能消失，更不该让 `apply()` 抛错。
+ * `enabled` 缺省 true（产品口径：默认全开）。
+ */
+export declare function loadAuditSettings(dir?: string): AuditSettings;
+/** 写设置。返回是否成功（调用方据此决定要不要在 UI 上报错，但不抛）。 */
+export declare function saveAuditSettings(dir: string, settings: {
+    enabled: boolean;
+    budgetBytes: number;
+}): boolean;
 /** ---------------- 存储 ---------------- */
 export interface AuditStoreOptions {
     /** 数据目录（测试注入临时目录） */
     dir?: string;
     now?: () => number;
+    /** 行数上限（测试用覆盖；正常由字节预算派生，见 `deriveMaxRows`） */
     maxRows?: number;
+    /** 字节预算；缺省读设置文件，再缺省 8 MB */
     maxBytes?: number;
+    /**
+     * 是否启用记录。缺省读 `audit-settings.json`，再缺省 `true`（产品口径：默认全开）。
+     * 关闭时不加载历史、不写盘；历史文件保留，可用 `clear()` 删除。
+     */
+    enabled?: boolean;
+    /** 设置文件目录（测试注入；缺省与数据目录相同） */
+    settingsDir?: string;
     /** 攒批刷盘间隔（不阻塞工具返回的关键） */
     flushDelayMs?: number;
     /** 仓库 / 工作区解析器（main.ts 注入 executor 后实现） */
@@ -129,21 +164,39 @@ export interface AuditStoreOptions {
         cwd?: string;
     };
 }
+/** 存储用量快照（`usage()` 的返回类型；字段语义见 `AuditStore.usage`） */
+export interface AuditUsage {
+    enabled: boolean;
+    active: boolean;
+    rows: number;
+    bytes: number;
+    maxRows: number;
+    maxBytes: number;
+    degraded: string | null;
+}
 /**
  * 事件流存储。
  *
  * 写入路径：`recordCall()` → 内存（查询立即可见）→ 攒批 → 200ms 后一次刷盘。
- * 读路径：`list()` 全量折叠（行数上限 2000，折叠是 O(n) 的内存操作，不值得做增量索引）。
+ * 读路径：`list()` 全量折叠（预算内最多几万行，折叠是 O(n) 的内存操作，不值得做增量索引）。
+ *
+ * 保留策略：**字节预算为主闸门、行数为其派生上限**（见文件头常量注释）。
  */
 export declare class AuditStore {
     private readonly dir;
     private readonly file;
     private readonly now;
-    private readonly maxRows;
-    private readonly maxBytes;
+    private readonly settingsDir;
+    /** 随 `setBudget()` 变化，故非 readonly */
+    private maxRows;
+    private maxBytes;
+    private enabled;
     private readonly flushDelayMs;
     private readonly repoResolver?;
     private rows;
+    /** 与 `rows` 等长的字节数（含行尾换行）——淘汰时从头部整批减，避免 O(n²) 重算 */
+    private rowBytes;
+    private totalBytes;
     private pending;
     private needsRewrite;
     private flushTimer;
@@ -155,11 +208,22 @@ export declare class AuditStore {
     /** 数据文件路径（测试与诊断用） */
     filePath(): string;
     private load;
+    /**
+     * 按预算淘汰最早的若干行（字节与行数先到者生效）。
+     *
+     * **至少保留最新一行**（`drop < n - 1`）：单行就超过预算的极端情况（比如预算调到
+     * 下限而一条记录带了长留言）下，若把刚写的那行也淘汰掉，"刚发生的事"会立刻查不到——
+     * 超出预算一行是可以接受的诚实，丢掉正在记录的操作不是。
+     *
+     * @returns 是否发生了淘汰（调用方据此决定要不要压实文件）
+     */
+    private evict;
     private append;
     /**
-     * 把墓碑真正"兑现"成删除：既有 compaction 只重写字节，但若仍把被删行写回去，
-     * `needsRewrite` 就变成了自欺——用户点删除、文件里却还有那条记录。
-     * 重写前必须先折叠，重写后内存 rows 也换成折叠结果（否则下一次重写会把它复活）。
+     * 把墓碑真正"兑现"成删除，并同步重算字节记账。
+     *
+     * 剔除行时必须同时重建 `rowBytes`：只删 `rows` 会让记账与行错位，
+     * 之后的淘汰会**删掉不该删的行**——这类错位不会报错，只会让记录莫名消失。
      */
     private compactRows;
     private scheduleFlush;
@@ -231,10 +295,40 @@ export declare class AuditStore {
      * 返回真实删除的条数（不存在的 id 不计）。
      */
     delete(ids: string[]): Promise<number>;
-    /** 清空全部记录（同步压实为空文件） */
+    /** 清空全部记录（同步压实为空文件）。**关闭态也可用**：直接写空，不需要加载。 */
     clear(): Promise<void>;
     /** 当前内存行数（诊断用） */
     rowCount(): number;
+    /**
+     * 存储用量与当前口径。UI 与路由的唯一真相。
+     *
+     * 三个字段必须分开，别再合并：
+     * - `enabled`：**用户的意图**（开关位置）。UI 的复选框读它。
+     * - `degraded`：存储坏了的原因（目录不可写等）。
+     * - `active`：**实际是否在工作** = `enabled && !degraded`。消费方（s2 的审核前置、
+     *   弹窗的关闭态）只能读这个。
+     *
+     * 为什么不能把 `enabled` 直接算成"且未降级"（第一版就是这么写的）：磁盘坏掉时
+     * 复选框会显示成"未勾选"，用户以为自己关过；他再点一下"开启"，`enabled` 已经
+     * 是 true → `setEnabled` 判定无变化直接返回，界面纹丝不动。**一个怎么点都不动的开关，
+     * 比明确的错误提示更糟。**
+     */
+    usage(): AuditUsage;
+    /**
+     * 改预算并**立刻生效**（无需重启）。异步：必须先等在途刷盘收尾再压实。
+     *
+     * 改小必须当场淘汰 + 同步压实：用户把 8 MB 降到 1 MB 时，"下次写入才缩"等于没缩，
+     * 而这一步的代价只是一次顺序写，与 `delete()` 同一条路径。
+     */
+    setBudget(bytes: number): Promise<AuditUsage>;
+    /**
+     * 开/关记录，运行时生效。
+     *
+     * 关闭时：先等在途刷盘收尾（否则它会再写一批），再清攒批队列、丢弃已加载的行
+     * （释放内存）。历史文件**不删**——那是用户的文件，要删走 `clear()`。
+     * 打开时：重新 `load()` 并按当前预算淘汰，随后照常记录。
+     */
+    setEnabled(flag: boolean): Promise<AuditUsage>;
     /** 卸载：清定时器 + 末次刷盘。幂等。 */
     dispose(): Promise<void>;
 }
