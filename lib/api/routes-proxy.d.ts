@@ -14,5 +14,11 @@ export interface ProxyRouteManager {
     };
     probe: () => Promise<any>;
     snapshot: () => any;
+    /** 当前生效地址；用于判定是否需要改走 gh 链路（socks5 无法用 Node fetch 探测） */
+    getEffectiveUrl?: () => string;
+    /** 回填外部探测结果，保证 lastProbe 与持久化口径一致 */
+    recordProbe?: (result: any) => void;
 }
-export declare function registerProxyRoutes(deps: RouteDeps, checker: UpdateChecker, proxyManager?: ProxyRouteManager): void;
+export declare function registerProxyRoutes(deps: RouteDeps, checker: UpdateChecker, proxyManager?: ProxyRouteManager, executor?: {
+    run: (args: string[], opts?: any) => Promise<any>;
+}): void;

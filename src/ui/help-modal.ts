@@ -13,7 +13,7 @@ declare const React: any;
  * 【内容与代码同步的纪律】
  * 本文件里出现的工具数量、action 数量、Tab 名称、按钮文案，全部以当前代码为准：
  * 工具矩阵 = src/main.ts 的 19 处 ctx.tools.register；
- * Tab 布局 = src/client.ts 的 TAB_DEFS 与 src/ui/workspace-panel.ts 的四个标签；
+ * Tab 布局 = src/client.ts 的 TAB_DEFS 与 src/ui/workspace-panel.ts 的五个标签；
  * 若后续增删工具或 Tab，必须同步改这里，否则用户会照着过时说明去找不存在的入口。
  */
 export function GithubHelpModal(props: {
@@ -105,7 +105,7 @@ export function GithubHelpModal(props: {
           h("div", { style: { fontSize: "12px", lineHeight: "1.8", color: "var(--dsw-alias-label-secondary, #8b949e)" } },
             "Agent 侧可直接调用 19 个 github_* 工具（PR 审查合并、Issue 任务流转、Actions 排障、免 clone 读文件、发版交付、Secrets 管理、Skills 生态、标签与规则集、构建缓存、Gist、跨仓待办大盘、Copilot 智能体、Discussions、Projects v2、Codespaces、运行时遥测与元指南）。",
             h("br"),
-            "人类侧在每个会话右侧栏拥有 5 个 Tab（Git / 未提交 / PR / Issues / Actions），在最左侧 Octocat 入口拥有 4 个标签的全景驾驶舱。PR / Issue / Actions 的卡片点击都能在线查看详情——Actions 看到的是 job / step 树与失败步骤，失败时还能按需拉一段日志，不用切浏览器。"
+            "人类侧在每个会话右侧栏拥有 5 个 Tab（Git / 未提交 / PR / Issues / Actions），在最左侧 Octocat 入口拥有 5 个标签的全景驾驶舱。PR / Issue / Actions 的卡片点击都能在线查看详情——Actions 看到的是 job / step 树与失败步骤，失败时还能按需拉一段日志，不用切浏览器。"
           )
         )
       );
@@ -195,7 +195,7 @@ export function GithubHelpModal(props: {
         ),
         [
           {
-            title: "1. 全景驾驶舱 (Main Dashboard) —— 掌控全局资产 · 4 个标签",
+            title: "1. 全景驾驶舱 (Main Dashboard) —— 掌控全局资产 · 5 个标签",
             items: [
               "打开入口：点击 DSH 最左侧主导航栏的 Octocat 猫咪徽标，瞬间全屏展开；",
               "SWR 0ms 瞬间秒开：采用本地持久化快照体系，打开界面零转圈、零等待；",
@@ -203,6 +203,7 @@ export function GithubHelpModal(props: {
               "☁️ 我的 GitHub 仓库：名下全部仓库、默认分支与 Star 状态，支持关键词搜索；",
               "🔀 Pull Requests：默认展示「全部」，顶部胶囊可切 🟢 Open / 🟣 Merged / ⚪ Closed 并显示各档计数；点击任一卡片在线唤起 PR 审阅工作台；",
               "📝 任务与待办 Issues：三维分类（📥 用户提单 / 🎯 指派待办 / ✍️ 我发起的），点击卡片在线查看 Issue 详情；",
+              "🏢 组织：你所属组织的只读浏览入口——组织列表 → 组织聚合（仓库 / PR / Issue）→ 点仓库下钻到单仓库，面包屑可逐级退回；该视图只读，组织仓库的写操作请让 Agent 调用工具并显式传 repo 参数；",
               "右下角长期驻留 使用指南 / ⚙️ 设置 两个入口，设置内含数据同步、网络代理、更新源与关于四个分区。",
             ],
           },

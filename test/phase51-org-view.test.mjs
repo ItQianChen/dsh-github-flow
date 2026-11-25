@@ -287,6 +287,47 @@ console.log('\n--- 11. 前端竞态与失败态契约（防回退）---');
   ok(panel.includes('orgsLoaded ?'), 'Tab 计数在加载完成前不显示 0');
 }
 
+console.log('\n--- 12. 刷新链路必须一并清空组织缓存 ---');
+{
+  const { registerActionRoutes } = await import(lib('lib/api/routes-actions.js'));
+  const orgCache = new TtlCache(60_000);
+  const mapCache = new TtlCache(60_000);
+  const globalCache = new TtlCache(60_000);
+  orgCache.set('o/r|', { marker: 'stale' }, Date.now());
+  ok(orgCache.get('o/r|', Date.now()) !== undefined, '预置组织缓存条目');
+
+  const routes = [];
+  const deps = { bindRoute: (r) => routes.push(r), sendJson: (res, s, p) => { res.status = s; res.body = p; }, readJsonBody: async () => ({}) };
+  registerActionRoutes(deps, { run: async () => ({ ok: true, data: [] }) }, mapCache, globalCache, orgCache);
+  const refresh = routes.find((r) => r.path === '/api/github/refresh');
+  ok(Boolean(refresh), '刷新路由已注册');
+  // 该分组用的是模块级 sendJson（直接操作 http.ServerResponse），
+  // 不是 deps.sendJson——mock 必须提供 setHeader/end，否则会抛 TypeError
+  const res = {
+    headers: {},
+    setHeader(k, v) { this.headers[k] = v; },
+    end(raw) { this.raw = raw; this.body = JSON.parse(raw); },
+  };
+  await refresh.handler({ method: 'POST', headers: {} }, res);
+  ok(res.statusCode === 200 && res.body.ok === true, '刷新返回成功');
+  ok(orgCache.get('o/r|', Date.now()) === undefined,
+    '刷新按钮同时清空组织缓存（否则驾驶舱更新了、组织 Tab 仍是陈数据）');
+
+  // 接线契约：缓存实例必须真的从注册器传下来，而不是各自 new 一份
+  const routesSrc = readFileSync(path.join(ROOT, 'src/api/routes.ts'), 'utf8');
+  ok(routesSrc.includes('registerActionRoutes(deps, executor, cacheMap, globalCache, orgCache)'),
+    '注册器把同一个 orgCache 同时交给组织路由与刷新路由');
+  ok(routesSrc.includes('TtlCache<OrgOverviewData>'), '组织缓存使用具体类型而非 any');
+}
+
+console.log('\n--- 13. 组织 Tab 的错误态可恢复 ---');
+{
+  const panel = readFileSync(path.join(ROOT, 'src/ui/workspace-panel.ts'), 'utf8');
+  ok(panel.includes('🔄 重新加载'), '错误态提供重新加载入口（否则只能刷新整页）');
+  ok(/setOrgsLoaded\(false\);\s*\n\s*loadOrgs\(\)/.test(panel), '重新加载会重置已加载标记并重拉组织列表');
+  ok(panel.includes('loadOrgOverview(selectedOrg, drillRepo)'), '已在组织内时重试按当前下钻层级重拉');
+}
+
 console.log('\n========================================');
 console.log('Phase 51 Org View Result: ' + (failed === 0 ? passed + '/' + (passed + failed) + ' assertions PASSED!' : failed + ' FAILED, ' + passed + ' passed'));
 console.log('========================================');

@@ -356,6 +356,27 @@ async function runTests() {
   ok(imgEl && imgEl.props.loading === 'lazy' && imgEl.props.decoding === 'async', 'img 懒加载 + 异步解码');
   ok(imgEl && imgEl.props.alt === '图注', 'img.alt 来自 Markdown alt');
 
+  // 徽章链接：[![CI](badge.png)](workflow) 必须是「一个链接内含一张图」，不能碎成乱码
+  const badge = parseInline('[![CI](https://raw.githubusercontent.com/a/b/badge.png)](https://ci.example.com)');
+  ok(badge.length === 1 && badge[0].type === 'link', '徽章链接解析为单个 link 节点', JSON.stringify(badge).slice(0, 160));
+  ok(badge[0].href === 'https://ci.example.com', '徽章链接的 href 是外层目标而非图片地址');
+  ok(badge[0].children && badge[0].children.length === 1 && badge[0].children[0].type === 'image', '徽章链接的 label 是 image 节点');
+  ok(!badge.some((n) => n.type === 'text' && String(n.text || '').includes('](')), '不再残留 ]( 裸文本');
+
+  // 渲染层：链接内必须是裸 <img>，不能再套一层 <a>（非法嵌套）
+  created.length = 0;
+  const badgeEls = renderMarkdownBlocks(mockH, parseMarkdownBlocks('[![CI](https://raw.githubusercontent.com/a/b/badge.png)](https://ci.example.com)'));
+  const badgeKids = (badgeEls[0] && badgeEls[0].children ? badgeEls[0].children.flat(Infinity) : []);
+  const badgeLink = badgeKids.find((c) => c && c.tag === 'a');
+  ok(badgeLink && badgeLink.props.href === 'https://ci.example.com', '外层链接指向 workflow');
+  const badgeInner = badgeLink ? (badgeLink.children || []).flat(Infinity) : [];
+  ok(badgeInner.length === 1 && badgeInner[0].tag === 'img', '链接内直接是 img（无嵌套 a）', JSON.stringify(badgeInner.map((c) => c.tag)));
+  ok(!badgeInner.some((c) => c && c.tag === 'a'), '链接内不再出现第二层 <a>');
+
+  // 畸形深嵌套不得打爆栈
+  const deep = '[('.repeat(40) + 'x' + ')]'.repeat(40);
+  ok(Array.isArray(parseInline(deep)), '极端嵌套输入不抛错');
+
   // CSS：限宽是硬约束，否则 2560px 截图会把弹窗撑破
   const cssImg = fs.readFileSync(path.join(__dirname, '../lib/ui/styles.js'), 'utf8');
   ok(cssImg.includes('.dsh-github-md-img'), '存在正文图片样式');

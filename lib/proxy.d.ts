@@ -63,6 +63,12 @@ export interface ProxyProbeResult {
     at: number;
     latencyMs?: number;
     error?: string;
+    /**
+     * 结果来自 gh 子进程链路而非 Node fetch。
+     * 为什么需要：undici 的 ProxyAgent 不支持 socks5，socks5 场景只能用 gh 探测；
+     * UI 必须说明「这次测的是哪条链路」，否则用户无法解释为什么与直连结果不同。
+     */
+    viaGh?: boolean;
 }
 export interface ProxyStateSnapshot {
     config: ProxyConfig;
@@ -131,6 +137,11 @@ export declare class ProxyManager {
     /** 最近一次系统代理检测结果（缓存 + 定时刷新；getEnv 是同步热路径，绝不能在这里起子进程） */
     private systemProxy;
     private systemProxyTimer;
+    /**
+     * 是否已卸载。卸载后仍在途的检测/探测响应不得再落地——
+     * 否则会为一个已销毁的实例重建 ProxyAgent（连接池永不释放）并覆盖持久化文件。
+     */
+    private disposed;
     /**
      * 系统代理读取器（测试注入用）。
      * 必须保持「未注入时就是 undefined」，**不能**兜底成 defaultRegReader：
@@ -219,5 +230,11 @@ export declare class ProxyManager {
     };
     /** 经当前代理配置探测 GitHub API 连通性（2.5s 超时）。失败不回滚保存——离线预配置是合法场景 */
     probe(): Promise<ProxyProbeResult>;
+    /**
+     * 回填外部探测结果（socks5 由路由层走 gh 链路探测）。
+     * 统一走这里而不是让路由直接改 snapshot：lastProbe 需要同时落盘，
+     * 否则重开设置页会看到上一次的旧结论。
+     */
+    recordProbe(result: ProxyProbeResult): void;
     snapshot(): ProxyStateSnapshot;
 }

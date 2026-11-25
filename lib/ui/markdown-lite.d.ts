@@ -44,15 +44,7 @@ export interface MdBlock {
     children?: MdInline[];
 }
 export declare function isRenderableImageSrc(src: unknown): boolean;
-/**
- * 解析行内语法：`code` / **strong** / *em* / [text](url) / ![alt](url)。
- *
- * 用单遍扫描而非多次 replace 的原因：
- * 行内代码里的内容**不应再被解析**（`**a**` 是字面量），
- * 分段替换很容易把代码块内的星号也吃掉。手写扫描能保证优先级正确：
- * 行内代码 > 图片 > 链接 > 粗体 > 斜体。
- */
-export declare function parseInline(src: string): MdInline[];
+export declare function parseInline(src: string, depth?: number): MdInline[];
 /**
  * 把 Markdown 源文本解析为块级 AST。
  *

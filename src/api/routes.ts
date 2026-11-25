@@ -14,7 +14,7 @@ import type { GhExecutor } from '../executor.js';
 import { TtlCache } from '../cache.js';
 import { UpdateChecker } from '../updater.js';
 import { UpgradeManager } from '../upgrade-manager.js';
-import type { GitHubOverviewData, GlobalOverviewData } from '../types.js';
+import type { GitHubOverviewData, GlobalOverviewData, OrgOverviewData } from '../types.js';
 import { globalCacheTtlMs, sendJson, readJsonBody, type RouteDeps } from './route-helpers.js';
 import { registerOverviewRoutes } from './routes-overview.js';
 import { registerActionRoutes } from './routes-actions.js';
@@ -63,7 +63,7 @@ export function registerApiRoutes(
    * 没有缓存时每次点击都要重等一轮。键是 `org|repo`，切组织只影响自己的条目，
    * 不会让全局驾驶舱缓存失效（两者本来就是不同数据集）。
    */
-  const orgCache = new TtlCache<any>(globalCacheTtlMs(cacheTtlMs));
+  const orgCache = new TtlCache<OrgOverviewData>(globalCacheTtlMs(cacheTtlMs));
 
   /**
    * 注册单个路由并返回注销器。
@@ -99,9 +99,9 @@ export function registerApiRoutes(
   const deps: RouteDeps = { bindRoute, sendJson, readJsonBody };
 
   registerOverviewRoutes(deps, executor, cacheMap, globalCache, checker);
-  registerActionRoutes(deps, executor, cacheMap, globalCache);
+  registerActionRoutes(deps, executor, cacheMap, globalCache, orgCache);
   registerLifecycleRoutes(deps, executor, checker, upgrader);
-  registerProxyRoutes(deps, checker, proxyManager);
+  registerProxyRoutes(deps, checker, proxyManager, executor);
   // 组织只读浏览（issue #17 的「查看」诉求）：独立分组，纯 GET，无写操作
   registerOrgRoutes(deps, executor, orgCache);
 }

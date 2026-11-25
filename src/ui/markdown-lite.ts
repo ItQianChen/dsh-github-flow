@@ -98,7 +98,32 @@ export function isRenderableImageSrc(src: unknown): boolean {
  * 分段替换很容易把代码块内的星号也吃掉。手写扫描能保证优先级正确：
  * 行内代码 > 图片 > 链接 > 粗体 > 斜体。
  */
-export function parseInline(src: string): MdInline[] {
+/**
+ * 从 openIdx 处的开括号找到配对的闭括号下标（支持嵌套），找不到返回 -1。
+ *
+ * 为什么不能用 indexOf：`[![CI](badge.png)](workflow)` 这种「图片徽章外层套链接」
+ * 是 GitHub 上极常见的写法。indexOf 会先命中内层的 `]`，于是 label 被截成 `![CI`、
+ * href 被截成图片地址，剩下的 `](workflow)` 变成裸文本——整块渲染成乱码。
+ * 按深度配平才能拿到真正的外层闭括号。
+ */
+function matchBalanced(text: string, openIdx: number, open: string, close: string): number {
+  let depth = 0;
+  for (let i = openIdx; i < text.length; i++) {
+    const c = text[i];
+    if (c === '\\') { i++; continue; } // 跳过转义字符，避免 \] 被当成闭合
+    if (c === open) depth++;
+    else if (c === close) {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** 行内递归解析的深度上限：畸形输入（几百个 `[`）不得把栈打爆 */
+const MAX_INLINE_DEPTH = 8;
+
+export function parseInline(src: string, depth = 0): MdInline[] {
   const out: MdInline[] = [];
   const text = String(src ?? '');
   let buf = '';
@@ -129,9 +154,9 @@ export function parseInline(src: string): MdInline[] {
     // 必须排在链接分支之前：否则 '!' 落进文本缓冲，`[alt](url)` 被当成普通链接，
     // 渲染出「!全景驾驶舱」这种文字——这正是修复前的实际表现。
     if (ch === '!' && text[i + 1] === '[') {
-      const closeBracket = text.indexOf(']', i + 2);
-      if (closeBracket > i && text[closeBracket + 1] === '(') {
-        const closeParen = text.indexOf(')', closeBracket + 2);
+      const closeBracket = matchBalanced(text, i + 1, '[', ']');
+      if (closeBracket > i + 1 && text[closeBracket + 1] === '(') {
+        const closeParen = matchBalanced(text, closeBracket + 1, '(', ')');
         if (closeParen > closeBracket) {
           const alt = text.slice(i + 2, closeBracket);
           // 去掉 ![a](url "标题") 里的标题段：图片渲染用不到，留着会拼进 URL
@@ -157,15 +182,21 @@ export function parseInline(src: string): MdInline[] {
 
     // ---- 链接：[text](url) ----
     if (ch === '[') {
-      const closeBracket = text.indexOf(']', i + 1);
+      const closeBracket = matchBalanced(text, i, '[', ']');
       if (closeBracket > i && text[closeBracket + 1] === '(') {
-        const closeParen = text.indexOf(')', closeBracket + 2);
+        const closeParen = matchBalanced(text, closeBracket + 1, '(', ')');
         if (closeParen > closeBracket) {
           const label = text.slice(i + 1, closeBracket);
           const href = text.slice(closeBracket + 2, closeParen);
           flush();
           if (isSafeHref(href)) {
-            out.push({ type: 'link', href: href.trim(), children: [{ type: 'text', text: label }] });
+            // label 递归解析：`[![CI](badge.png)](workflow)` 的 label 是一张图片，
+            // 不递归的话徽章链接永远渲染不出来
+            out.push({
+              type: 'link',
+              href: href.trim(),
+              children: depth < MAX_INLINE_DEPTH ? parseInline(label, depth + 1) : [{ type: 'text', text: label }],
+            });
           } else {
             // 不安全协议：保留可见文字，但不生成可点链接
             out.push({ type: 'text', text: label });
@@ -337,7 +368,13 @@ export function parseMarkdownBlocks(src: string): MdBlock[] {
 export function renderMarkdownBlocks(h: any, blocks: MdBlock[]): any[] {
   if (!Array.isArray(blocks)) return [];
 
-  const renderInline = (nodes: MdInline[] | undefined, keyPrefix: string): any[] => {
+  /**
+   * @param inLink 当前是否已经处在某个 <a> 里。
+   *   图片徽章 `[![CI](b.png)](workflow)` 会解析成「link 的 children 里有 image」，
+   *   若图片再套一层 <a> 就是非法嵌套（浏览器会强行拆开，点击行为变得不可预期）。
+   *   所以 inLink 时只渲染裸 <img>，由外层链接统一承担跳转。
+   */
+  const renderInline = (nodes: MdInline[] | undefined, keyPrefix: string, inLink = false): any[] => {
     if (!Array.isArray(nodes)) return [];
     return nodes.map((n, idx) => {
       const key = `${keyPrefix}-${idx}`;
@@ -345,10 +382,21 @@ export function renderMarkdownBlocks(h: any, blocks: MdBlock[]): any[] {
         case 'code':
           return h('code', { key, className: 'dsh-github-md-inline-code' }, n.text ?? '');
         case 'strong':
-          return h('strong', { key }, renderInline(n.children, key));
+          return h('strong', { key }, renderInline(n.children, key, inLink));
         case 'em':
-          return h('em', { key }, renderInline(n.children, key));
-        case 'image':
+          return h('em', { key }, renderInline(n.children, key, inLink));
+        case 'image': {
+          const img = h('img', {
+            key,
+            src: n.src,
+            alt: n.alt || '图片',
+            loading: 'lazy',
+            decoding: 'async',
+            // 不发送 Referer：否则宿主页面地址会漏给图片所在域
+            referrerPolicy: 'no-referrer',
+            className: 'dsh-github-md-img',
+          });
+          if (inLink) return img;
           // 外层包 <a>：图裂时 alt 文本仍是可点入口，用户能直接打开原图，
           // 不必为一个失败态再引入 React 状态机或 DOM 手工替换。
           return h(
@@ -361,16 +409,9 @@ export function renderMarkdownBlocks(h: any, blocks: MdBlock[]): any[] {
               className: 'dsh-github-md-img-link',
               title: n.alt || n.src || '',
             },
-            h('img', {
-              src: n.src,
-              alt: n.alt || '图片',
-              loading: 'lazy',
-              decoding: 'async',
-              // 不发送 Referer：否则宿主页面地址会漏给图片所在域
-              referrerPolicy: 'no-referrer',
-              className: 'dsh-github-md-img',
-            })
+            img
           );
+        }
         case 'link':
           return h(
             'a',
@@ -381,7 +422,7 @@ export function renderMarkdownBlocks(h: any, blocks: MdBlock[]): any[] {
               rel: 'noopener noreferrer',
               className: 'dsh-github-md-link',
             },
-            renderInline(n.children, key)
+            renderInline(n.children, key, true)
           );
         default:
           return h('span', { key }, n.text ?? '');

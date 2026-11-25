@@ -66,6 +66,8 @@ export function GlobalSyncSettingsModal(props: {
     url: string;
     reason?: "unsupported-platform" | "disabled" | "pac" | "unparsable";
   } | null);
+  /** npm 探测链路（Node fetch）能否真的用上代理；false 时在手动表单里明示差异 */
+  var [proxyFetchAvailable, setProxyFetchAvailable] = React.useState(true);
   var [proxyBusy, setProxyBusy] = React.useState(false);
   var [proxyMsg, setProxyMsg] = React.useState(null as { kind: "ok" | "err" | "info"; text: string } | null);
   var [proxyProbe, setProxyProbe] = React.useState(null as { ok: boolean; latencyMs?: number; error?: string } | null);
@@ -99,6 +101,7 @@ export function GlobalSyncSettingsModal(props: {
           setProxyApplyNpm(j.state.config ? j.state.config.applyToPackageManager !== false : true);
           setProxyAutoFollow(Boolean(j.state.config && j.state.config.autoFollowSystem));
           setProxySystemProxy(j.state.systemProxy || null);
+          setProxyFetchAvailable(j.state.fetchProxyAvailable !== false);
           if (j.state.lastProbe) setProxyProbe(j.state.lastProbe);
         }
       })
@@ -241,6 +244,7 @@ export function GlobalSyncSettingsModal(props: {
         setProxyBusy(false);
         if (j && j.ok) {
           if (j.state && j.state.systemProxy !== undefined) setProxySystemProxy(j.state.systemProxy);
+          if (j.state && typeof j.state.fetchProxyAvailable === "boolean") setProxyFetchAvailable(j.state.fetchProxyAvailable);
           if (j.state && j.state.lastProbe) setProxyProbe(j.state.lastProbe);
           if (silent) {
             // 开关类改动：只给一句轻量回执，别用大段文案打断操作
@@ -300,9 +304,12 @@ export function GlobalSyncSettingsModal(props: {
         setProxyBusy(false);
         if (j && j.ok && j.probe) {
           setProxyProbe(j.probe);
+          // socks5 走的是 gh 链路而非 Node fetch，必须说明「测的是哪条链路」，
+          // 否则用户无法解释为什么和浏览器直连的结果不一致
+          var via = j.probe.viaGh ? "（经 gh 链路，socks5 代理）" : "";
           setProxyMsg(j.probe.ok
-            ? { kind: "ok", text: "✅ GitHub API 可达 (" + j.probe.latencyMs + "ms)" }
-            : { kind: "err", text: "❌ " + (j.probe.error || "探测失败") });
+            ? { kind: "ok", text: "✅ GitHub API 可达 (" + j.probe.latencyMs + "ms)" + via }
+            : { kind: "err", text: "❌ " + (j.probe.error || "探测失败") + via });
         } else {
           setProxyMsg({ kind: "err", text: (j && j.message) || "探测失败" });
         }
@@ -674,7 +681,15 @@ export function GlobalSyncSettingsModal(props: {
                       disabled: proxyBusy,
                       onClick: handleProxySave,
                       title: "保存上面填写的代理地址与排除列表",
-                    }, proxyBusy ? "保存中..." : "💾 保存地址配置")
+                    }, proxyBusy ? "保存中..." : "💾 保存地址配置"),
+                    /* fetchProxyAvailable 的唯一消费者：npm 探测链路（Node fetch）只有在
+                     * http/https 代理且 undici 可解析时才真的走代理。socks5 或宿主无 undici
+                     * 时它保持直连——不说清楚，用户会以为「代理开了但 npm 还慢」是 bug。 */
+                    proxyFetchAvailable === false && String(proxyUrl || "").trim()
+                      ? h("div", {
+                          style: { fontSize: "11px", opacity: 0.6, marginTop: "8px", lineHeight: 1.6 },
+                        }, "⚠️ 该地址无法用于 npm 版本探测（socks5 或当前宿主无法解析 undici），npm 探测将保持直连；GitHub 数据链路与 Agent 工具不受影响。")
+                      : null
                   )
             ) : null,
             /* 自动保存回执：开关拨动后给一句轻量确认，不打断操作 */

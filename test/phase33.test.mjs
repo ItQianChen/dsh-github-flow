@@ -93,12 +93,23 @@ async function runTests() {
     { key: 'repos', label: '我的 GitHub 仓库' },
     { key: 'prs', label: 'Pull Requests' },
     { key: 'issues', label: '任务与待办 Issues' },
+    { key: 'orgs', label: '组织' },
   ];
   for (const t of panelTabs) {
     ok(panelSrc.includes(`activeTab === '${t.key}'`), `主面板存在 ${t.key} 标签`);
     ok(helpSrc.includes(t.label), `指南提到主面板「${t.label}」`);
   }
-  ok(helpSrc.includes('4 个标签'), '指南声明主面板为 4 个标签');
+  /*
+   * Tab 数量必须从面板的真实按钮推导，不能硬编码。
+   * 历史缺陷：这里原本写死 `包含 '4 个标签'`，于是新增「组织」Tab 后
+   * 指南仍写「4 个」也照样绿——正好把一个用户可见的错误声明锁死在测试里。
+   * 现在改成「代码里的按钮数 === 核对清单长度 === 指南声明的数字」三方对账。
+   */
+  const panelTabCount = (panelSrc.match(/dsh-github-tab-btn/g) || []).length;
+  ok(panelTabCount === panelTabs.length,
+    `主面板 Tab 数与核对清单一致（代码 ${panelTabCount} / 清单 ${panelTabs.length}）`);
+  ok(helpSrc.includes(`${panelTabCount} 个标签`),
+    `指南声明的标签数与代码一致（${panelTabCount} 个）`);
 
   const rightbarTabs = ['git', 'dirty', 'prs', 'issues', 'runs'];
   for (const k of rightbarTabs) {

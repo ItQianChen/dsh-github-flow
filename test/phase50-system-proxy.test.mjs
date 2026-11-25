@@ -220,10 +220,29 @@ try {
       // undici 不可用时 dispatcher 为 null，probe 应当不带 dispatcher（等价直连）
       ok(capturedInit && capturedInit.dispatcher === undefined, 'undici 不可用时 probe 不带 dispatcher', JSON.stringify(Object.keys(capturedInit || {})));
     }
-    // 静态契约兜底：源码里 probe 内部必须出现 dispatcher 赋值
+    /*
+     * 静态契约兜底：源码里 probe 方法体内必须出现 dispatcher 赋值。
+     *
+     * 为什么不用「切片 N 个字符再 includes」：那是 phase7 已经踩过的坑——
+     * 方法里加几行注释或一个前置守卫就会把目标推出窗口，测试莫名其妙变红
+     * （本次给 probe 加 socks5 守卫正好触发了它）。按大括号配平取出完整方法体。
+     */
     const proxySrcText = readFileSync(path.join(ROOT, 'src/proxy.ts'), 'utf8');
-    const probeBody = proxySrcText.slice(proxySrcText.indexOf('async probe()'));
-    ok(probeBody.slice(0, 1200).includes('init.dispatcher = dispatcher'), 'probe 源码中显式传 dispatcher（防止再次漏掉）');
+    const methodBody = (src, marker) => {
+      const start = src.indexOf(marker);
+      if (start < 0) return '';
+      const open = src.indexOf('{', start);
+      if (open < 0) return '';
+      let depth = 0;
+      for (let i = open; i < src.length; i++) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(open, i + 1); }
+      }
+      return src.slice(open);
+    };
+    const probeBody = methodBody(proxySrcText, 'async probe()');
+    ok(probeBody.includes('init.dispatcher = dispatcher'), 'probe 源码中显式传 dispatcher（防止再次漏掉）');
+    ok(probeBody.includes('socks5'), 'probe 对 socks5 有显式拦截（不得用直连结果冒充代理结论）');
   }
 
   // 4m. 轮询生命周期：默认不轮询、开启后轮询、dispose 后停止
@@ -234,6 +253,45 @@ try {
     ok(Boolean(pmLife.systemProxyTimer), '开启跟随后开始轮询');
     pmLife.dispose();
     ok(!pmLife.systemProxyTimer, 'dispose 后定时器已清理（否则热重载会叠加 N 个）');
+  }
+
+  // 4n. socks5 不得用 Node fetch 直连探测（结论会与真实链路相反）
+  {
+    // 显式关掉 autoFollowSystem：storePath 是共享持久化文件，上一步 4m 写过
+    // autoFollowSystem=true，不覆盖的话 getEffectiveUrl 会走系统代理分支
+    const pmSocks = new ProxyManager('', sysReader, storePath);
+    pmSocks.save({ enabled: true, url: 'socks5://127.0.0.1:1080', autoFollowSystem: false });
+    ok(pmSocks.getDispatcher() === null, 'socks5 无 undici dispatcher');
+    const origFetch = globalThis.fetch;
+    let called = false;
+    globalThis.fetch = (async () => { called = true; return { ok: true, status: 200 }; });
+    let socksProbe;
+    try {
+      socksProbe = await pmSocks.probe();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+    ok(!called, 'socks5 下 probe 不发直连 fetch（避免把直连结果当成代理结论）');
+    ok(socksProbe.ok === false && /gh 链路/.test(socksProbe.error || ''), 'socks5 探测明确指向 gh 链路', socksProbe.error);
+
+    // 路由层的 gh 探测结果通过 recordProbe 回填，且进入 snapshot 供 UI 展示
+    pmSocks.recordProbe({ ok: true, at: Date.now(), latencyMs: 12, viaGh: true });
+    const snapSocks = pmSocks.snapshot();
+    ok(snapSocks.lastProbe && snapSocks.lastProbe.viaGh === true, 'recordProbe 回填 viaGh 结果');
+    ok(snapSocks.lastProbe.ok === true && snapSocks.lastProbe.latencyMs === 12, 'recordProbe 保留原始字段');
+  }
+
+  // 4o. dispose 后在途检测不得重建连接池
+  {
+    // 显式 save：storePath 是四个实例共享的持久化文件，上一步刚写过 socks5，
+    // 只靠构造器预置值会被已落盘的配置覆盖，这里必须写死 http 地址
+    const pmGone = new ProxyManager('', sysReader, storePath);
+    pmGone.save({ enabled: true, url: 'http://127.0.0.1:7899', autoFollowSystem: false });
+    ok(pmGone.getDispatcher() !== null, 'dispose 前 dispatcher 已创建');
+    pmGone.dispose();
+    ok(pmGone.getDispatcher() === null, 'dispose 关闭并清空 dispatcher');
+    await pmGone.refreshSystemProxy(); // 模拟卸载后仍在途的检测响应落地
+    ok(pmGone.getDispatcher() === null, 'dispose 后在途检测不会重建 dispatcher');
   }
 
   // 4k. 老配置向后兼容：没有 enabled 字段时按「有 url 即启用」推断

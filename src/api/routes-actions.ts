@@ -141,7 +141,14 @@ export function registerActionRoutes(
   deps: RouteDeps,
   executor: GhExecutor,
   cacheMap: TtlCache<GitHubOverviewData>,
-  globalCache: TtlCache<GlobalOverviewData>
+  globalCache: TtlCache<GlobalOverviewData>,
+  /**
+   * 组织视图缓存（可选）。
+   * 为什么必须从这里清：刷新按钮的语义是「把这个面板的数据全部作废重拉」。
+   * 组织视图是独立缓存，不一起清的话用户点完刷新，驾驶舱更新了、组织 Tab
+   * 仍会继续返回 TTL 内的陈数据，而界面上没有任何提示。
+   */
+  orgCache?: TtlCache<any>
 ): void {
   const { bindRoute } = deps;
 
@@ -164,6 +171,7 @@ export function registerActionRoutes(
       // 刷新按钮点了等于没点。
       cacheMap.clear({ keepFallback: false });
       globalCache.clear({ keepFallback: false });
+      if (orgCache) orgCache.clear({ keepFallback: false });
       sendJson(res, 200, { ok: true, message: '缓存已清空，下次读取将拉取最新数据' });
     },
   });

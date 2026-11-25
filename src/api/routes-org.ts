@@ -42,7 +42,7 @@ function isValidRepoFullName(v: unknown): boolean {
   );
 }
 
-export function registerOrgRoutes(deps: RouteDeps, executor: GhExecutor, orgCache?: TtlCache<any>): void {
+export function registerOrgRoutes(deps: RouteDeps, executor: GhExecutor, orgCache?: TtlCache<OrgOverviewData>): void {
   // sendJson 走 deps 注入而非直接 import：与 RouteDeps 的设计一致，也让单元测试
   // 可以注入一个纯内存的 res 收集器，无需伪造 http.ServerResponse 的整套方法。
   const { bindRoute, sendJson } = deps;
@@ -81,8 +81,7 @@ export function registerOrgRoutes(deps: RouteDeps, executor: GhExecutor, orgCach
             description: o.description || '',
             avatarUrl: o.avatarUrl || '',
           }));
-        sendJson(res, 200, { ok: true, data: { orgs, truncated: orgs.length >= 100 } });
-      } catch (err: any) {
+        sendJson(res, 200, { ok: true, data: { orgs, truncated: orgs.length >= 100 } });      } catch (err: any) {
         sendJson(res, 500, { ok: false, message: err?.message || '读取组织列表异常', data: { orgs: [] } });
       }
     },

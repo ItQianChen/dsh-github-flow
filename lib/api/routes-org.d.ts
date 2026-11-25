@@ -9,6 +9,7 @@
  *   同一个命令的两个作用域参数，返回结构一致，前端不需要两套解析。
  */
 import type { GhExecutor } from '../executor.js';
+import type { OrgOverviewData } from '../types.js';
 import type { TtlCache } from '../cache.js';
 import type { RouteDeps } from './route-helpers.js';
-export declare function registerOrgRoutes(deps: RouteDeps, executor: GhExecutor, orgCache?: TtlCache<any>): void;
+export declare function registerOrgRoutes(deps: RouteDeps, executor: GhExecutor, orgCache?: TtlCache<OrgOverviewData>): void;
