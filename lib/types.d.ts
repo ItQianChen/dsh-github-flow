@@ -545,9 +545,10 @@ export interface IssueDetailData {
     /**
      * 正文与评论中识别到的图片 URL（与 github_issue(view_images) 同源提取）。
      *
-     * 为什么只给清单不在弹窗内联渲染：图片可能来自任意 https 外域，
-     * 在面板里直接 `<img src>` 会把宿主页面 Referer/来源暴露给第三方，
-     * 也绕过了插件的域名白名单防线。UI 只展示「附件 N 张」并给外链。
+     * 这份清单是**全量清单**（含任意 https 外域），用于附件总览与外链；
+     * 弹窗里的内联渲染另走 markdown-lite：只对 GitHub 资产域内联
+     * （带 referrerPolicy="no-referrer"），其余域退化为外链，
+     * 既看得到图，又不把宿主 Referer 漏给第三方图床。
      */
     images: string[];
     /**

@@ -60,9 +60,12 @@ function formatDueDate(iso: any): string {
 /**
  * 图片附件清单。
  *
- * 为什么不在弹窗里直接 <img src>：图片可能来自任意 https 外域，直连会把
- * 宿主页面的 Referer 与来源暴露给第三方，也绕过插件的域名白名单防线。
- * 这里只给可点外链，由用户显式决定是否打开。
+ * 与正文内联渲染的分工（正文侧见 markdown-lite 的 image 节点）：
+ * 正文/评论里的 Markdown `![](url)` 现在由 markdown-lite 直接内联显示，
+ * 但覆盖不到三类情形——非 GitHub 资产域的外链图、HTML `<img src>` 写法、
+ * 以及需要一眼看到「这个 Issue 到底挂了几张图」的总览。这里保留清单做兜底，
+ * 由用户显式点击打开。内联渲染一律带 referrerPolicy="no-referrer"，
+ * 并受 markdown-lite 的域名白名单约束，不会把宿主来源漏给第三方。
  */
 function IssueImageList(props: { urls: string[] }) {
   var h = React.createElement;

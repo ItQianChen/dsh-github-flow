@@ -2332,6 +2332,28 @@ body[data-ds-dark-theme] .dsh-github-md-body .dsh-github-md-link {
   color: #58a6ff;
 }
 
+/* 正文图片：按 URL 直接渲染（不落盘）。
+ * max-width:100% 是硬约束——PR 截图常是 2560px 宽，不限宽会把卡片和弹窗撑破；
+ * 高度自适应避免固定高度导致拉伸变形。占位底色让图片加载前后不产生布局跳动。 */
+.dsh-github-md-body .dsh-github-md-img-link {
+  display: block;
+  max-width: 100%;
+  margin: 10px 0;
+  line-height: 0;
+}
+.dsh-github-md-body .dsh-github-md-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2, #e1e4e8);
+  background: var(--dsw-alias-bg-subtle, rgba(0, 0, 0, 0.03));
+}
+body[data-ds-dark-theme] .dsh-github-md-body .dsh-github-md-img {
+  border-color: var(--dsw-alias-border-l1, #30363d);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 /* 折叠/展开按钮：低调的文本按钮，不抢正文视觉 */
 .dsh-github-md-expand-btn {
   display: inline-flex;
