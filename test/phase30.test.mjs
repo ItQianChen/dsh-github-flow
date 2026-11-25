@@ -12,6 +12,7 @@
 // 4. estimateContentLines 折叠阈值估算
 // 5. renderMarkdownBlocks 产出正确的元素类型
 // 6. CSS 层：卡片 flex 配置与滚动容器
+// 7. 正文图片：按 URL 直连渲染（GitHub 资产域白名单 + no-referrer + 懒加载），不下载落盘
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,7 +32,7 @@ async function runTests() {
     }
   };
 
-  const { parseMarkdownBlocks, parseInline, renderMarkdownBlocks, estimateContentLines } =
+  const { parseMarkdownBlocks, parseInline, renderMarkdownBlocks, estimateContentLines, isRenderableImageSrc } =
     await import('../lib/ui/markdown-lite.js');
 
   // ============================================================
@@ -285,6 +286,90 @@ async function runTests() {
   ok(collapsibleIdx >= 0, 'CollapsibleBody 已定义');
   ok(collapsibleIdx < fnStart, 'CollapsibleBody 定义在 PrDetailModal 之外（引用稳定，展开状态不被重置）');
   ok(!/var CollapsibleBody = function/.test(modalSrc), '不再以函数体内变量形式定义折叠组件');
+
+  // ============================================================
+  console.log('\n--- 9. 正文图片内联渲染（按 URL 直连，不落盘）---');
+  // ============================================================
+  // 回归背景：`![全景驾驶舱](https://raw.githubusercontent.com/.../dashboard.png)`
+  // 曾经渲染成「!全景驾驶舱」这个超链接——'!' 落进文本缓冲，`[...](...)` 被当链接。
+  const IMG_RAW = 'https://raw.githubusercontent.com/mrgeda/dsh-github-flow/pr-assets/dashboard.png';
+  const imgNodes = parseInline(`![全景驾驶舱](${IMG_RAW})`);
+  ok(imgNodes.length === 1 && imgNodes[0].type === 'image', '![alt](url) 解析为 image 节点', JSON.stringify(imgNodes));
+  ok(imgNodes[0].alt === '全景驾驶舱', 'image 保留 alt 文本');
+  ok(imgNodes[0].src === IMG_RAW, 'image 保留原图地址');
+  ok(!imgNodes.some((n) => n.type === 'text' && String(n.text || '').includes('!')), '不再残留孤立的 ! 文本');
+
+  // 空 alt 合法（GitHub 上有大量 ![](url) 写法）
+  const emptyAlt = parseInline('![](https://github.com/user-attachments/assets/abc)');
+  ok(emptyAlt.length === 1 && emptyAlt[0].type === 'image' && emptyAlt[0].alt === '', '空 alt 也是合法图片');
+
+  // 标题段必须剥离，不能拼进 URL
+  const withTitle = parseInline('![a](https://raw.githubusercontent.com/x/y.png "截图标题")');
+  ok(withTitle[0] && withTitle[0].type === 'image' && withTitle[0].src === 'https://raw.githubusercontent.com/x/y.png',
+    'title 段被剥离，URL 不受污染', JSON.stringify(withTitle[0] && withTitle[0].src));
+
+  // 四个资产域全部放行（含私有仓库签名域）
+  for (const u of [
+    'https://user-images.githubusercontent.com/1/2/shot.png',
+    'https://private-user-images.githubusercontent.com/1/2/shot.png?jwt=abc',
+    'https://camo.githubusercontent.com/hash/68747470',
+    'https://github.com/user-attachments/assets/xyz',
+  ]) {
+    ok(isRenderableImageSrc(u), `资产域放行: ${u.slice(0, 46)}`);
+    ok(parseInline(`![x](${u})`)[0].type === 'image', `解析为 image: ${u.slice(0, 40)}`);
+  }
+
+  // 白名单外：退化为外链，不内联（守住「不把 Referer 漏给第三方图床」）
+  const foreign = parseInline('![x](https://evil.example.com/a.png)');
+  ok(!foreign.some((n) => n.type === 'image'), '非白名单域不产生 image');
+  ok(foreign.some((n) => n.type === 'link' && n.href === 'https://evil.example.com/a.png'), '非白名单域退化为可点外链');
+
+  // 危险协议一律不内联也不生成链接
+  for (const bad of [
+    '![x](javascript:alert(1))',
+    '![x](data:image/png;base64,iVBORw0KGgo=)',
+  ]) {
+    ok(!parseInline(bad).some((n) => n.type === 'image'), `不内联: ${bad.slice(0, 40)}`);
+    ok(!parseInline(bad).some((n) => n.type === 'link'), `也不生成链接: ${bad.slice(0, 40)}`);
+  }
+  // http 图：不内联（混合内容/可被中间人替换），但降级为可点外链而非丢内容
+  const httpImg = parseInline('![x](http://raw.githubusercontent.com/x/y.png)');
+  ok(!httpImg.some((n) => n.type === 'image'), 'http 图不内联');
+  ok(httpImg.some((n) => n.type === 'link'), 'http 图降级为可点外链（内容不丢）');
+
+  // 未闭合括号：降级为文本，绝不抛错
+  const broken = parseInline('![x](https://raw.githubusercontent.com/x/y.png');
+  ok(Array.isArray(broken) && !broken.some((n) => n.type === 'image'), '未闭合括号降级为文本不抛错');
+
+  // 渲染层：必须带 no-referrer / lazy，且外层是可点原图的链
+  // 注意 mockH 不像 React 那样拍平子元素数组，断言前需 flat 一层
+  created.length = 0;
+  const imgEls = renderMarkdownBlocks(mockH, parseMarkdownBlocks(`![图注](${IMG_RAW})`));
+  const paraKids = (imgEls[0] && imgEls[0].children ? imgEls[0].children.flat(Infinity) : []);
+  const linkEl = paraKids.find((c) => c && c.tag === 'a');
+  ok(linkEl && linkEl.props.className === 'dsh-github-md-img-link', '图片外层是可点链接');
+  ok(linkEl && linkEl.props.href === IMG_RAW && linkEl.props.target === '_blank', '点击打开原图');
+  ok(linkEl && /noopener/.test(String(linkEl.props.rel)), '外链带 rel=noopener');
+  const imgEl = linkEl && (linkEl.children || []).flat(Infinity).find((c) => c && c.tag === 'img');
+  ok(imgEl && imgEl.props.src === IMG_RAW, 'img.src 即原图地址（不经本地中转）');
+  ok(imgEl && imgEl.props.referrerPolicy === 'no-referrer', 'img 带 referrerPolicy=no-referrer（不泄漏宿主来源）');
+  ok(imgEl && imgEl.props.loading === 'lazy' && imgEl.props.decoding === 'async', 'img 懒加载 + 异步解码');
+  ok(imgEl && imgEl.props.alt === '图注', 'img.alt 来自 Markdown alt');
+
+  // CSS：限宽是硬约束，否则 2560px 截图会把弹窗撑破
+  const cssImg = fs.readFileSync(path.join(__dirname, '../lib/ui/styles.js'), 'utf8');
+  ok(cssImg.includes('.dsh-github-md-img'), '存在正文图片样式');
+  const imgRule = cssImg.slice(cssImg.indexOf('.dsh-github-md-body .dsh-github-md-img {'));
+  ok(imgRule.slice(0, imgRule.indexOf('}')).includes('max-width: 100%'), '图片限宽 max-width:100%');
+  ok(cssImg.includes('body[data-ds-dark-theme] .dsh-github-md-body .dsh-github-md-img'), '图片样式适配暗色主题');
+
+  // 静态契约：图片绝不走「下载到本地再中转」的老路
+  // 只检查代码行：注释里保留「从不使用 dangerouslySetInnerHTML」的说明是有价值的
+  const mdSrc = fs.readFileSync(path.join(__dirname, '../src/ui/markdown-lite.ts'), 'utf8');
+  const mdCodeOnly = mdSrc.split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n');
+  ok(!mdCodeOnly.includes('dangerouslySetInnerHTML'), 'markdown-lite 代码中无 dangerouslySetInnerHTML');
+  ok(mdCodeOnly.includes('referrerPolicy'), '源码保留 no-referrer 策略');
+  ok(!mdCodeOnly.includes('/api/github/image'), '图片不经宿主端点中转（直接 URL 渲染）');
 
   console.log('\n========================================');
   console.log(`Phase 30 Test Result: ${passed}/${total} assertions ${passed === total ? 'PASSED' : 'FAILED'}!`);
