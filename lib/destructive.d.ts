@@ -36,13 +36,36 @@ interface GateSpec {
     describe(args: any): GatePayload;
 }
 export declare const DESTRUCTIVE_ACTIONS: Record<string, Record<string, GateSpec>>;
+/** 记录一次"人已在官方审核弹窗里批准了这个调用"（s2 的 `approval-gate.ts` 调用） */
+export declare function markApproved(callId: unknown): void;
+/** 清空批准标记。只给测试与卸载用——正常运行由 `guardDestructive` 一次性消费 */
+export declare function resetApprovedCalls(): void;
+/**
+ * 忘掉一个批准标记（`main.ts` 的 `tools/result` 切面调用）。
+ *
+ * 为什么需要：`guardDestructive` 只在**工具体真的被调用**时才消费标记。若批准之后被下游
+ * `pre-execute` 监听器 deny / cancel、或工具名解析失败导致 body 从未执行，标记就会留到
+ * 进程退出。callId 由宿主唯一化，残留不构成越权，但那既是无界增长，也与上面
+ * "不残留"的承诺不符——所以补一个确定性的回收点。
+ */
+export declare function forgetApproved(callId: unknown): void;
+/**
+ * 这个 (工具, 参数) 组合是否命中闸门表的**危险条件**（不看 `confirm`）。
+ *
+ * 与 `guardDestructive` 的唯一差别就是"不看 `confirm`"：审核判定必须如此，否则模型只要
+ * 每次都带上 `confirm: true` 就能永久绕过审核弹窗，审核就退化成装饰。
+ */
+export declare function isDestructiveCall(toolName: string, args: any): boolean;
 /**
  * 统一闸门：命中则返回拦截载荷，否则返回 undefined。
  *
  * `confirm === true` 的判定放在这里而不是每个 describe 里——15 份重复的
  * `if (args.confirm !== true)` 正是这次要消掉的东西。
+ *
+ * @param exec 宿主 `ToolRunContext`（含 `callId`）。仅用于消费"s2 已批准"标记；
+ *   缺省时行为与 s1 完全一致（`phase38-gate` 的逐条断言不受影响）。
  */
-export declare function guardDestructive(toolName: string, args: any): GatePayload | undefined;
+export declare function guardDestructive(toolName: string, args: any, exec?: any): GatePayload | undefined;
 /**
  * 用闸门包一层 execute（注册期唯一入口）。
  *

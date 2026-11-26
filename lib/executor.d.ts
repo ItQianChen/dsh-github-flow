@@ -393,6 +393,15 @@ export declare class GhExecutor {
      */
     private normalizeRepoFullName;
     /**
+     * 解析"这次调用针对哪个仓库"：显式 `repo` 优先，没传则取本地 git 身份。
+     *
+     * 为什么要有这个公开入口：审核阶段取目标信息（`main.ts` 的 `fetchTarget`）需要仓库全名，
+     * 而 `normalizeRepoFullName` 是 private —— 它头上的注释写明"多一处调用方就多一次赌"，
+     * 所以不在外面复制正则，而是从里面开一个口。两处都没有 / 显式非法 → `undefined`（不猜）。
+     * 同步、不 spawn `gh`（`getRepoIdentityFromLocal` 只读 `.git/config`）。
+     */
+    resolveRepoFullName(explicit?: string, cwd?: string): string | undefined;
+    /**
      * 获取单次 Actions Run 的完整详情（run + jobs + steps）。
      *
      * 架构设计：

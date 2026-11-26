@@ -22,6 +22,9 @@ import { createHelpTool } from './tools/help.js';
 import { createTaskTool } from './tools/task.js';
 import { defaultTelemetryCollector } from './telemetry.js';
 import { AuditStore, resolveScopeFromExec } from './audit.js';
+import { createApprovalGate } from './approval-gate.js';
+import { forgetApproved } from './destructive.js';
+import { createTargetInfoResolver, stashTargetTitle } from './target-title.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
 import { UpdateChecker } from './updater.js';
@@ -227,11 +230,95 @@ export function apply(ctx: Context, config: Config = Config({})) {
          * 不需要再套一层 try——它不会抛。
          */
         auditStore.recordCall(toolName, args, result, exec);
+        /*
+         * 回收审核批准标记。
+         *
+         * 正常路径上 `guardDestructive` 已经用 `delete` 消费掉它；这里兜的是
+         * "批准了但工具体从未执行"（被下游 pre-execute 监听器 deny / cancel、工具名解析失败）。
+         * 放在 `tools/result` 是因为它对该调用**一定**会触发（含 deny 与 cancel 的终态）。
+         */
+        forgetApproved(exec?.callId);
       }
     } catch {
       // Fail-Open 非阻塞防线：严禁打点逻辑异常影响主工具调用
     }
   });
+
+  // 2b. 注册执行前人工审核闸门（s2）：宿主 `tools/pre-execute` 瀑布 + 官方 `ctx.approval`。
+  // 为什么不用 `inject: ['approval']`：本插件支持纯 CLI / TUI profile，那里没有审核 UI，
+  // 也就没人提供这个服务。写进 inject 会让插件在这些 profile 里永久 PENDING——一个工具都
+  // 拿不到（与第 3/5 步同一个理由）。改用 `ctx.get('approval')` 机会式探测（宿主 pipeline
+  // 自己也是这么做的），拿不到就退回工具体既有的 `confirm` 闸门，不阻塞、不判失败。
+  /*
+   * 目标信息解析器：只认 `pr_number` / `issue_number`，用**一条 GraphQL 查询**把
+   * "拍板所需"的字段一次拿全（标题 / 状态 / 作者 / 增删行数 / 改动文件数 / CI / 评审 / 评论数 / 正文），
+   * 同一目标 15s 内不重复打。
+   *
+   * 为什么走 `gh api graphql` 而不是 `gh pr view --json`：后者要拿评论数得把整个 comments
+   * 数组（含正文）拉回来，大 PR 一下就是几十 KB；GraphQL 只取 `totalCount`，输出恒定很小。
+   * 字段集 2026-11-26 真机核对过（Issue #17 / PR #20 均正常返回）。
+   * 为什么不直接用 `executor.getPrDetail`：那个会三路并发拉 diff + 评论 + 检查，
+   * 还带 2MB 输出预算 —— 为了弹窗里几行信息用它，等于把审核延迟放大一个数量级。
+   *
+   * 超时 4s：这些信息是"锦上添花"，网络慢时宁可弹窗少几行，也不能让用户干等。
+   * 输出预算放到 70K 字符：GitHub 正文上限 65536 字符，默认的 24K 会把长正文的 JSON 截成非法的。
+   */
+  const resolveTarget = createTargetInfoResolver({
+    fetchTarget: async (kind, num, scope) => {
+      const execScope = executor.resolveExecScope({ cwd: scope.cwd });
+      const repo = executor.resolveRepoFullName(scope.repo, execScope.cwd);
+      if (!repo) return undefined;
+      // repo 已经过白名单校验（仅 [A-Za-z0-9_.-]），可安全内插进查询串
+      const [owner, name] = repo.split('/');
+      const common = 'title body state author { login } comments { totalCount }';
+      const query = kind === 'pr'
+        ? `query { repository(owner:"${owner}", name:"${name}") { pullRequest(number:${num}) { ${common} isDraft additions deletions changedFiles reviewDecision commits(last:1) { nodes { commit { statusCheckRollup { state } } } } } } }`
+        : `query { repository(owner:"${owner}", name:"${name}") { issue(number:${num}) { ${common} stateReason } } }`;
+      const r = await executor.run<any>(['api', 'graphql', '-f', 'query=' + query], {
+        cwd: execScope.cwd,
+        timeoutMs: 4_000,
+        maxOutputChars: 70_000,
+      });
+      const node = r.ok ? r.data?.data?.repository?.[kind === 'pr' ? 'pullRequest' : 'issue'] : undefined;
+      if (!node || typeof node.title !== 'string') return undefined;
+      const login: string | undefined = typeof node.author?.login === 'string' ? node.author.login : undefined;
+      const count = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
+      if (kind === 'pr') {
+        return {
+          title: node.title,
+          body: typeof node.body === 'string' ? node.body : undefined,
+          state: node.state,
+          isDraft: node.isDraft === true,
+          author: login,
+          additions: count(node.additions),
+          deletions: count(node.deletions),
+          changedFiles: count(node.changedFiles),
+          commentsCount: count(node.comments?.totalCount),
+          reviewDecision: typeof node.reviewDecision === 'string' ? node.reviewDecision : undefined,
+          // null 是有意义的："这次提交没有配置检查"，不能和"没取到"混为一谈
+          checkState: node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state ?? null,
+        };
+      }
+      return {
+        title: node.title,
+        body: typeof node.body === 'string' ? node.body : undefined,
+        state: node.state,
+        stateReason: typeof node.stateReason === 'string' ? node.stateReason : undefined,
+        author: login,
+        commentsCount: count(node.comments?.totalCount),
+      };
+    },
+  });
+  const approvalGate = createApprovalGate({
+    // 每次调用现读档位：设置页改完立刻生效，无需重启
+    getMode: () => auditStore.approvalMode(),
+    getApproval: () => (ctx as any).get?.('approval'),
+    recordDecision: (callId, decision) => auditStore.recordDecision(callId, decision),
+    resolveTarget,
+    stashTitle: stashTargetTitle,
+    warn: (message) => console.warn(`[dsh-github-flow] ${message}`),
+  });
+  onHostEvent(ctx, 'tools/pre-execute', (exec: any, next: any) => approvalGate(exec, next));
 
   // 3. 注册人类 Slash 命令 (/gh status, /gh upgrade, /gh help)
   // 用 ctx.inject 声明式等待，而不是一次性 ctx.get 探测：服务若晚于本插件就绪，
