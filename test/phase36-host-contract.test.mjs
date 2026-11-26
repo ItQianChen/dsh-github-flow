@@ -97,6 +97,31 @@ ok(!/\.dsh-github-icon-inner/.test(stylesSrc), '侧栏图标不再有固定宽�
 ok(!/\.dsh-github-icon\b/.test(stylesSrc), '侧栏图标不再覆盖宿主行样式（.dsh-github-icon 已移除）');
 ok(!/\.dsh-github-icon-inner/.test(bundle) && !/\.dsh-github-icon\b/.test(bundle), '构建产物中同样不含这两个类名');
 
+/*
+ * 插槽贡献白名单（2026-11-26「single slot 撞车导致整个 web boot 失败」事故的护栏）。
+ *
+ * 事故：往 `conversation.approval.detail`（官方 chat 包持有、kind=single）注册了一条贡献。
+ * 该插槽在**同优先级重复注册时直接抛错**，而抛错发生在官方 `dsh-client-ui-chat`（required entry）
+ * 自己注册的那一刻 —— 于是 `web boot: 1 required entry did not activate`，**应用无法启动**。
+ * 我们自己的 try/catch 拦不到（异常不是从我们的调用抛出的）。
+ *
+ * 因此：客户端只允许注入**本插件自己声明的**插槽。要新增一个，必须先在
+ * src/client.ts 里写下理由、再把名字加进这份白名单 —— 强制让"碰别人的插槽"成为一次显式决定。
+ * 注意 `conversation.*` / `sidebar.*` 里官方包已注册的那些名字，一律不得出现在这里。
+ */
+const ALLOWED_SLOT_INJECTIONS = [
+  'sidebar.right.pane.tab',
+  'sidebar.right.pane.tab.title',
+  'sidebar.panellist',
+  'main',
+];
+const injectedSlots = [...bundle.matchAll(/slots\.inject\(\s*"([^"]+)"/g)].map((m) => m[1]);
+ok(injectedSlots.length > 0, '能从产物里解析出 slots.inject 调用', `实际 ${injectedSlots.length}`);
+const unexpectedSlots = injectedSlots.filter((name) => !ALLOWED_SLOT_INJECTIONS.includes(name));
+ok(unexpectedSlots.length === 0, '客户端只贡献自己的插槽（不碰官方的 single 型插槽）',
+  `越界：${[...new Set(unexpectedSlots)].join(', ')}`);
+ok(!bundle.includes('conversation.approval'), '绝不注册 conversation.approval.*（single 型 + required 持有者，撞车会挂掉整个 web boot）');
+
 // ============================================================
 console.log('\n--- 2. 插件元数据（cordis loader 消费面）---');
 // ============================================================
