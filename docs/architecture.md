@@ -209,7 +209,7 @@
 
 ## 4. 自动化测试体系 (Test Suite)
 
-项目配备了 **54 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **2000+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
+项目配备了 **55 个独立阶段的全量自动化回归测试套件（`test/run-all.mjs`）**，合计 **3200+ 项断言**（精确条数以 `node test/run-all.mjs` 末尾的汇总输出为准，此处只给量级）：
 - 阶段数与 `test/run-all.mjs` 的 `phases` 数组由 `test/phase35-doc.test.mjs` 对账，改一处漏一处会直接红；
 - `phase1`：Issue / Run / PR / Repo / Help 命令装配与确认门禁；
 - `phase2`：Native Markdown 渲染与 Token 压缩率实测（>60% 降幅）；

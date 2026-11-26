@@ -31,7 +31,6 @@ const PAGE_SIZE_STORAGE_KEY = 'dsh-github-audit-page-size';
  *
  * 记录本身就限定在这两个工具的写操作上（`AUDITED_TOOLS`），列出 Release / 标签 /
  * 缓存等选项毫无意义——选了永远是空列表。筛选器只能列"可能出现的值"。
- * 该页若出现表里没有的工具（历史遗留数据），下面会把它补进来，避免无法筛选。
  */
 const TOOL_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'github_pr', label: 'PR' },
@@ -44,7 +43,9 @@ const DECISION_LABEL: Record<string, string> = {
   approved: '已批准',
   rejected: '已拒绝',
   expired: '已超时',
-  'no-client': '未审核',
+  // 与导出件用同一个词：「无客户端」= 没有可用的审核端（部署缺陷），
+  // 「未审核」听起来像"没人看过"，两件事别混。
+  'no-client': '无客户端',
   cancelled: '已取消',
 };
 
@@ -88,6 +89,14 @@ export function AuditModal(props: {
   var [loading, setLoading] = React.useState(false);
   var [busy, setBusy] = React.useState(false);
   var [error, setError] = React.useState(null as string | null);
+  /**
+   * 「清空没删干净」的常驻提示，**必须与 `error` 分开**。
+   *
+   * 为什么：清空成功后要立刻刷新列表，而 `load()` 第一行就是 `setError(null)`。
+   * 把 partial 文案塞进 `error` 会被同一次 `.then` 里的 `load()` 当场擦掉——
+   * 界面上一个字都不显示，而"如实告知没删干净"正是这个功能的核心承诺（DOM 实测过）。
+   */
+  var [clearNotice, setClearNotice] = React.useState(null as string | null);
   var [degraded, setDegraded] = React.useState(null as string | null);
   // 记录本身已限定为「PR / Issue 的写操作」，因此不再需要「仅写操作」筛选
   var [onlyDestructive, setOnlyDestructive] = React.useState(false);
@@ -362,25 +371,99 @@ export function AuditModal(props: {
     if (busy) return;
     if (armed !== 'clear') { setArmed('clear'); return; }
     setArmed(null);
-    post('/audit/records/clear', {}, function () { setSelected([]); });
+    /*
+     * 清空要如实处理 `partial`。
+     *
+     * 记录分段后，"清空"要删多个进程的段，而那些段不归本进程写。抢不到锁时只能清
+     * 自己那段——此时被删的原始行仍留在别人的旧段里。**必须显式告诉用户"没删干净"**，
+     * 否则他以为文件干净了、实际字节还在磁盘上：那是隐私问题，不是显示问题。
+     */
+    setBusy(true);
+    setError(null);
+    setClearNotice(null);
+    fetch('/api/github/audit/records/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+      .then(function (r: any) { return r.json().catch(function () { return null; }); })
+      .then(function (j: any) {
+        setBusy(false);
+        setSelected([]);
+        if (!j || !j.ok) {
+          /*
+           * 失败分支**不能**再调 load()：`load()` 第一行就 `setError(null)`，
+           * 会把刚写的「清空失败」当场擦掉——危险动作失败却看起来像成功。
+           * 失败时列表本来也没变，不刷新没有副作用。
+           */
+          setError((j && j.message) || '清空失败');
+          return;
+        }
+        var d = (j && j.data) || {};
+        if (d.partial) {
+          // 走独立 state（见 clearNotice 注释），不能塞进 error
+          setClearNotice('已清空本进程的记录；另有 ' + (d.remainingSegments || 0)
+            + ' 个来自其他进程的段未被清空（它们正被别的 DSH 实例持有或刚被写入）。关闭那些实例后再清空一次即可。');
+        }
+        load();
+      })
+      .catch(function (err: any) {
+        setBusy(false);
+        setError('清空请求异常：' + ((err && err.message) || '未知错误'));
+      });
+  };
+
+  /**
+   * 导出（s3）：JSON / Markdown。
+   *
+   * 服务端**不落文件**，只回传字符串，由这里用 `Blob` + `<a download>` 触发下载。
+   * 为什么这样分工：落盘就要管清理（谁删、多久删），而用户要的只是"带走"。
+   * 零状态方案意味着没有任何需要维护的产物。
+   */
+  var handleExport = function (format: 'json' | 'md') {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    fetch('/api/github/audit/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        format: format,
+        // 导出的范围必须与**当前看到的**一致：右栏入口导出当前工作区，驾驶舱导出全局
+        filter: { cwd: scopedCwd || undefined, tool: toolFilter || undefined, risk: onlyDestructive ? 'destructive' : undefined },
+      }),
+    })
+      .then(function (r: any) { return r.json().catch(function () { return null; }); })
+      .then(function (j: any) {
+        setBusy(false);
+        if (!j || !j.ok || !j.data) { setError((j && j.message) || '导出失败'); return; }
+        var blob = new Blob([j.data.content], { type: j.data.contentType + ';charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = j.data.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        // 立刻回收：不 revoke 会让整个文档的 blob 常驻内存（导出几十 MB 时很明显）
+        setTimeout(function () { try { URL.revokeObjectURL(url); } catch { /* 已回收 */ } }, 1000);
+      })
+      .catch(function (err: any) {
+        setBusy(false);
+        setError('导出请求异常：' + ((err && err.message) || '未知错误'));
+      });
   };
 
   /*
-   * 工具下拉的候选 = **固定的 19 个工具** + 该页出现但不在表里的（新增工具兜底）。
-   * 顺序按 TOOL_FILTER_OPTIONS（PR / Issue 在最前），不排序——
-   * 「PR / Issue」被排到字母序中间就失去了"最常用"的意图。
+   * 工具下拉的候选 = **只有 PR / Issue**，与记录作用域（`AUDITED_TOOLS`）严格一致。
+   *
+   * 为什么不再"把该页出现但不在表里的工具补进来"：那会让作用域外的历史记录
+   * （s1 首版曾记录所有 github_* 工具的调用）在下拉里冒出来，传达出"这里什么都会记"
+   * 的错误印象。作用域外的行现在在**装载期就被丢弃**，下拉自然只剩这两项。
    */
   var toolOptions: Array<{ value: string; label: string }> = TOOL_FILTER_OPTIONS.slice();
-  items.forEach(function (it: any) {
-    var name = it && typeof it.tool === 'string' ? it.tool : '';
-    if (name && !toolOptions.some(function (o) { return o.value === name; })) {
-      toolOptions.push({ value: name, label: name });
-    }
-  });
-  // 已选中的值必须留在候选里（否则 select 会显示成空白）
-  if (toolFilter && !toolOptions.some(function (o) { return o.value === toolFilter; })) {
-    toolOptions.push({ value: toolFilter, label: toolFilter });
-  }
+  // 不需要"已选中值兜底"：toolFilter 的唯一写入口是下面的 <select onChange>，
+  // 取值必然属于这两个选项（它也没有做 localStorage 恢复），兜底分支永远不成立。
 
   /** 详情里的一行「标签：值」；值为空时显示占位，不留空白让人以为没记 */
   var detailRow = function (label: string, value: any) {
@@ -893,7 +976,7 @@ export function AuditModal(props: {
           h(
             'div',
             { style: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary, #656d76)', lineHeight: 1.5 } },
-            '记录 Agent 通过本插件对 Issue / PR（以及其余 GitHub 工具）的每一次调用：谁、在哪个仓库、做了什么、成没成。'
+            '记录 Agent 通过本插件对 Issue / PR 的每一次写操作：谁、在哪个仓库、做了什么、成没成。读操作与其余 GitHub 工具不在记录范围内（它们各有自己的 confirm 闸门）。'
           )
         ),
         h(
@@ -964,11 +1047,33 @@ export function AuditModal(props: {
         )
       ),
       // 正文
+      /*
+       * 正文容器。
+       *
+       * ⚠️ `flexDirection: 'column'` 是**必须**的，不能靠 `.dsh-github-modal-body`
+       * 的全局样式：那个类是为设置页的「左导航 + 右表单」写的（`display: flex` 默认 row），
+       * 本窗口复用了同一个类名却没改方向，于是「提示卡 / 错误条 / 表格」这几个**兄弟节点**
+       * 会横排；而且 flex row 下 `overflowY` 作用在交叉轴上，长列表不会被裁成滚动区，
+       * 100 条记录时会把弹窗顶破（footer 被推出视口）。
+       *
+       * 滚动链完整性的四个要素（缺一个长列表就会撑大窗口）：
+       * 外层 dialog 的 `maxHeight: 86vh` + `overflow: hidden`（927 行）
+       * → 这里 `flex: 1`（吃掉剩余高度）
+       * → `minHeight: 0`（flex 子项默认 min-height:auto 会拒绝收缩，这是最容易漏的一条）
+       * → `overflowY: 'auto'`（真正产生滚动条）
+       */
       h(
         'div',
         {
           className: 'dsh-github-modal-body',
-          style: { padding: '8px 12px 14px', overflowY: 'auto', flex: 1, minHeight: 0, boxSizing: 'border-box' },
+          style: {
+            padding: '8px 12px 14px',
+            flexDirection: 'column',
+            overflowY: 'auto',
+            flex: 1,
+            minHeight: 0,
+            boxSizing: 'border-box',
+          },
         },
         degraded
           ? h(
@@ -1037,6 +1142,31 @@ export function AuditModal(props: {
               )
             )
           : null,
+        /*
+         * 「没删干净」的提示：用独立卡片常驻，**不复用 error 槽位**——
+         * 清空成功后会立刻 load()，而 load() 第一行就 setError(null)，塞进 error 等于不显示。
+         */
+        clearNotice
+          ? h(
+              'div',
+              {
+                className: 'dsh-github-guide-card warning',
+                style: { marginBottom: '10px' },
+                role: 'status',
+              },
+              h('div', { className: 'dsh-github-guide-header' }, '⚠️ 其他进程的记录未被清空'),
+              h('div', { className: 'dsh-github-guide-desc' }, clearNotice),
+              h(
+                'button',
+                {
+                  className: 'dsh-github-btn-sm',
+                  style: { marginTop: '6px', padding: '2px 10px', fontSize: '11px' },
+                  onClick: function () { setClearNotice(null); },
+                },
+                '知道了'
+              )
+            )
+          : null,
         error
           ? h('div', { className: 'dsh-github-empty', style: { color: '#cf222e' } }, error)
           : null,
@@ -1047,8 +1177,8 @@ export function AuditModal(props: {
               onlyDestructive || toolFilter
                 ? '当前筛选条件下没有记录'
                 : scope === 'workspace' && scopedCwd
-                  ? '这个工作区还没有记录。Agent 在本工作区调用 GitHub 工具后，这里会出现一条。'
-                  : '还没有记录。Agent 每次调用 GitHub 工具后，这里会出现一条。'
+                  ? '这个工作区还没有记录。Agent 在本工作区对 PR / Issue 发起写操作后，这里会出现一条。'
+                  : '还没有记录。Agent 每次对 PR / Issue 的写操作都会在这里留一条。'
             )
           : null,
         /*
@@ -1112,6 +1242,9 @@ export function AuditModal(props: {
           style: {
             flexShrink: 0,
             display: 'flex',
+            // 底栏现在有状态文案 + 分页 + 4 个按钮，640px 下必然挤：允许换行，
+            // 让第二行整块落下，而不是把「导出 MD」压成两行文字。
+            flexWrap: 'wrap',
             alignItems: 'center',
             gap: '8px',
             padding: '10px 16px',
@@ -1178,6 +1311,28 @@ export function AuditModal(props: {
               )
             )
           : null,
+        h(
+          'button',
+          {
+            className: 'dsh-github-btn-sm',
+            onClick: function () { handleExport('md'); },
+            disabled: !recordActive || busy || total === 0,
+            style: { padding: '4px 10px', fontSize: '11px' },
+            title: '导出为 Markdown 表格（含决策列与被拒绝留言原文）',
+          },
+          '⬇ 导出 MD'
+        ),
+        h(
+          'button',
+          {
+            className: 'dsh-github-btn-sm',
+            onClick: function () { handleExport('json'); },
+            disabled: !recordActive || busy || total === 0,
+            style: { padding: '4px 10px', fontSize: '11px' },
+            title: '导出为 JSON（当前保留的全部记录）',
+          },
+          '⬇ 导出 JSON'
+        ),
         h(
           'button',
           {
