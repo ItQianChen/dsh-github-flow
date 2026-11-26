@@ -171,10 +171,14 @@ console.log('\n--- 5. 文件装载：坏行跳过 / intent 无 result ---');
 {
   const dir = tmpDir();
   const file = path.join(dir, 'audit.jsonl');
+  /*
+   * 样本必须是**写**操作：s3 起读取侧也按作用域过滤（记录只有 PR / Issue 的写操作），
+   * 用读操作行当样本会被判越界丢弃，测出来的东西与真实数据流不一致。
+   */
   const rows = [
     { v: 1, kind: 'intent', id: 'x1', at: 100, tool: 'github_issue', action: 'close', write: true, risk: 'destructive', summary: '关闭 Issue #1' },
     '{ 这行是断电留下的半行',
-    { v: 1, kind: 'result', id: 'y1', at: 101, ok: true, tool: 'github_pr', action: 'list', write: false, risk: 'read', summary: '列出 PR' },
+    { v: 1, kind: 'intent', id: 'y1', at: 101, tool: 'github_pr', action: 'merge', write: true, risk: 'destructive', summary: '合并 PR #2' },
   ];
   writeFileSync(file, rows.map((r) => (typeof r === 'string' ? r : JSON.stringify(r))).join('\n') + '\n', 'utf8');
   const store = new AuditStore({ dir, flushDelayMs: 0 });
@@ -252,8 +256,10 @@ console.log('\n--- 7. 路由契约 ---');
   };
 
   const { routes, store } = makeHarness();
-  ok(routes.length === 4, '注册 4 条路由（列表 / 删除 / 清空 / 设置）');
-  ok(routes.every((r) => r.kind === 'exact'), '四条均为 exact 匹配');
+  // s3 起多了第 5 条：导出（`/audit/export`，JSON / Markdown 随响应回传，服务端不落文件）
+  ok(routes.length === 5, '注册 5 条路由（列表 / 删除 / 清空 / 导出 / 设置）');
+  ok(routes.every((r) => r.kind === 'exact'), '五条均为 exact 匹配');
+  ok(routes.some((r) => r.path === '/api/github/audit/export'), '导出路由已挂载');
 
   store.recordCall('github_pr', { action: 'merge', pr_number: 19 }, { ok: true }, { callId: 'r1' });
   // 第二条也用写操作（Issue 评论）：作用域已排除读，用 list 会得到 0 条
@@ -514,9 +520,14 @@ console.log('\n--- 12. 集成：真 cordis Context 下 tools/result 切面真的
       { isError: false, value: { ok: true }, content: [] });
     await sleep(400);
 
-    const f = path.join(home, 'data', 'dsh-github-flow', 'audit.jsonl');
-    ok(existsSync(f), 'DSH_HOME 下真的落盘了 audit.jsonl（tools/result 接线成立）');
-    const text = existsSync(f) ? readFileSync(f, 'utf8') : '';
+    /*
+     * s3 起记录分段落盘：`audit/audit.<pid>-<ts>-<seq>.jsonl`，每进程一段。
+     * 断言仍要证明"真的落盘了"，只是不再假设那唯一一个文件名。
+     */
+    const segDir = path.join(home, 'data', 'dsh-github-flow', 'audit');
+    const segs = existsSync(segDir) ? readdirSync(segDir).filter((n) => n.endsWith('.jsonl')) : [];
+    ok(segs.length >= 1, 'DSH_HOME 下真的落盘了记录段（tools/result 接线成立）', `段数=${segs.length}`);
+    const text = segs.map((n) => readFileSync(path.join(segDir, n), 'utf8')).join('\n');
     ok(text.includes('"kind":"intent"') && text.includes('关闭 Issue #3'), '写操作产生了带人话摘要的 intent 行');
     ok(text.includes('sess-it'), '会话 id 被记录');
     ok(text.includes('"ok":true'), '结果行被记录');
@@ -560,10 +571,15 @@ console.log('\n--- 13. 保留预算：派生行数 / 字节闸门 / UTF-8 记账
 
 console.log('\n--- 14. 开关：默认开 / 可关 / 热切 ---');
 {
+  /*
+   * 这里同时覆盖 s3 的**旧布局迁移**：`audit.jsonl`（单文件）现在是"最旧的一段"，
+   * 首次启动时被导入本进程段并删除。升级绝不能把用户历史弄丢。
+   */
   const dir = tmpDir();
+  const legacy = path.join(dir, 'audit.jsonl');
   writeFileSync(
-    path.join(dir, 'audit.jsonl'),
-    JSON.stringify({ v: 1, kind: 'result', id: 'old', at: 1, ok: true, tool: 'github_pr', action: 'list', write: false, risk: 'read', summary: '旧记录' }) + '\n',
+    legacy,
+    JSON.stringify({ v: 1, kind: 'intent', id: 'old', at: 1, tool: 'github_pr', action: 'merge', write: true, risk: 'destructive', summary: '旧记录' }) + '\n',
     'utf8'
   );
   const off = new AuditStore({ dir, flushDelayMs: 0, enabled: false });
@@ -571,12 +587,19 @@ console.log('\n--- 14. 开关：默认开 / 可关 / 热切 ---');
   ok(off.rowCount() === 0, '关闭态不加载历史（零内存、零启动成本）');
   off.recordCall('github_pr', { action: 'merge', pr_number: 1 }, { ok: true }, { callId: 'off1' });
   await off.flush();
-  const body = readFileSync(off.filePath(), 'utf8');
-  ok(!body.includes('off1'), '关闭态不写盘');
-  ok(body.includes('"id":"old"'), '关闭态不动历史文件（那是用户的文件）');
+  // 关闭态下本段文件可能根本还没被创建（零 I/O 是设计目标），所以先判存在再读内容
+  const offBody = existsSync(off.filePath()) ? readFileSync(off.filePath(), 'utf8') : '';
+  ok(!offBody.includes('off1'), '关闭态不写盘');
+  // 关闭态不加载 = 不迁移，旧文件原样不动（那是用户的文件）
+  ok(existsSync(legacy) && readFileSync(legacy, 'utf8').includes('"id":"old"'), '关闭态不动历史文件（那是用户的文件）');
 
   const on = await off.setEnabled(true);
   ok(on.enabled === true && on.rows === 1, '重新开启后加载历史');
+  // 开启时迁移：旧单文件的行进入本进程段，旧文件被移除（先落盘再删，任一步失败都不丢数据）
+  ok(existsSync(off.filePath()) && readFileSync(off.filePath(), 'utf8').includes('"id":"old"'),
+    '旧单文件的历史被迁进段文件（升级不丢记录）');
+  ok(!existsSync(legacy), '迁移完成后旧单文件被移除（不会下次启动再导入一遍）');
+
   off.recordCall('github_pr', { action: 'merge', pr_number: 2 }, { ok: true }, { callId: 'on1' });
   await off.flush();
   ok(readFileSync(off.filePath(), 'utf8').includes('on1'), '开启后恢复写盘');
