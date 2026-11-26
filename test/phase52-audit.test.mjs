@@ -132,11 +132,14 @@ console.log('\n--- 4. 存储：折叠 / 墓碑 / 压实 / 决策行 ---');
   ok(one.callId === 'c1', 'callId 被记录');
   ok(store.rowCount() === 2, '写操作落 intent + result 两行');
 
-  // 读操作：一行 result 自带身份（不留「发起但没结果」的假象，也省一半行数）
+  // 作用域：**只有 PR / Issue 的写操作**进记录（总纲 §一）
   store.recordCall('github_pr', { action: 'list' }, { ok: true }, { callId: 'c2' });
-  ok(store.rowCount() === 3, '读操作只落 1 行');
-  const read = store.list({ tool: 'github_pr' }).items.find((e) => e.callId === 'c2');
-  ok(read && read.write === false && read.summary === '列出 PR', '读记录自带身份与摘要');
+  ok(store.rowCount() === 2, 'PR 的读操作不入记录（只记写）');
+  store.recordCall('github_release', { action: 'delete', tag: 'v1' }, { ok: true }, { callId: 'c3' });
+  ok(store.rowCount() === 2, '非 PR / Issue 的工具不入记录（release 不计）');
+  store.recordCall('github_issue', { action: 'close', issue_number: 3 }, { ok: true }, { callId: 'c4' });
+  ok(store.rowCount() === 4, 'Issue 的写操作入记录（作用域含 PR + Issue）');
+  ok(store.list().total === 2, '两条记录：PR merge + Issue close');
 
   // 决策行覆盖
   store.recordDecision('c1', 'rejected', '先改成 squash，别删分支');
@@ -155,7 +158,7 @@ console.log('\n--- 4. 存储：折叠 / 墓碑 / 压实 / 决策行 ---');
   ok(store.list().items.find((e) => e.id === 'c1') === undefined, '删除后列表不可见');
   const bytes = readFileSync(store.filePath(), 'utf8');
   ok(!bytes.includes('"id":"c1"'), 'delete 返回时文件字节已不含被删 id（同步压实，无需等 flush）');
-  ok(bytes.includes('c2'), '未删除的记录仍在文件里');
+  ok(bytes.includes('c4'), '未删除的记录仍在文件里');
   ok(await store.delete(['not-exist']) === 0, '删除不存在的 id 返回 0');
 
   // 清空
@@ -185,19 +188,21 @@ console.log('\n--- 5. 文件装载：坏行跳过 / intent 无 result ---');
 
 console.log('\n--- 6. 派生行数上限与分页 ---');
 {
-  // 行数下限被 clamp 到 1000（防"极短行"病态），因此这里用 1000 行验证淘汰与分页
+  // 行数下限被 clamp 到 1000（防"极短行"病态）。作用域内只剩写操作，每次写 = 2 行，
+  // 因此 600 次写 = 1200 行 → 淘汰 200 行（整 100 对）→ 剩 1000 行 / 500 条。
   const store = makeStore({ maxRows: 1000, maxBytes: 64 * 1024 * 1024 });
-  for (let i = 0; i < 1100; i++) store.recordCall('github_pr', { action: 'list' }, { ok: true }, { callId: 'k' + i });
+  for (let i = 0; i < 600; i++) store.recordCall('github_pr', { action: 'merge', pr_number: i }, { ok: true }, { callId: 'k' + i });
   ok(store.rowCount() === 1000, '超过行数上限后按时间尾部保留');
   const page = store.list({ limit: 200 });
-  ok(page.total === 1000, '折叠后总数等于上限');
+  ok(page.total === 500, '折叠后是 500 条（1000 行 = 500 对 intent+result）');
   ok(page.items[0].at > page.items[99].at, '列表按时间倒序（最新在前）');
-  const paged = store.list({ limit: 10, offset: 990 });
-  ok(paged.items.length === 10 && paged.total === 1000, 'limit/offset 分页正确');
+  const paged = store.list({ limit: 10, offset: 490 });
+  ok(paged.items.length === 10 && paged.total === 500, 'limit/offset 分页正确');
   await store.flush();
   const lines = readFileSync(store.filePath(), 'utf8').trim().split('\n').filter(Boolean);
   ok(lines.length === 1000, '压实后文件行数等于上限（超限部分真被丢弃）');
   ok(!lines[0].includes('"k0"'), '最早的那条已被截断');
+  ok(store.list().items.every((e) => e.result === 'ok'), '淘汰后没有留下"只有 intent 没有 result"的半对记录');
   await store.dispose();
 }
 
@@ -251,7 +256,8 @@ console.log('\n--- 7. 路由契约 ---');
   ok(routes.every((r) => r.kind === 'exact'), '四条均为 exact 匹配');
 
   store.recordCall('github_pr', { action: 'merge', pr_number: 19 }, { ok: true }, { callId: 'r1' });
-  store.recordCall('github_pr', { action: 'list' }, { ok: true }, { callId: 'r2' });
+  // 第二条也用写操作（Issue 评论）：作用域已排除读，用 list 会得到 0 条
+  store.recordCall('github_issue', { action: 'comment', issue_number: 2 }, { ok: true }, { callId: 'r2' });
 
   let res = await hit(routes, '/api/github/audit/records', { method: 'GET', url: '/api/github/audit/records' });
   ok(res.statusCode === 200 && res.body.ok === true, 'GET 列表 200 + ok');
@@ -259,7 +265,7 @@ console.log('\n--- 7. 路由契约 ---');
   ok(res.body.data.degraded === null, '未降级时 degraded 为 null');
 
   res = await hit(routes, '/api/github/audit/records', { method: 'GET', url: '/api/github/audit/records?write=1' });
-  ok(res.body.data.items.length === 1 && res.body.data.items[0].write === true, 'write=1 只返回写操作');
+  ok(res.body.data.items.length === 2 && res.body.data.items.every((e) => e.write === true), 'write=1 全部是写操作');
 
   res = await hit(routes, '/api/github/audit/records', { method: 'GET', url: '/api/github/audit/records?risk=destructive' });
   ok(res.body.data.items.length === 1, 'risk=destructive 只返回高危');
@@ -306,7 +312,9 @@ console.log('\n--- 7. 路由契约 ---');
   res = await hit(routes, '/api/github/audit/records', { method: 'GET', url: '/api/github/audit/records' });
   ok(Boolean(res.body.data.usage) && res.body.data.usage.enabled === true, '列表响应带 usage（默认开）');
   res = await hit(routes, '/api/github/audit/settings', { method: 'GET' });
-  ok(res.statusCode === 405, '设置端点拒绝 GET（405）');
+  ok(res.statusCode === 200 && Boolean(res.body.data.usage) && typeof res.body.data.approvalMode === 'string', '设置端点 GET 返回当前开关 / 预算 / 审核档位');
+  res = await hit(routes, '/api/github/audit/settings', { method: 'PUT' });
+  ok(res.statusCode === 405, '设置端点拒绝 PUT（405）');
   res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ budgetMB: 0 }) });
   ok(res.statusCode === 400, 'budgetMB=0 被拒（关闭走 enabled，不是预算 0）');
   res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ budgetMB: 65 }) });
@@ -318,6 +326,15 @@ console.log('\n--- 7. 路由契约 ---');
   res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ enabled: true, budgetMB: 4 }) });
   ok(res.statusCode === 200 && res.body.data.usage.enabled === true, '重新开启 200');
   ok(res.body.data.usage.maxBytes === 4 * 1024 * 1024, '预算改动随 usage 回显');
+  // 审核档位：与开关/预算同端点、同文件（设置页一屏三个控件）
+  res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ approvalMode: 'all-writes' }) });
+  ok(res.statusCode === 200 && res.body.data.approvalMode === 'all-writes', '审核档位可改并回显');
+  ok(store.approvalMode() === 'all-writes', '档位立即生效（无需重启）');
+  res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ approvalMode: 'sometimes' }) });
+  ok(res.statusCode === 400, '非法审核档位 → 400');
+  // 改预算不应把档位冲掉（三个字段同文件，最容易写漏的一处）
+  res = await hit(routes, '/api/github/audit/settings', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ budgetMB: 8 }) });
+  ok(res.body.data.approvalMode === 'all-writes', '改预算不覆盖已保存的审核档位');
   await store.dispose();
 }
 
@@ -343,11 +360,11 @@ console.log('\n--- 8. Fail-Open：任何失败都不许冒泡到 apply() ---');
 
   // 正常 store：卸载后调用不抛，且不再写盘
   const good = makeStore();
-  good.recordCall('github_pr', { action: 'list' }, { ok: true }, { callId: 'g1' });
+  good.recordCall('github_pr', { action: 'merge', pr_number: 7 }, { ok: true }, { callId: 'g1' });
   await good.dispose();
   let afterDisposeThrew = false;
   try {
-    good.recordCall('github_pr', { action: 'list' }, { ok: true }, { callId: 'g2' });
+    good.recordCall('github_pr', { action: 'merge', pr_number: 7 }, { ok: true }, { callId: 'g2' });
     await good.flush();
   } catch { afterDisposeThrew = true; }
   ok(afterDisposeThrew === false, 'dispose 之后调用不抛');
@@ -453,6 +470,11 @@ console.log('\n--- 11. 客户端登记（漏了就是白屏，且构建成功）
   ok(!/^\s*import\s/m.test(block), '内联块里没有 import（构建器已剥除，符号不会变 undefined）');
   const topLevelImport = modalSrc.split('\n').filter((l) => /^import\s/.test(l)).length;
   ok(topLevelImport <= 1, '源模块最多一条 import（只依赖 utils，不引入 react）');
+
+  // 筛选候选必须与记录作用域一致：只列 PR / Issue（列 Release 之类的选项永远选不出东西）
+  const filterValues = modalSrc.match(/value: 'github_[a-z_]+'/g) || [];
+  ok(filterValues.length === 2, `工具筛选候选只有 2 项（实际 ${filterValues.length}）`, filterValues.join(','));
+  ok(!modalSrc.includes("value: 'github_release'"), '筛选候选里没有作用域外的工具');
 
   // 两个入口必须是两种作用域：驾驶舱全局、右栏当前工作区
   ok(/scope:\s*["']workspace["']/.test(clientSrc), '右栏入口传 scope="workspace"');

@@ -72,6 +72,20 @@ export type AuditRow = IntentRow | DecisionRow | ResultRow | DeleteRow;
 export declare function deriveMaxRows(maxBytes: number): number;
 /** 预算 clamp：下限 256 KB、上限 64 MB。越界钳住而不是报错——配置值不值得让功能失效。 */
 export declare function clampBudget(bytes: number): number;
+/**
+ * 记录与审核的**作用域**：只有 PR 与 Issue。
+ *
+ * 这是本功能的产品定义（总纲 §一：「Agent 每次写 PR / Issue，本地留一条」），
+ * 不是实现取舍——`github_release delete`、`github_secret delete` 之类**不进操作记录、
+ * 也不进审核弹窗**，它们本来就有自己的 `confirm: true` 闸门。
+ *
+ * 为什么用白名单常量而不是"排除法"：新增工具时默认**不进**记录，而不是默认进。
+ * 记录面变宽是很容易无声发生的，而它一旦变宽，用户的"操作记录"里就会混进
+ * 一堆他没预期的条目。
+ */
+export declare const AUDITED_TOOLS: readonly string[];
+/** 该工具是否在记录/审核作用域内 */
+export declare function isAuditedTool(tool: unknown): boolean;
 /** ---------------- 分类 ---------------- */
 /**
  * 是否写操作：真源是 `WRITE_ACTIONS`（`src/tool-tiers.ts`），只读档位用的也是它。
@@ -126,9 +140,18 @@ export declare function auditDataDir(): string;
 export interface AuditSettings {
     enabled: boolean;
     budgetBytes: number;
+    /**
+     * 审核档位也在这个文件里：`audit-settings.json` 是**本插件的本地设置文件**，
+     * 而"记录开关 / 保留预算 / 审核档位"在设置页是同一屏的三个控件。
+     * 拆成两个文件只会让"改一处忘另一处"变成必然而不是意外。
+     */
+    approvalMode: 'off' | 'destructive' | 'all-writes';
     /** `file` = 用户曾在 UI 里改过；`default` = 文件不存在或损坏。决定它与静态配置的优先级 */
     source: 'file' | 'default';
 }
+/** 审核档位合法值（存档前校验；非法值一律回落默认） */
+export declare const APPROVAL_MODES: readonly ['off', 'destructive', 'all-writes'];
+export type ApprovalMode = (typeof APPROVAL_MODES)[number];
 export declare function auditSettingsPath(dir?: string): string;
 /**
  * 读设置。任何异常都回落到默认值——设置文件坏掉不该让记录功能消失，更不该让 `apply()` 抛错。
@@ -139,6 +162,7 @@ export declare function loadAuditSettings(dir?: string): AuditSettings;
 export declare function saveAuditSettings(dir: string, settings: {
     enabled: boolean;
     budgetBytes: number;
+    approvalMode?: string;
 }): boolean;
 /** ---------------- 存储 ---------------- */
 export interface AuditStoreOptions {
@@ -156,6 +180,8 @@ export interface AuditStoreOptions {
     enabled?: boolean;
     /** 设置文件目录（测试注入；缺省与数据目录相同） */
     settingsDir?: string;
+    /** 审核档位（种子值；设置文件存在时以文件为准） */
+    approvalMode?: string;
     /** 攒批刷盘间隔（不阻塞工具返回的关键） */
     flushDelayMs?: number;
     /** 仓库 / 工作区解析器（main.ts 注入 executor 后实现） */
@@ -163,6 +189,13 @@ export interface AuditStoreOptions {
         repo?: string;
         cwd?: string;
     };
+    /**
+     * 开关/降级状态变化回调（供审核队列同步启用状态）。
+     *
+     * 为什么由 store 主动通知而不是调用方轮询：运行中关掉记录时，正在等待的审批必须
+     * **立刻**结算（`expired`），否则 Agent 会一直挂到 180s 超时。轮询做不到这件事。
+     */
+    onEnabledChange?: (usage: AuditUsage) => void;
 }
 /** 存储用量快照（`usage()` 的返回类型；字段语义见 `AuditStore.usage`） */
 export interface AuditUsage {
@@ -191,8 +224,11 @@ export declare class AuditStore {
     private maxRows;
     private maxBytes;
     private enabled;
+    /** 审核档位：与开关/预算同文件，设置页同屏；`main.ts` 的闸门每次调用现读 */
+    private mode;
     private readonly flushDelayMs;
     private readonly repoResolver?;
+    private readonly onEnabledChange?;
     private rows;
     /** 与 `rows` 等长的字节数（含行尾换行）——淘汰时从头部整批减，避免 O(n²) 重算 */
     private rowBytes;
@@ -314,6 +350,14 @@ export declare class AuditStore {
      * 比明确的错误提示更糟。**
      */
     usage(): AuditUsage;
+    /**
+     * 当前审核档位。`main.ts` 的闸门**每次调用现读**，因此设置页改完立刻生效（无需重启）。
+     */
+    approvalMode(): ApprovalMode;
+    /** 改审核档位并落盘。运行期立即生效。 */
+    setApprovalMode(mode: string): AuditUsage;
+    /** 三个设置项共用一次落盘（失败只 warn：设置写不进去不该让功能失效） */
+    private saveSettings;
     /**
      * 改预算并**立刻生效**（无需重启）。异步：必须先等在途刷盘收尾再压实。
      *
