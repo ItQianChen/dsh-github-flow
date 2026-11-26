@@ -5,7 +5,187 @@ declare function saveLocalSyncSettings(settings: any): void;
 declare function clearStoredGlobalOverview(): void;
 
 /**
- * 全景驾驶舱「⚙️ 设置」模态弹窗组件：左侧分区导航（数据同步 / 网络代理 / 更新设置 / 关于）+ 右侧内容区
+ * 问号触发器：点击（或键盘 Enter / Space）打开二级说明弹窗。
+ *
+ * 为什么不是悬停浮层（2026-11-26 用户截图实证）：浮层绝对定位挂在卡片里，在靠底部的选项上
+ * 打开时会撑开滚动区、把横向滚动条挤出来，自己还被弹窗边缘裁掉。改成固定定位的二级弹窗后
+ * 完全脱离设置页的文档流，内容再多也只在弹窗内部滚动。
+ *
+ * 为什么是 span[role=button] 而不是 <button>：「启用操作记录」的标题位于 <label> 内，
+ * HTML 内容模型不允许 label 里再出现可标记元素（button 就是），否则点问号会连带拨动复选框。
+ * span 不是可标记元素，加上 tabIndex 与 Enter/Space 处理后键盘同样可用。
+ */
+function HelpDot(props: { label: string; onOpen: (trigger: any) => void }) {
+  // 局部取 h：不能在模块顶层写 var h（多个模块被内联进同一个闭包作用域，会互相撞名）
+  var h = React.createElement;
+  var open = function (e: any) {
+    // 必须拦住：单选卡片的 onClick 是"选中并保存"，点问号不能把档位改掉
+    e.stopPropagation();
+    e.preventDefault();
+    props.onOpen(e.currentTarget);
+  };
+  return h(
+    "span",
+    {
+      role: "button",
+      tabIndex: 0,
+      className: "dsh-github-note-dot",
+      "aria-label": "查看说明：" + props.label,
+      "aria-haspopup": "dialog",
+      title: "查看说明",
+      onClick: open,
+      onKeyDown: function (e: any) {
+        if (e.key === "Enter" || e.key === " ") open(e);
+      },
+    },
+    "?"
+  );
+}
+
+/** 一条说明的模型：普通字符串 = 段落；"• " 开头 = 清单项（排成药丸）；"# " 开头 = 小标题；空串 = 段间距 */
+type HelpLine = string;
+
+/**
+ * 二级说明弹窗：固定定位、居中、内容自身滚动，盖在设置弹窗之上。
+ *
+ * 三条与层级有关的约束：
+ * 1. 遮罩的 onClick 必须自己吃掉事件 —— 它嵌在设置页遮罩里，冒泡上去会连带关掉设置页；
+ * 2. Esc 由设置页的窗口级监听器统一分发：说明开着时只关说明（见该处的 helpTopic 分支）；
+ * 3. 打开后把焦点移进弹窗（关闭按钮 autoFocus），关闭后焦点还回触发的问号。
+ */
+function HelpModal(props: { topic: { label: string; lines: HelpLine[] }; onClose: () => void }) {
+  var h = React.createElement;
+  var body: any[] = [];
+  var pills: any[] = [];
+  var flushPills = function () {
+    if (pills.length === 0) return;
+    body.push(h("div", { key: "p" + body.length, className: "dsh-github-note-pills" }, pills));
+    pills = [];
+  };
+  props.topic.lines.forEach(function (line: HelpLine, i: number) {
+    if (line.indexOf("• ") === 0) {
+      pills.push(h("span", { key: i, className: "dsh-github-note-pill" }, line.slice(2)));
+      return;
+    }
+    flushPills();
+    if (line === "") body.push(h("div", { key: i, className: "dsh-github-note-gap" }));
+    else if (line.indexOf("# ") === 0) body.push(h("div", { key: i, className: "dsh-github-note-subhead" }, line.slice(2)));
+    else body.push(h("div", { key: i, className: "dsh-github-note-line" }, line));
+  });
+  flushPills();
+  return h(
+    "div",
+    {
+      className: "dsh-github-note-overlay",
+      onClick: function (e: any) { e.stopPropagation(); props.onClose(); },
+    },
+    h(
+      "div",
+      {
+        className: "dsh-github-note-dialog",
+        role: "dialog",
+        "aria-modal": "true",
+        "aria-label": "说明：" + props.topic.label,
+        onClick: function (e: any) { e.stopPropagation(); },
+      },
+      h(
+        "div",
+        { className: "dsh-github-note-head" },
+        h("h4", { style: { margin: 0, fontSize: "14px", fontWeight: 600 } }, "说明：" + props.topic.label),
+        h("button", {
+          className: "dsh-github-btn-sm",
+          "aria-label": "关闭说明",
+          autoFocus: true,
+          style: { padding: "2px 8px", fontSize: "12px" },
+          onClick: props.onClose,
+        }, "✕")
+      ),
+      h("div", { className: "dsh-github-note-content" }, body)
+    )
+  );
+}
+
+/*
+ * 说明文案。与 approval-gate.ts 的判定规则、WRITE_ACTIONS / DESTRUCTIVE_ACTIONS 必须一致：
+ * test/phase52 会逐个 action 对账，代码加了写操作而这里没跟上，测试直接变红。
+ * 行首标记（见 HelpModal）："• " 清单项（药丸）；"# " 小标题；空串 = 段间距。
+ */
+const HELP_RECORD_ENABLED = [
+  "记什么：Agent 对 PR / Issue 的每一次写操作（创建、评论、合并、关闭、删除等 21 种）。查看 / 列表 / Diff 等读操作不记录；其余 17 个 GitHub 工具也不在此记录内。",
+  "",
+  "# 每条记录包含",
+  "• 时间与动作",
+  "• 仓库与工作区",
+  "• 风险等级",
+  "• 成败",
+  "• 当时提交的参数（标题 / 正文，超长会按字段截断并标注）",
+  "• 人工审核结论",
+  "• 被操作对象的标题",
+  "",
+  "存在哪：~/.dsh/data/dsh-github-flow/audit.jsonl，纯本地文件，不上传。",
+  "关闭后：不再写入新记录、启动也不再加载历史；已有文件保留在本地，可在「🕘 操作记录」里清空。",
+  "注意：审核弹窗不依赖这个开关 —— 关掉记录后审核仍然生效，想停审核请改下方档位。",
+];
+const HELP_BUDGET: HelpLine[] = [
+  "记录文件的总大小上限，可选 1–64 MB，默认 8 MB。",
+  "",
+  "• 一条记录通常不到 1 KB，带长正文时最多约 4 KB",
+  "• 超出预算时自动丢弃最早的记录",
+  "• 删除是真删磁盘字节，不是只做标记",
+  "• 行数上限由预算自动推算，不需要单独设置",
+  "• 改小预算立即生效并当场淘汰",
+  "• 改大不会补回已丢弃的记录",
+];
+const HELP_APPROVAL_SECTION: HelpLine[] = [
+  "只作用于 PR / Issue 的写操作。",
+  "查看 / 列表 / Diff 等读操作在任何档位下都不审核；其余 17 个 GitHub 工具不经过这里，它们保留各自的 confirm 二次确认。",
+  "",
+  "只有确定要弹窗时才会去 GitHub 取对象信息（标题 / 状态 / 正文），所以读操作不会因此多出任何网络请求。",
+];
+const HELP_APPROVAL_OFF: HelpLine[] = [
+  "从不弹出审核窗。",
+  "高危操作（合并 / 关闭 / 删除 / 迁移等）仍然需要 Agent 带 confirm: true 才会执行 —— 那是工具自己的二次确认，不会询问你。",
+  "操作记录照常写入。",
+];
+const HELP_APPROVAL_DESTRUCTIVE: HelpLine[] = [
+  "只有这 6 项会弹窗：",
+  "• 合并 PR（merge）",
+  "• 回滚 PR（revert）",
+  "• 强制检出 PR（checkout，仅 force: true）",
+  "• 关闭 Issue（close）",
+  "• 删除 Issue（delete）",
+  "• 迁移 Issue（transfer，需提供目标仓库）",
+  "",
+  "创建 / 编辑 / 评论 / 重开 / 置顶 / 锁定等普通写操作不弹窗。",
+];
+const HELP_APPROVAL_ALL: HelpLine[] = [
+  "PR / Issue 的全部 21 种写操作都会弹窗：",
+  "# PR（9 种）",
+  "• create 创建",
+  "• review 提交评审",
+  "• merge 合并",
+  "• checkout 检出",
+  "• ready 标记可评审",
+  "• revert 回滚",
+  "• update_branch 更新分支",
+  "• comment 评论",
+  "• edit 编辑",
+  "# Issue（12 种）",
+  "• create 创建",
+  "• edit 编辑",
+  "• develop 创建开发分支",
+  "• comment 评论",
+  "• close 关闭",
+  "• reopen 重开",
+  "• pin 置顶",
+  "• unpin 取消置顶",
+  "• lock 锁定",
+  "• unlock 解锁",
+  "• delete 删除",
+  "• transfer 迁移",
+];
+
+/** 全景驾驶舱「⚙️ 设置」模态弹窗组件：左侧分区导航（数据同步 / 网络代理 / 更新设置 / 关于）+ 右侧内容区
  */
 export function GlobalSyncSettingsModal(props: {
   isOpen: boolean;
@@ -94,6 +274,29 @@ export function GlobalSyncSettingsModal(props: {
   var [auditApprovalMode, setAuditApprovalMode] = React.useState("destructive");
   var [auditBusy, setAuditBusy] = React.useState(false);
   var [auditMsg, setAuditMsg] = React.useState(null as { kind: "ok" | "err" | "info"; text: string } | null);
+  /**
+   * 二级说明弹窗当前显示的条目（null = 未打开）。
+   * 状态放在设置页而不是问号自己身上：Esc 的分发要跨这两层（见窗口级 keydown 监听器）。
+   */
+  var [helpTopic, setHelpTopic] = React.useState(null as { label: string; lines: HelpLine[] } | null);
+  /** 打开说明时的触发元素：关闭后把焦点还回去，键盘用户不会"丢失位置" */
+  var helpTriggerRef = React.useRef(null as any);
+  var openHelp = function (topic: { label: string; lines: HelpLine[] }, trigger: any) {
+    helpTriggerRef.current = trigger || null;
+    setHelpTopic(topic);
+  };
+  var closeHelp = function () {
+    setHelpTopic(null);
+    var el = helpTriggerRef.current;
+    // 等弹窗从 DOM 卸载后再还焦点（此刻按钮可能仍持有焦点）
+    if (el && typeof el.focus === "function") {
+      setTimeout(function () { try { el.focus(); } catch { /* 元素已卸载则忽略 */ } }, 0);
+    }
+  };
+  /** 问号的 onOpen 工厂：把"标题 + 文案"绑成打开函数，调用处只需写一行 */
+  var helpFor = function (label: string, lines: HelpLine[]) {
+    return function (trigger: any) { openHelp({ label: label, lines: lines }, trigger); };
+  };
 
   /** 字节 → MB（只用于展示；记账与判断一律在服务端按字节做） */
   var auditMb = function (bytes: any) {
@@ -107,7 +310,8 @@ export function GlobalSyncSettingsModal(props: {
       .then(function (j: any) {
         if (!j || !j.ok || !j.data) return;
         setAuditUsage(j.data.usage || null);
-        setAuditApprovalMode(j.data.approvalMode || "destructive");
+        // 档位与本文件其余两项同源（audit-settings.json），打开分区时一并回读
+        if (j.data.approvalMode) setAuditApprovalMode(j.data.approvalMode);
       })
       .catch(function () { /* 路由还没重启出来：静默，切到该分区时会再拉 */ });
   };
@@ -173,12 +377,15 @@ export function GlobalSyncSettingsModal(props: {
   React.useEffect(function () {
     var onKeyDown = function (e: any) {
       if (e.key === "Escape" || e.keyCode === 27) {
+        // 二级说明弹窗开着时，Esc 只关它（层级越靠上，越先吃掉 Esc）；没开才轮到设置页
+        if (helpTopic) { closeHelp(); return; }
         props.onClose();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return function () { window.removeEventListener("keydown", onKeyDown); };
-  }, [props.onClose]);
+    // helpTopic 必须在依赖里：闭包要读到"此刻是否开着"，否则 Esc 永远关到设置页
+  }, [props.onClose, helpTopic]);
 
   React.useEffect(function () {
     if (props.isOpen && props.initialSection) {
@@ -521,7 +728,7 @@ export function GlobalSyncSettingsModal(props: {
             )
           ) : activeSection === "audit" ? h("div", null,
             h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.5" } },
-              "记录 Agent 对 Issue / PR（以及其余 GitHub 工具）的每一次调用，并决定高危操作执行前是否需要你确认。改动立即生效，无需重启。"
+              "记录 Agent 对 Issue / PR 的每一次写操作。改动立即生效，无需重启。"
             ),
             auditUsage ? h("div", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "10px" } },
               "当前已用 " + auditMb(auditUsage.bytes) + " / " + auditMb(auditUsage.maxBytes) + " · " + auditUsage.rows + " 条"
@@ -537,7 +744,10 @@ export function GlobalSyncSettingsModal(props: {
                   style: { marginTop: "2px" },
                 }),
                 h("div", null,
-                  h("div", { style: { fontSize: "13px", fontWeight: 600 } }, "启用操作记录"),
+                  h("div", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600 } },
+                    "启用操作记录",
+                    h(HelpDot, { label: "启用操作记录", onOpen: helpFor("启用操作记录", HELP_RECORD_ENABLED) })
+                  ),
                   h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginTop: "2px" } },
                     "关闭后不再写入新记录、启动也不再加载历史；已有历史文件保留在本地，可在「🕘 操作记录」窗口里清空。"
                   )
@@ -545,7 +755,10 @@ export function GlobalSyncSettingsModal(props: {
               )
             ),
             h("div", { style: { marginBottom: "18px" } },
-              h("div", { style: { fontSize: "13px", fontWeight: 600, marginBottom: "6px" } }, "保留预算"),
+              h("div", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, marginBottom: "6px" } },
+                "保留预算",
+                h(HelpDot, { label: "保留预算", onOpen: helpFor("保留预算", HELP_BUDGET) })
+              ),
               h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } },
                 h("select", {
                   className: "dsh-github-btn-sm",
@@ -561,31 +774,43 @@ export function GlobalSyncSettingsModal(props: {
                 "超出预算时自动丢弃最早的记录。预算只暴露这一个数字——行数上限由它自动推算。"
               )
             ),
+            /*
+             * 执行前人工审核（s2）：本插件自己的**审核范围**，与宿主的 approval 策略正交。
+             *
+             * 为什么文案里必须提 DSH 权限预设：档位说"要问"，而宿主说"问了有没有人答"。
+             * `danger-full-access` 预设把策略固定成 `never`（派发前直接判 rejected），
+             * 此时无论这里选什么都不会弹窗——不写清楚，用户只会看到"审核没生效"。
+             * 为什么不再有"关闭记录时审核自动停用"：审批记录本身由宿主写在会话日志里
+             * （approval/asked + approval/decided），不依赖本插件的 JSONL。
+             */
             h("div", { style: { marginBottom: "18px" } },
-              h("div", { style: { fontSize: "13px", fontWeight: 600, marginBottom: "8px" } }, "执行前人工审核"),
+              h("div", { style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: 600, marginBottom: "8px" } },
+                "执行前人工审核",
+                h(HelpDot, { label: "执行前人工审核", onOpen: helpFor("执行前人工审核", HELP_APPROVAL_SECTION) })
+              ),
               h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "8px", lineHeight: "1.5" } },
-                "命中后会在浏览器弹窗等你拍板，可以批准，也可以拒绝并写留言（留言会回到模型，让它改参数而不是瞎试）。"
-                  + "关闭记录时审核自动停用——没有留痕的审核等于一次点完即逝的问答。"
+                "决定哪些 GitHub 写操作要先问你。命中后由 DSH 官方审核弹窗接管输入区：批准才真正执行，拒绝则工具当场失败，并把「不要重试、先确认意图」交回模型。"
+              ),
+              h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-state-warning, #9a6700)", marginBottom: "8px", lineHeight: "1.5" } },
+                "⚠️ DSH 权限预设为 danger-full-access 时宿主不弹窗（审批策略被固定为 never），审核整体不生效；此时高危操作仍走原有的 confirm 二次确认。"
               ),
               [
-                { id: "off", label: "关闭（不弹窗，只记录）" },
-                { id: "destructive", label: "仅高危（默认）：合并 / 关闭 / 删除 / 迁移 / 销毁等 17 项" },
-                { id: "all-writes", label: "全部写操作：含创建 / 编辑 / 评论 / 打标签等 55 项" },
+                { id: "off", title: "关闭审核", help: HELP_APPROVAL_OFF, label: "关闭（不弹窗，高危操作仍需 confirm: true）" },
+                { id: "destructive", title: "仅高危（默认）", help: HELP_APPROVAL_DESTRUCTIVE, label: "仅高危（默认）：合并 / 关闭 / 删除 / 迁移等 6 项 PR 与 Issue 操作" },
+                { id: "all-writes", title: "全部写操作", help: HELP_APPROVAL_ALL, label: "PR / Issue 的全部写操作（含创建 / 编辑 / 评论等 21 项）" },
               ].map(function (opt) {
                 var active = auditApprovalMode === opt.id;
-                var blocked = auditUsage && auditUsage.active !== true;
                 return h("div", {
                   key: opt.id,
-                  className: "dsh-github-radio-card" + (active ? " active" : "") + (blocked ? " dsh-toggle-disabled" : ""),
-                  onClick: function () { if (!auditBusy && !blocked) saveAuditSettings({ approvalMode: opt.id }); },
-                  style: blocked ? { opacity: 0.55, cursor: "not-allowed" } : null,
+                  className: "dsh-github-radio-card" + (active ? " active" : ""),
+                  onClick: function () { if (!auditBusy) saveAuditSettings({ approvalMode: opt.id }); },
                 },
                   h("input", { type: "radio", name: "audit-approval-mode", className: "dsh-github-radio", checked: active, readOnly: true }),
-                  h("div", null,
-                    h("div", { style: { fontWeight: 600, fontSize: "13px" } }, opt.label),
-                    blocked ? h("div", { style: { fontSize: "11px", color: "var(--dsw-alias-state-warning, #9a6700)", marginTop: "2px" } },
-                      "⚠️ 审核已停用：操作记录未开启或存储不可用") : null
-                  )
+                  // 说明块要能撑满剩余宽度，长标签才会在这里换行而不是溢出卡片
+                  h("div", { style: { flex: 1, minWidth: 0, fontWeight: 600, fontSize: "13px" } }, opt.label),
+                  // 问号固定在卡片右端、不随标签换行 —— 否则长标签的卡片里问号会被挤到第二行开头，
+                  // 三张卡片的问号位置各不相同（2026-11-26 用户截图实证）
+                  h(HelpDot, { label: opt.title, onOpen: helpFor(opt.title, opt.help) })
                 );
               })
             ),
@@ -871,6 +1096,8 @@ export function GlobalSyncSettingsModal(props: {
           onClick: props.onClose,
         }, activeSection === "sync" ? "取消" : "完成")
       )
-    )
+    ),
+    // 二级说明弹窗：作为设置页遮罩的第二个子节点，盖在对话框之上（见 HelpModal 的层级说明）
+    helpTopic ? h(HelpModal, { topic: helpTopic, onClose: closeHelp }) : null
   );
 }
