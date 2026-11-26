@@ -168,17 +168,27 @@ export class ApprovalQueue {
   /**
    * 人对一条请求拍板（供路由调用）。
    *
-   * @returns `{ ok: true }` 或带原因的拒绝（`forbidden` / `not-found` / `already-decided`）
+   * @returns `{ ok: true }` 或带原因的拒绝（`forbidden` / `not-found` / `already-decided` / `mismatch` / `invalid`）
    */
   decide(
     id: string,
     kind: 'approved' | 'rejected',
-    options: { feedback?: string; token?: string } = {}
-  ): { ok: true } | { ok: false; reason: 'forbidden' | 'not-found' | 'already-decided' | 'invalid' } {
+    options: { feedback?: string; argsHash?: string; token?: string } = {}
+  ): { ok: true } | { ok: false; reason: 'forbidden' | 'not-found' | 'already-decided' | 'mismatch' | 'invalid' } {
     if (kind !== 'approved' && kind !== 'rejected') return { ok: false, reason: 'invalid' };
+    // 令牌先于一切存在性判断：不然未持令牌者能靠 403/409 的差别探测哪些 id 在队列里
     if (!options.token || options.token !== this.tokenValue) return { ok: false, reason: 'forbidden' };
     const entry = this.pending.get(id);
     if (!entry) return { ok: false, reason: 'already-decided' };
+    /*
+     * 批准的是**这一份参数**，不是"这个工具"。
+     *
+     * 宿主在 prepare 阶段已经对 `exec.arguments` 做了 snapshot + deepFreeze，换参在进程内
+     * 物理不可达，所以这条不是唯一防线；但只要弹窗上显示了「参数指纹」，它就必须真的被比对
+     * ——显示一个从不校验的指纹，等于让人以为校验过了。
+     * 缺参同样按不匹配处理：决策请求必须带上它当时看到的那一条。
+     */
+    if (options.argsHash !== entry.item.argsHash) return { ok: false, reason: 'mismatch' };
     const feedback = typeof options.feedback === 'string' ? options.feedback.slice(0, 2000) : undefined;
     // 批准要把 callId 记进旁路表：否则工具体内的 confirm 闸门会再拦一次（双重确认）
     if (kind === 'approved') this.grant(id);

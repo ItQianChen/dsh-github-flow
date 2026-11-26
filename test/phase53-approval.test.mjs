@@ -38,6 +38,8 @@ const { DESTRUCTIVE_ACTIONS } = await import(lib('lib/destructive.js'));
 const { registerApprovalRoutes } = await import(lib('lib/api/routes-approval.js'));
 const { sendJson, readJsonBody } = await import(lib('lib/api/route-helpers.js'));
 const { Config } = await import(lib('lib/main.js'));
+// 轮询器必须能离线驱动（注入假 window），否则"隐藏标签页停摆"这类缺陷只能靠人眼撞见
+const { startApprovalWatcher } = await import(lib('lib/ui/approval-modal.js'));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const execOf = (name, args, callId = 'c1') => ({ name, arguments: args, callId, agent: { id: 'sess-1' } });
@@ -157,7 +159,8 @@ console.log('\n--- 4. 六个出口 ---');
     queue.heartbeat();
     const p = handler(execOf('github_pr', { action: 'merge', pr_number: 1 }, 'a1'), next);
     ok(queue.size() === 1, '待审入队');
-    queue.decide('a1', 'approved', { token: queue.token });
+    // 指纹从真实待审项里取，而不是自己重算：这样连"载荷→UI→决策"整条链路一起验
+    queue.decide('a1', 'approved', { token: queue.token, argsHash: queue.list()[0].argsHash });
     const result = await p;
     ok(calls.next === 1, '批准后 next() 恰好一次');
     ok(result && result.isError === false, '批准后返回的是工具真实结果');
@@ -168,7 +171,7 @@ console.log('\n--- 4. 六个出口 ---');
     const { queue, handler, calls, next, store } = harness();
     queue.heartbeat();
     const p = handler(execOf('github_pr', { action: 'merge', pr_number: 2 }, 'r1'), next);
-    queue.decide('r1', 'rejected', { token: queue.token, feedback: '别合并，先改 squash' });
+    queue.decide('r1', 'rejected', { token: queue.token, argsHash: queue.list()[0].argsHash, feedback: '别合并，先改 squash' });
     const result = await p;
     ok(calls.next === 0, '拒绝后 next() 零次（工具没跑）');
     ok(result.isError === true && result.error.info.code === 'APPROVAL_REJECTED', '拒绝返回失败结果');
@@ -195,7 +198,8 @@ console.log('\n--- 4. 六个出口 ---');
     ok(calls.next === 0, '超时后 next() 未被调用');
     ok(result.isError === false && result.value.status === GATE_BLOCKED, '超时退回旧 confirm 载荷');
     ok(store.decisions.some((d) => d.decision === 'expired'), '记录里标为 expired');
-    ok(queue.decide('t1', 'approved', { token: queue.token }).ok === false, '超时后迟到的决策被丢弃');
+    // 带上正确指纹，确保被拒的理由是"已结束"而不是"指纹不符"（否则这条断言会假通过）
+    ok(queue.decide('t1', 'approved', { token: queue.token, argsHash: hashArgs({ action: 'merge', pr_number: 4 }) }).reason === 'already-decided', '超时后迟到的决策被丢弃');
   }
   // 取消（宿主 abort）
   {
@@ -333,7 +337,13 @@ console.log('\n--- 6. 路由契约 ---');
   ok(res.statusCode === 400, '留言超 2000 字 → 400');
   res = await hit('/api/github/approval/decision', { method: 'POST', headers: { ...REQ_OK, origin: 'http://evil.example' }, body: JSON.stringify({ id: 'p1', decision: 'approved', token: queue.token }) });
   ok(res.statusCode === 403, '跨源请求被拒（CSRF 门）');
-  res = await hit('/api/github/approval/decision', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ id: 'p1', decision: 'rejected', token: queue.token, feedback: '改 squash' }) });
+  // 指纹是决策的必传项：弹窗上显示了「参数指纹」，它就必须真的参与校验
+  res = await hit('/api/github/approval/decision', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ id: 'p1', decision: 'approved', token: queue.token }) });
+  ok(res.statusCode === 400, '缺 argsHash → 400（显示的指纹必须带回）');
+  res = await hit('/api/github/approval/decision', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ id: 'p1', decision: 'approved', token: queue.token, argsHash: 'zzz' }) });
+  ok(res.statusCode === 400, 'argsHash 不匹配 → 400');
+  ok(queue.size() === 1, '指纹不符不消费待审项（还能再决策）');
+  res = await hit('/api/github/approval/decision', { method: 'POST', headers: REQ_OK, body: JSON.stringify({ id: 'p1', decision: 'rejected', token: queue.token, argsHash: 'h', feedback: '改 squash' }) });
   ok(res.statusCode === 200, '合法决策 → 200');
   const outcome = await pending;
   ok(outcome.decision === 'rejected' && outcome.feedback === '改 squash', '决策送到队列并带回留言');
@@ -359,6 +369,9 @@ console.log('\n--- 7. 队列自身的生命周期 ---');
   queue.updateTimeout(5000);
   ok(queue.currentTimeoutMs() === 5000, '超时可热更新');
   ok(queue.updateTimeout(10) === undefined && queue.currentTimeoutMs() === 5000, '非法超时值被忽略');
+  ok(queue.decide('m1', 'approved', { token: queue.token }).reason === 'mismatch', '缺指纹 → mismatch（队列层，先于消费）');
+  ok(queue.decide('m1', 'approved', { token: queue.token, argsHash: 'nope' }).reason === 'mismatch', '指纹不符 → mismatch（队列层）');
+  ok(queue.size() === 2, 'mismatch 不消费待审项');
   await queue.dispose();
   ok((await a).decision === 'cancelled' && (await b).decision === 'cancelled', 'dispose 后全部 pending 以 cancelled 结算');
   ok((await queue.ask({ id: 'm9', at: 1, tool: 't', action: 'a', summary: 's', argsHash: 'h' })).decision === 'cancelled', 'dispose 后新请求直接 cancelled');
@@ -378,6 +391,10 @@ console.log('\n--- 8. 配置默认值与构建登记 ---');
   ok(buildSrc.includes("'approval-modal.js'"), 'build.mjs 已登记 approval-modal.js');
   const modalPath = path.join(ROOT, 'lib/ui/approval-modal.js');
   ok(existsSync(modalPath), 'lib/ui/approval-modal.js 已产出');
+  const modalSrc = readFileSync(modalPath, 'utf8');
+  // 服务端已强制校验指纹：客户端不带就是每条决策都 400（这条把两端钉在一起）
+  ok(modalSrc.includes('argsHash: current.argsHash'), '客户端决策请求带回 argsHash（否则服务端必然 mismatch）');
+  ok(!/\.unref\?\.\(\)/.test(modalSrc), '不再用 Node 式的 unref（浏览器里是空操作，会误导读者）');
   const clientSrc = readFileSync(path.join(ROOT, 'lib/client.js'), 'utf8');
   const start = clientSrc.indexOf('[Bundled: approval-modal.js]');
   const nextMarker = clientSrc.indexOf('// ---- [Bundled:', start + 20);
@@ -385,6 +402,158 @@ console.log('\n--- 8. 配置默认值与构建登记 ---');
   ok(start > 0 && block.length > 200, 'client.js 内联了审核弹窗模块');
   ok(!/^\s*import\s/m.test(block), '内联块里没有 import（构建器已剥除）');
   ok(clientSrc.includes('startApprovalWatcher'), '客户端确实启动了审核守护');
+}
+
+console.log('\n--- 8b. 客户端轮询：切换标签页不得让审核静默失效 ---');
+{
+  /*
+   * 这一组守的是一个**曾经真实存在**的缺陷：`tick()` 里在 `visibilityState === 'hidden'`
+   * 时直接 return。而 `GET /pending` 同时是服务端判定"有没有人在看"的心跳，
+   * 于是隐藏标签页 60s 后 `isClientOnline()` 变 false，`ask()` 返回 `no-client`，
+   * 高危操作**不经弹窗直接执行**——正是本设计要消灭的"看起来在工作"。
+   * 「切到别的标签页」是最常见的使用现场，不是失败场景。
+   */
+  const ITEM = { id: 'c9', at: 1, tool: 'github_pr', action: 'merge', summary: '合并 PR #9', argsHash: 'abc123' };
+
+  // 轮询节奏是规格值，这里按字面量断言：改它必须是一次有意识的改动
+  const POLL_VISIBLE_MS = 2000;
+  const POLL_HIDDEN_MS = 15000;
+  const WATCHDOG_MS = 5000;
+
+  /**
+   * 假 window。四个能力撑起本组的全部场景：
+   * - `pendingItems`：让待审拉取带回条目，逼 `render()` 真的跑一遍（否则"弹窗出现"是空断言）；
+   * - `deferPending`：让拉取挂住，由测试决定何时结算、或被超时闸打断；
+   * - `onBody()`：按 `remove()` 算**当前还挂在页面上**的节点数——只数历史 appendChild
+   *   会把"已经摘掉的弹窗"也算成挂载，那两件事必须分开；
+   * - `pollDelays()`：只挑轮询定时器。超时闸同样是 `setTimeout`，一律看 `timers[0]` 会取错那个。
+   */
+  const makeFakeWin = (visibility, opts = {}) => {
+    const fetches = [];
+    const timers = [];
+    const nodes = [];
+    let releasePending = () => {};
+    let aborts = 0;
+    const makeNode = () => ({
+      style: {}, className: '', id: '', value: '', textContent: '', children: [], removed: false,
+      appendChild(c) { this.children.push(c); },
+      remove() { this.removed = true; },
+      focus() {},
+    });
+    const reply = (items) => Promise.resolve({ json: async () => ({ ok: true, data: { items, token: 'tok' } }) });
+    class FakeAbortController {
+      constructor() {
+        let onAbort = () => {};
+        this.signal = { aborted: false, addEventListener: (_e, cb) => { onAbort = cb; } };
+        this.abort = () => { aborts++; this.signal.aborted = true; onAbort(); };
+      }
+    }
+    return {
+      fetches,
+      timers,
+      AbortController: FakeAbortController,
+      aborts: () => aborts,
+      onBody: () => nodes.filter((n) => !n.removed).length,
+      pollDelays: () => timers.filter((t) => t.ms === POLL_VISIBLE_MS || t.ms === POLL_HIDDEN_MS).map((t) => t.ms),
+      document: {
+        visibilityState: visibility,
+        body: { appendChild: (n) => nodes.push(n) },
+        getElementById: (id) => nodes.find((n) => n.id === id && !n.removed) || null,
+        createElement: () => makeNode(),
+      },
+      fetch: (url, init) => {
+        fetches.push(url);
+        if (!url.includes('approval/pending')) return reply([]);          // 心跳等：立即成功
+        if (opts.deferPending) {
+          return new Promise((res, rej) => {
+            releasePending = () => res({ json: async () => ({ ok: true, data: { items: [ITEM], token: 'tok' } }) });
+            init?.signal?.addEventListener?.('abort', () => rej(new Error('aborted')));
+          });
+        }
+        return reply(opts.pendingItems || []);
+      },
+      setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+      clearTimeout: () => {},
+      release: () => releasePending(),
+    };
+  };
+
+  const countOf = (win, seg) => win.fetches.filter((u) => u.includes(seg)).length;
+  const timersOf = (win, ms) => win.timers.filter((t) => t.ms === ms);
+  // 返回"是否真的排定了这个定时器"：缺失时让断言干净地红，而不是用 TypeError 崩掉整个阶段
+  const fireLast = (win, ms) => {
+    const t = timersOf(win, ms).at(-1);
+    if (!t) return false;
+    t.fn();
+    return true;
+  };
+
+  // ① 可见：2s 一轮，且加载即发心跳 + 立刻拉一次待审
+  const vis = makeFakeWin('visible');
+  const stopVis = startApprovalWatcher(vis);
+  await sleep(20);
+  ok(countOf(vis, 'approval/heartbeat') === 1, '可见态：加载即发一次心跳（声明"我在线"）');
+  ok(countOf(vis, 'approval/pending') >= 1, '可见态：加载即拉一次待审');
+  ok(vis.pollDelays()[0] === POLL_VISIBLE_MS, '可见态：轮询间隔 2s', `实际 ${vis.pollDelays()[0]}`);
+
+  // ② 隐藏：必须**继续**轮询（只是降频），否则心跳饿死 → 审核静默失效
+  const hid = makeFakeWin('hidden');
+  const stopHid = startApprovalWatcher(hid);
+  await sleep(20);
+  ok(countOf(hid, 'approval/heartbeat') === 1, '隐藏态：加载仍发一次心跳');
+  ok(countOf(hid, 'approval/pending') === 1, '隐藏态：加载仍拉一次待审（不得因隐藏整段跳过）');
+  ok(hid.pollDelays()[0] === POLL_HIDDEN_MS, '隐藏态：降频到 15s 而不是停摆', `实际 ${hid.pollDelays()[0]}`);
+
+  // ③ 连续两轮定时器都要真的发出请求（心跳靠它续命，60s TTL 内至少 4 次）
+  const before = countOf(hid, 'approval/pending');
+  fireLast(hid, POLL_HIDDEN_MS); await sleep(20);
+  fireLast(hid, POLL_HIDDEN_MS); await sleep(20);
+  ok(countOf(hid, 'approval/pending') === before + 2, '隐藏态：后续每轮定时器都真的发出轮询（心跳得以续命）');
+  ok(hid.pollDelays().at(-1) === POLL_HIDDEN_MS, '隐藏态：后续轮次仍是 15s 间隔');
+
+  // ④ 防重入：重复 apply 不起第二套轮询
+  const stopDup = startApprovalWatcher(hid);
+  await sleep(10);
+  ok(countOf(hid, 'approval/heartbeat') === 1, '重复加载不起第二套轮询（哨兵位挡住）');
+  stopDup();
+
+  // ⑤ 有待审时必须真的把弹窗挂到页面上，卸载时必须真的摘掉
+  //    这条以前没有：`render()` 从未被任何断言驱动过，"弹窗出现"只能靠人眼。
+  const live = makeFakeWin('visible', { pendingItems: [ITEM] });
+  const stopLive = startApprovalWatcher(live);
+  await sleep(20);
+  ok(live.onBody() === 1, '接到待审后把弹窗挂到 document.body', `实际 ${live.onBody()} 个`);
+  stopLive();
+  ok(live.onBody() === 0, '卸载时把弹窗从页面摘掉（不留在用户眼前）', `实际 ${live.onBody()} 个`);
+
+  // ⑥ 卸载后迟到的响应不得把弹窗挂回来：那时哨兵位已复位、定时器已清，没人会再关它
+  const zom = makeFakeWin('visible', { deferPending: true });
+  const stopZom = startApprovalWatcher(zom);
+  await sleep(10);
+  stopZom();
+  zom.release();
+  await sleep(30);
+  ok(zom.onBody() === 0, '卸载后迟到的响应不再渲染（不留僵尸弹窗）', `实际挂载 ${zom.onBody()} 个`);
+
+  // ⑦ 宿主卡死时靠客户端超时闸自救。
+  //    单飞与超时是一对：没有单飞就层层叠请求，没有超时则一次悬挂让 polling 永不复位，
+  //    轮询彻底停摆——那等于心跳饿死，和「切标签页」是同一个终点。
+  const hung = makeFakeWin('visible', { deferPending: true });
+  const stopHung = startApprovalWatcher(hung);
+  await sleep(10);
+  ok(countOf(hung, 'approval/pending') === 1, '请求未回来时只发出一次');
+  fireLast(hung, POLL_VISIBLE_MS); await sleep(10);
+  ok(countOf(hung, 'approval/pending') === 1, '上一次未回来时不再叠请求（单飞）');
+  ok(fireLast(hung, WATCHDOG_MS) === true, '悬挂的请求必须排定超时闸（缺了它就是永久停摆）');
+  await sleep(20);
+  ok(hung.aborts() === 1, '超时闸真的 abort 了在途请求', `实际 ${hung.aborts()} 次`);
+  fireLast(hung, POLL_VISIBLE_MS); await sleep(20);
+  ok(countOf(hung, 'approval/pending') === 2, '超时后轮询自动恢复（心跳不会饿死）');
+  stopHung();
+
+  stopVis();
+  stopHid();
+  ok(vis.__dshGithubApprovalWatcher === false && hid.__dshGithubApprovalWatcher === false, '卸载后哨兵位复位（热重载后可重新接管）');
 }
 
 console.log('\n--- 9. 记账协同：留言长度与决策行 ---');

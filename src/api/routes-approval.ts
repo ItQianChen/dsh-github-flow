@@ -64,6 +64,8 @@ export function registerApprovalRoutes(deps: RouteDeps, queue: ApprovalQueue): v
         }
         const result = queue.decide(id, decision, {
           feedback: typeof body?.feedback === 'string' ? body.feedback : undefined,
+          // 指纹必传：批准的是弹窗上显示的那一份参数。缺了或对不上都由队列判 mismatch。
+          argsHash: typeof body?.argsHash === 'string' ? body.argsHash : undefined,
           token: typeof body?.token === 'string' ? body.token : undefined,
         });
         if (result.ok) {
@@ -72,6 +74,11 @@ export function registerApprovalRoutes(deps: RouteDeps, queue: ApprovalQueue): v
         }
         if (result.reason === 'forbidden') {
           sendJson(res, 403, { ok: false, message: '决策令牌无效' });
+          return;
+        }
+        if (result.reason === 'mismatch') {
+          // 指纹不符 = 待审项已经不是人看到的那一条（换参 / id 串了 / 前端缓存过期）
+          sendJson(res, 400, { ok: false, message: '参数指纹不匹配，请刷新后重新审核' });
           return;
         }
         if (result.reason === 'already-decided' || result.reason === 'not-found') {

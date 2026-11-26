@@ -59,16 +59,17 @@ export declare class ApprovalQueue {
     /**
      * 人对一条请求拍板（供路由调用）。
      *
-     * @returns `{ ok: true }` 或带原因的拒绝（`forbidden` / `not-found` / `already-decided`）
+     * @returns `{ ok: true }` 或带原因的拒绝（`forbidden` / `not-found` / `already-decided` / `mismatch` / `invalid`）
      */
     decide(id: string, kind: 'approved' | 'rejected', options?: {
         feedback?: string;
+        argsHash?: string;
         token?: string;
     }): {
         ok: true;
     } | {
         ok: false;
-        reason: 'forbidden' | 'not-found' | 'already-decided' | 'invalid';
+        reason: 'forbidden' | 'not-found' | 'already-decided' | 'mismatch' | 'invalid';
     };
     /** 该 callId 是否已被人工批准（`wrapWithGate` 的唯一依据） */
     isGrantedCall(callId: unknown): boolean;
