@@ -70,11 +70,34 @@ ok(all.length === 19, '工具工厂实例化出 19 个工具', String(all.length
 // phase48 加入 7 个本地文件入参（body_file×4 / notes_file / input_file / prompt_file，各约 115-160 字符）
 // 后基线 27,016 → 28,007（+991）。这不是回归：换来的是「长正文不必进上下文」，即把每次调用要付的
 // 正文 token 成本换成了常驻 schema 的固定成本，量级上仍然是省。
-ok(size(all) === 28007, '全量 schema 字符数 == 28,007（phase48 七个文件入参后的新基线）', String(size(all)));
+//
+// s3 给 github_help 加了 `audit` 查询主题。这里**不抄写新基线**，而是把增量算出来再加到历史基线上：
+// 「把数字改成适配实现」的写法会让 +8 从不被验证，而派生写法保留 tripwire（28,007 一旦漂移就红）
+// 的同时，真的校验了"这一次的增量是多少、是否合理"。
+const helpTool = all.find((t) => t.name === 'github_help');
+ok(helpTool !== undefined, '能找到 github_help（下面要用它派生 audit 主题的增量）');
+const withoutTopic = (topic, tools) => tools.map((t) => {
+  if (t.name !== 'github_help') return t;
+  const props = t.parameters?.properties ?? {};
+  const en = props.topic?.enum;
+  if (!Array.isArray(en)) return t;
+  return {
+    ...t,
+    parameters: {
+      ...t.parameters,
+      properties: { ...props, topic: { ...props.topic, enum: en.filter((x) => x !== topic) } },
+    },
+  };
+});
+const auditDelta = size(all) - size(withoutTopic('audit', all));
+ok(auditDelta > 0 && auditDelta < 40,
+  `audit 主题对常驻 schema 的净贡献是 ${auditDelta} 字符（一个 enum 项的量级，不该是几百）`, String(auditDelta));
+ok(size(all) === 28007 + auditDelta,
+  `全量 schema = phase48 基线 28,007 + audit 主题 ${auditDelta}（增量实算，不是抄写）`, String(size(all)));
 {
   const r = applyTier(all, {});
   ok(r.kept.length === 19, '不配置 toolsets → 保留全部 19 个');
-  ok(size(r.kept) === 28007, '不配置 toolsets → 字符数不变');
+  ok(size(r.kept) === size(all), '不配置 toolsets → 字符数不变');
   ok(r.dropped.length === 0, '不配置 toolsets → 不剔除任何工具');
   ok(Object.keys(r.pruned).length === 0, '不配置 read_only → 不剪任何 action');
 }
@@ -85,15 +108,18 @@ ok(size(all) === 28007, '全量 schema 字符数 == 28,007（phase48 七个文�
 
 console.log('\n--- 2. 预设档位 ---');
 // phase48 的七个文件入参按工具落点分摊进各档（core +131 / ci +293 / maintain +537）
-const presets = [
-  ['core', 3, 4543],
-  ['ci', 7, 10926],
-  ['maintain', 8, 14501],
-];
-for (const [name, count, chars] of presets) {
+// s3 的 audit 主题只落在 github_help 上，而它在三个档位里都有 → 各档增量都等于 auditDelta。
+// 同样用派生写法：每档都断言 "phase48 基线 + 该档实测增量"。
+const presetBaseline = { core: 4543, ci: 10926, maintain: 14501 };
+const presets = [['core', 3], ['ci', 7], ['maintain', 8]];
+for (const [name, count] of presets) {
   const r = applyTier(all, { toolsets: [name] });
   ok(r.kept.length === count, `toolsets:['${name}'] → ${count} 个工具`, String(r.kept.length));
-  ok(size(r.kept) === chars, `toolsets:['${name}'] → schema ${chars} 字符`, String(size(r.kept)));
+  const withoutAudit = applyTier(withoutTopic('audit', all), { toolsets: [name] });
+  const delta = size(r.kept) - size(withoutAudit.kept);
+  const want = presetBaseline[name] + delta;
+  ok(size(r.kept) === want,
+    `toolsets:['${name}'] → schema ${presetBaseline[name]} + ${delta} = ${want} 字符`, String(size(r.kept)));
 }
 ok(TOOL_PRESETS.core.length === 3 && TOOL_PRESETS.core.includes('github_help'), 'core 预设恰好 3 个（github_task + github_repo + github_help）且含 github_help');
 
@@ -123,7 +149,9 @@ console.log('\n--- 4. read_only 硬语义：写 action 在注册期被剪掉 ---
   const r = applyTier(all, { read_only: true });
   ok(r.dropped.includes('github_api'), 'github_api 在只读模式下整体剔除（端点/method 任意，无法降级）');
   ok(r.kept.length === 18, '只读模式保留 18 个工具（github_api 整体剔除）', String(r.kept.length));
-  ok(size(r.kept) === 26515, '只读模式 schema 26,515 字符（github_task 的 review_pr 被剪掉 5 字符）', String(size(r.kept)));
+  const roDelta = size(r.kept) - size(applyTier(withoutTopic('audit', all), { read_only: true }).kept);
+  ok(size(r.kept) === 26515 + roDelta,
+    `只读模式 schema = 26,515（review_pr 被剪 5 字符）+ audit 主题 ${roDelta} 字符`, String(size(r.kept)));
 
   let violations = [];
   for (const tool of r.kept) {

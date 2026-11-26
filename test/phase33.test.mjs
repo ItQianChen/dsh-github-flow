@@ -75,13 +75,35 @@ async function runTests() {
     actionTotal += n;
     if (f !== 'help.ts' && f !== 'api.ts') businessTotal += n;
   }
-  ok(actionTotal === 132, '代码中 enum 项总计 132（s8 新增 3 个 task action + 1 个 help 主题）', String(actionTotal));
-  ok(businessTotal === 106, '代码中业务 action 数为 106（排除 help 主题与 api method）', String(businessTotal));
+  // 口径：业务 action + help 查询主题 + api 的 HTTP method = 总数。
+  // 这里**不写死总数**，而是把三块分别算出来再相加：
+  // 新增 enum 项时，只要"总数 ≠ 三块之和"就必红（这是真正要守的不变式），
+  // 而"总数是多少"本身由三块决定，抄一个数字既重复又不校验增量。
+  const countEnum = (file) => {
+    const src = fs.readFileSync(path.join(__dirname, '../src/tools', file), 'utf8');
+    const m = src.match(/enum:\s*\[([^\]]+)\]/);
+    return m ? (m[1].match(/'[^']+'/g) || []).length : 0;
+  };
+  const helpTopics = countEnum('help.ts');
+  const apiMethods = countEnum('api.ts');
+  // 业务 action 的既有基线（s8 定稿）：它变了一定要显式改这里，因为它是文档口径的分子
+  const BUSINESS_BASELINE = 106;
+
+  ok(actionTotal === businessTotal + helpTopics + apiMethods,
+    `enum 总数 = 业务 ${businessTotal} + help 主题 ${helpTopics} + api method ${apiMethods} = ${actionTotal}`,
+    `实际总数 ${actionTotal}`);
+  ok(businessTotal === BUSINESS_BASELINE,
+    `代码中业务 action 数为 ${BUSINESS_BASELINE}（排除 help 主题与 api method）`, String(businessTotal));
+  // 查询主题数必须与 help 的 enum 实际长度一致（文档里写的那个数字不能另抄一份）
+  ok(helpTopics === 23, `github_help 查询主题数 = ${helpTopics}（s3 加了 audit）`, String(helpTopics));
+  ok(apiMethods === 4, `github_api 的 HTTP method 数 = ${apiMethods}`, String(apiMethods));
 
   // 两个面向人类的入口（Agent 工具知识库 / 使用指南 UI）必须同口径
   const helpToolSrc = fs.readFileSync(path.join(__dirname, '../src/tools/help.ts'), 'utf8');
-  ok(helpToolSrc.includes('106 个业务 action'), 'github_help 声明「106 个业务 action」');
-  ok(helpSrc.includes('106 个业务动作'), 'UI 使用指南声明「106 个业务动作」');
+  ok(helpToolSrc.includes(`${BUSINESS_BASELINE} 个业务 action`), `github_help 声明「${BUSINESS_BASELINE} 个业务 action」`);
+  ok(helpToolSrc.includes(`${helpTopics} 个查询主题`), `github_help 里的查询主题数与 enum 实际长度一致（${helpTopics}）`);
+  ok(helpSrc.includes(`${BUSINESS_BASELINE} 个业务动作`), `UI 使用指南声明「${BUSINESS_BASELINE} 个业务动作」`);
+  ok(helpSrc.includes(`元指南的 ${helpTopics} 个查询主题`), `UI 使用指南里的查询主题数与 enum 实际长度一致（${helpTopics}）`);
   ok(!helpSrc.includes('128 个动作'), 'UI 使用指南不再使用含混的「128 个动作」口径');
   ok(!helpToolSrc.includes('128 个动作'), 'github_help 不再使用含混的「128 个动作」口径');
 

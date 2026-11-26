@@ -38,6 +38,7 @@ export declare function createStatusTool(executor: GhExecutor, telemetryCollecto
         totalCalls: number;
         successCount: number;
         failureCount: number;
+        rejectedCount?: number;
         degradedCount: number;
         degradationRate: number;
         scopeBlockedCount: number;
