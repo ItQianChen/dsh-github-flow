@@ -773,7 +773,9 @@ console.log('\n--- 9. 接线契约：整套功能只挂在 main.ts 的一行上 
   ok(/createApprovalGate\(\{/.test(mainSrc), '监听器由 createApprovalGate 造出来（非内联重复实现）');
   ok(/getApproval: \(\) => \(ctx as any\)\.get\?\.\('approval'\)/.test(mainSrc),
     'approval 走 ctx.get 机会式探测（不写进 inject，否则 CLI/TUI profile 永久 PENDING）');
-  ok(/recordDecision: \(callId, decision\) => auditStore\.recordDecision/.test(mainSrc), '决策写回同一个 AuditStore 实例');
+  // 签名带 askedAt 透传：等待时长只能从"发起请求的时刻"算起（intent 行要等工具执行完才写）
+  ok(/recordDecision: \(callId, decision, askedAt\) => auditStore\.recordDecision\(callId, decision, undefined, askedAt\)/.test(mainSrc),
+    '决策写回同一个 AuditStore 实例，且把 askedAt 透传下去');
   ok(/forgetApproved\(exec\?\.callId\)/.test(mainSrc), 'tools/result 里回收"批准了但 body 没跑"的残留标记');
   // 目标信息的接线：少任何一处，弹窗都会静默退回"合并 PR #19"（测试照样全绿）
   ok(/createTargetInfoResolver\(\{/.test(mainSrc), 'main.ts 装配了目标信息解析器');

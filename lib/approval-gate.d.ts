@@ -33,8 +33,20 @@ interface GateExec {
  *   否则每次检出 PR 都要弹一次窗。
  * - `all-writes`：用 `classifyWrite`，与只读档位/记录同一个真源（`WRITE_ACTIONS`）。
  *   注意 `confirm: true` **不豁免**审核：否则模型只要每次都带上 `confirm` 就能绕过弹窗。
+ *
+ * `mode` 由调用方现算（s3 起它可能是**规则覆盖后**的结果，见 `resolveModeFor`），
+ * 本函数只管"这个档位下要不要问"，不关心档位从哪来——两件事分开才测得住。
  */
 export declare function shouldAsk(exec: GateExec | undefined, mode: ApprovalMode): boolean;
+/**
+ * 这次调用是不是"作用域内的写操作"——**不看档位**。
+ *
+ * 单独拆出来是为了给闸门做前置短路：算档位（s3 起要按调用解析仓库，含同步读
+ * `.git/config`）比重判一次 `classifyWrite` 贵得多，而读调用在任何档位下都不会被问。
+ * 语义上它与 `shouldAsk` 不冲突：`shouldAsk` 内部对读 action 恒为 false
+ * （`destructive` 走闸门表、`all-writes` 走同一张 `WRITE_ACTIONS`）。
+ */
+export declare function isWriteCall(exec: GateExec | undefined): boolean;
 /**
  * 读会话的**有效**审批策略。
  *
@@ -101,12 +113,23 @@ export declare function askReason(exec: GateExec | undefined, target?: TargetInf
  */
 export declare function rejectionMessage(exec: GateExec | undefined): string;
 export interface ApprovalGateDeps {
-    /** 当前审核档位。**每次调用现读**，设置页改完立刻生效 */
-    getMode: () => ApprovalMode;
+    /**
+     * 当前审核档位。**每次调用现读**，设置页改完立刻生效。
+     *
+     * s3 起这里可能是**规则覆盖后**的档位：`main.ts` 用 `resolveModeFor()` 把
+     * `repo:` / `action:` 规则算进去再交进来。闸门自身不解析规则——它只管
+     * "这个档位下要不要问"，两件事分开才各自可测。
+     */
+    getMode: (exec: GateExec | undefined) => ApprovalMode;
     /** `ctx.get('approval')`。不用 inject：拿不到就退回 `next()`，而不是让插件永久 PENDING */
     getApproval: () => any;
-    /** 写一条人工决策（id 用宿主的 callId，与 intent/result 折成一条记录） */
-    recordDecision: (callId: string, decision: AuditDecision) => void;
+    /**
+     * 写一条人工决策（id 用宿主的 callId，与 intent/result 折成一条记录）。
+     *
+     * `askedAt` = 发起审核请求的时刻。必须由闸门提供，因为**只有它知道用户从哪一刻开始被问**：
+     * intent 行要等 `tools/result`（工具执行完）才写，拿它当起点算出来的是负数。
+     */
+    recordDecision: (callId: string, decision: AuditDecision, askedAt?: number) => void;
     /**
      * 取"被操作的那个 PR/Issue 的现状"（标题 / 状态 / 作者 / 增删 / CI / 正文，可选）。
      *

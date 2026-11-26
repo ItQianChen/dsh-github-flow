@@ -74,6 +74,9 @@ function actionOf(exec: GateExec | undefined): string {
  *   否则每次检出 PR 都要弹一次窗。
  * - `all-writes`：用 `classifyWrite`，与只读档位/记录同一个真源（`WRITE_ACTIONS`）。
  *   注意 `confirm: true` **不豁免**审核：否则模型只要每次都带上 `confirm` 就能绕过弹窗。
+ *
+ * `mode` 由调用方现算（s3 起它可能是**规则覆盖后**的结果，见 `resolveModeFor`），
+ * 本函数只管"这个档位下要不要问"，不关心档位从哪来——两件事分开才测得住。
  */
 export function shouldAsk(exec: GateExec | undefined, mode: ApprovalMode): boolean {
   const name = str(exec?.name);
@@ -82,6 +85,20 @@ export function shouldAsk(exec: GateExec | undefined, mode: ApprovalMode): boole
   const action = actionOf(exec);
   if (mode === 'all-writes') return classifyWrite(name, action);
   return isDestructiveCall(name, exec?.arguments);
+}
+
+/**
+ * 这次调用是不是"作用域内的写操作"——**不看档位**。
+ *
+ * 单独拆出来是为了给闸门做前置短路：算档位（s3 起要按调用解析仓库，含同步读
+ * `.git/config`）比重判一次 `classifyWrite` 贵得多，而读调用在任何档位下都不会被问。
+ * 语义上它与 `shouldAsk` 不冲突：`shouldAsk` 内部对读 action 恒为 false
+ * （`destructive` 走闸门表、`all-writes` 走同一张 `WRITE_ACTIONS`）。
+ */
+export function isWriteCall(exec: GateExec | undefined): boolean {
+  const name = str(exec?.name);
+  if (!isAuditedTool(name)) return false;
+  return classifyWrite(name, actionOf(exec));
 }
 
 /**
@@ -349,12 +366,23 @@ export function rejectionMessage(exec: GateExec | undefined): string {
 }
 
 export interface ApprovalGateDeps {
-  /** 当前审核档位。**每次调用现读**，设置页改完立刻生效 */
-  getMode: () => ApprovalMode;
+  /**
+   * 当前审核档位。**每次调用现读**，设置页改完立刻生效。
+   *
+   * s3 起这里可能是**规则覆盖后**的档位：`main.ts` 用 `resolveModeFor()` 把
+   * `repo:` / `action:` 规则算进去再交进来。闸门自身不解析规则——它只管
+   * "这个档位下要不要问"，两件事分开才各自可测。
+   */
+  getMode: (exec: GateExec | undefined) => ApprovalMode;
   /** `ctx.get('approval')`。不用 inject：拿不到就退回 `next()`，而不是让插件永久 PENDING */
   getApproval: () => any;
-  /** 写一条人工决策（id 用宿主的 callId，与 intent/result 折成一条记录） */
-  recordDecision: (callId: string, decision: AuditDecision) => void;
+  /**
+   * 写一条人工决策（id 用宿主的 callId，与 intent/result 折成一条记录）。
+   *
+   * `askedAt` = 发起审核请求的时刻。必须由闸门提供，因为**只有它知道用户从哪一刻开始被问**：
+   * intent 行要等 `tools/result`（工具执行完）才写，拿它当起点算出来的是负数。
+   */
+  recordDecision: (callId: string, decision: AuditDecision, askedAt?: number) => void;
   /**
    * 取"被操作的那个 PR/Issue 的现状"（标题 / 状态 / 作者 / 增删 / CI / 正文，可选）。
    *
@@ -396,7 +424,16 @@ export function createApprovalGate(deps: ApprovalGateDeps) {
       return next();
     };
     try {
-      if (!shouldAsk(exec, deps.getMode())) return forward();
+      /*
+       * 先按"是不是写操作"短路，再求值策略——**顺序有性能含义**。
+       *
+       * s3 起 `getMode(exec)` 要按调用解析仓库（`resolveExecScope` + 读 `.git/config`），
+       * 而 `github_pr list` / `view` 这类**读**调用在任何档位下都不会被问
+       * （`destructive` 用闸门表、`all-writes` 用 `classifyWrite`，两者对读 action 都为假）。
+       * 先判写再算策略，等于把这份同步 I/O 从"每次 audited 调用"缩小到"每次写调用"。
+       */
+      if (!isWriteCall(exec)) return forward();
+      if (!shouldAsk(exec, deps.getMode(exec))) return forward();
 
       const approval = deps.getApproval();
       // 没有 approval 服务（纯 CLI / TUI profile）：让工具体的 confirm 闸门接管
@@ -426,6 +463,17 @@ export function createApprovalGate(deps: ApprovalGateDeps) {
         if (target?.title && callId && deps.stashTitle) deps.stashTitle(callId, target.title);
       }
 
+      /*
+       * 记下"开始问人"的时刻，随决策行一起落盘。
+       *
+       * 为什么在这里取：这是唯一知道用户从哪一刻开始被问的地方。intent 行要等
+       * `tools/result`（工具执行完）才写，拿它当起点算出来的等待时长恒为负——
+       * health 看板上的"平均等待"因此长期显示 0。
+       *
+       * 放在 `request()` 之前、`resolveTarget` 之后：查目标信息是我们自己的准备动作，
+       * 不该算进"用户思考时间"。
+       */
+      const askedAt = Date.now();
       let outcome: ApprovalOutcome;
       try {
         outcome = await approval.request({
@@ -448,22 +496,22 @@ export function createApprovalGate(deps: ApprovalGateDeps) {
         case 'allowed-once':
           // 批准事实必须传给工具体：否则它自己的 confirm 闸门会再问一遍（一次操作问两遍）
           markApproved(callId);
-          if (callId) deps.recordDecision(callId, 'approved');
+          if (callId) deps.recordDecision(callId, 'approved', askedAt);
           return forward();
         case 'rejected':
-          if (callId) deps.recordDecision(callId, 'rejected');
+          if (callId) deps.recordDecision(callId, 'rejected', askedAt);
           return {
             kind: 'deny',
             reason: rejectionMessage(exec),
             info: { name: 'ApprovalError', code: 'APPROVAL_REJECTED' },
           };
         case 'cancelled':
-          if (callId) deps.recordDecision(callId, 'cancelled');
+          if (callId) deps.recordDecision(callId, 'cancelled', askedAt);
           return { kind: 'cancel' };
         case 'unavailable':
         default:
           // 无 answerer：记一条 no-client（词汇与宿主 Outcomes 一一对应），然后交回工具体
-          if (callId) deps.recordDecision(callId, 'no-client');
+          if (callId) deps.recordDecision(callId, 'no-client', askedAt);
           return forward();
       }
     } catch (error) {
