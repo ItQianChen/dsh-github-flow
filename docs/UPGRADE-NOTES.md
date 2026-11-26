@@ -85,6 +85,7 @@ git push origin master --tags
 | phase50 在 Linux CI 全红（2026-11-25） | `detectSystemProxy` 的平台门禁排在注入 reader 之前，mock 被无视；另有一条断言要求宿主能解析 undici（CI 没有 `~/.dsh` profile） | 平台门禁只约束真实注册表路径（`!reader && 非 win32`）；新增测试断言不得依赖宿主 undici / 运行平台，本地验证用「Linux 平台 + 空 HOME」模拟 CI |
 
 | 「点操作记录」白屏（2026-11-26，用户实证，已修） | `audit-modal.ts` 写的是 `import { formatRelativeTime as fmtRelative }`，而构建器内联时**只删 import 行、不落别名** → bundle 里 `fmtRelative` 永远 undefined。列表为空时不调用 `renderRow` 所以看着正常，一旦有记录就抛 ReferenceError，React 整树卸载 = 整页白 | 构建器新增 `rewriteAliasedImports()`（把 `A as B` 落成 `var B = A;`）+ 构建期硬校验（别名没绑定就 exit 1）+ 禁止在已聚合的 `client.js` 上二次内联；`phase52` 第 17 组 3 条断言钉住。教训：**这条路径只在"有数据"时才被执行**，所以 tsc、build、"内联块无残留 import" 全绿也说明不了问题 |
+| **应用无法启动**（2026-11-26，做 s2 详情时引入，已回退修好） | 往官方 `conversation.approval.detail` 插槽注册了一条贡献。该插槽是 **`single` 型**且由 `@deepseek-ai/dsh-client-ui-chat`（**required entry**）持有；`single` 插槽在**同优先级重复注册时直接抛错**，而抛错发生在**官方包自己注册的那一刻** —— 于是 `web boot: 1 required entry did not activate`，整个应用起不来，调用方的 `try/catch` 根本拦不到 | `phase36` 新增**插槽贡献白名单**：客户端只许 `slots.inject` 自己声明的 4 个插槽（`sidebar.right.pane.tab(.title)` / `sidebar.panellist` / `main`），产物里出现 `conversation.approval.*` 即红。教训两条：① **`entriesOfSlot` 的去重逻辑不代表 `register` 时不校验** —— 判断"能不能注册"必须读 register 路径，我读错了函数；② 碰官方插槽前先确认它的 **kind 与持有者是否 required**，`single` + `required` 的失败半径是"整个应用" |
 ## 七、环境陷阱速查（升级验证时必读）
 
 | 陷阱 | 现象 | 对策 |
@@ -109,4 +110,6 @@ git push origin master --tags
 |---|---|---|---|---|
 | 🕘 **操作记录默认开启** | v0.7.1 之后的首个版本 | 无需任何设置，Agent 对 **PR / Issue 的写操作**就会开始落本地 JSONL（人话摘要 + 仓库 + 风险 + 成败），驾驶舱与右栏出现 `🕘` 入口 | 设置 →「🕘 操作记录与审核」→ 关掉「启用操作记录」（关后不再写盘、启动也不加载历史，历史文件仍留在本地可清空）；预算 1–64 MB 可调 | 默认开 = 新的本地磁盘写入。用户有权在第一次写盘前知道文件在哪（`~/.dsh/data/dsh-github-flow/audit.jsonl`）、占多少（默认 8 MB 上限）、记什么（只记写、只记 PR/Issue） |
 | 记录的**作用域** | 同上 | 只覆盖 `github_pr` / `github_issue` 两个工具的**写**操作；其余 17 个工具不记录，它们的删除仍走各自的 `confirm` 闸门 | 无需操作 | 避免"我明明开着记录，为什么 `release delete` 没有记录"这类误判 |
+| 🛡️ **审核弹窗默认开启**（`仅高危`档） | v0.7.1 之后的首个版本 | 默认档位下，Agent 要**合并 / 关闭 / 删除 / 迁移** PR 或 Issue 时，会先弹出 **DSH 官方审核弹窗**接管输入区（批准才执行；拒绝则工具当场失败，模型被要求先确认意图）。批准过的调用不会再要 `confirm: true` | 设置 →「🕘 操作记录与审核」→ 改档位：`关闭` / `仅高危` / `全部写操作`（立即生效）。**注意**：DSH 权限预设为 `danger-full-access` 时宿主固定策略为 `never`，审核整体不生效，回退到原来的 `confirm: true` 二次确认 | 这是**新的阻塞式交互**——用户的会话会停下来等人点一下。默认开是因为"高危写操作先问一句"比"事后发现合错了"便宜；但必须让用户知道弹窗来自哪里、去哪关、以及为什么切了预设就不弹 |
+| 审核与操作记录的**解耦** | 同上 | 关掉「启用操作记录」后，审核弹窗**仍然会出现**（v1 的设计是"关闭记录即停用审核"，已作废） | 想连审核一起停：改审核档位为 `关闭`，不是关记录 | 旧文案曾写"关闭记录时审核自动停用"。审批的权威审计在宿主的会话日志里（`approval/asked` + `approval/decided`），不依赖本插件的 JSONL，所以两条链路必须能各自独立关闭 |
 
