@@ -26,6 +26,17 @@ export interface OperationMeta {
      * 就必须有路径这一维（且路径是本地事实，不含任何仓库内容）。
      */
     cwd?: string;
+    /**
+     * 本次调用的参数快照（JSON 字符串，超长已截断）。
+     *
+     * 为什么必须落地存：详情页不能只靠"去 GitHub 拉"。**被拒绝的操作在远端根本不存在**
+     * （`pr create` 被拒时连 PR 都没有），而失败/待审的操作也不该去远端找内容；
+     * 何况远端会腐烂——PR 删除、仓库改名转移、账号换过权限。
+     * 记录必须自包含：哪怕断网、哪怕仓库没了，也要能回答"当时到底提交了什么"。
+     */
+    args?: string;
+    /** 参数快照超过上限被截断（UI 要明确提示，不能让人以为原文就这么短） */
+    argsTruncated?: boolean;
 }
 /** 折叠后交给 UI / 路由的一条记录 */
 export interface AuditEntry extends OperationMeta {

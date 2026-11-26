@@ -13,7 +13,7 @@
 //    而老测试直接传原始载荷。两种形状都必须认，否则要么生产全错、要么既有断言静默失效。
 // 5. 客户端模块漏登记 scripts/build.mjs 会**白屏且构建成功**，只能用静态断言守住。
 
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, mkdtempSync, rmSync, existsSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -630,6 +630,80 @@ console.log('\n--- 16. 降级与关闭的语义分离 / 单行超预算 ---');
   const offBody = existsSync(off.filePath()) ? readFileSync(off.filePath(), 'utf8') : '';
   ok(!offBody.includes('这条不该落盘'), '关闭态下 decision 行不落盘（文件甚至没被创建）');
   await off.dispose();
+}
+
+console.log('\n--- 17. 内联别名必须被绑定（2026-11-26「点操作记录白屏」事故）---');
+{
+  /*
+   * 事故复现链：`audit-modal.ts` 写的是 `import { formatRelativeTime as fmtRelative }`，
+   * 构建器内联时把 import 行删了却没落别名 → bundle 里 `fmtRelative` 永远 undefined。
+   * 列表为空时不调用 renderRow 所以看不出问题；一旦有记录，第一行就抛
+   * ReferenceError，React 整棵树卸载 = 白屏。tsc 通过、build 成功、「内联块无残留
+   * import」的断言也全绿，只有真点一下才炸。
+   */
+  const bundle = readFileSync(path.join(ROOT, 'lib/client.js'), 'utf8');
+  const bad = [];
+  for (const f of readdirSync(path.join(ROOT, 'src/ui')).filter((n) => n.endsWith('.ts'))) {
+    const src = readFileSync(path.join(ROOT, 'src/ui', f), 'utf8');
+    for (const hit of src.matchAll(/^\s*import\s*\{([^}]*)\}\s*from/gm)) {
+      for (const raw of String(hit[1]).split(',')) {
+        const parts = raw.trim().split(/\s+as\s+/);
+        if (parts.length !== 2) continue;
+        const local = parts[1].trim();
+        if (!new RegExp('var\\s+' + local + '\\s*=').test(bundle)) bad.push(`${f}: ${local}`);
+      }
+    }
+  }
+  ok(bad.length === 0, '内联模块的 import 别名在 bundle 里都有绑定（否则只在用到时抛 ReferenceError）', bad.join(', '));
+  ok(/var fmtRelative = formatRelativeTime/.test(bundle), 'fmtRelative 这个历史别名已被显式绑定');
+
+  // build.mjs 的另一条护栏：输入输出同文件，跳过 tsc 重跑会把模块重复内联
+  const buildSrc = readFileSync(path.join(ROOT, 'scripts/build.mjs'), 'utf8');
+  ok(buildSrc.includes("// ---- [Bundled:"), 'build.mjs 会拒绝在已聚合的 client.js 上二次内联');
+}
+
+console.log('\n--- 18. 参数快照：记录必须自包含（被拒绝的操作远端不存在）---');
+{
+  /*
+   * 为什么要有这一组：详情页原来只靠"去 GitHub 拉"。但被拒绝的操作在远端**根本不存在**
+   * （`pr create` 被拒时连 PR 都没有），远端内容还会腐烂（PR 删除、仓库改名、权限丢失）。
+   * 所以记录必须在写入时就把"当时提交了什么"存下来。
+   */
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'dsh-audit-snap-'));
+  tmpDirs.push(dir);
+  const store = new AuditStore({ dir, flushDelayMs: 0 });
+  const args = { action: 'create', title: '修复登录重试', body: '正文：把重试次数从 3 改成 5', base: 'master' };
+  store.recordCall('github_pr', args, { ok: true }, { callId: 'snap1', agent: { id: 's1' } });
+  const row = store.list().items[0];
+  ok(typeof row.args === 'string' && row.args.length > 10, 'intent 行带参数快照');
+  ok(row.args.includes('修复登录重试'), '快照里能读到用户真正提交的标题');
+  ok(row.args.includes('重试次数从 3 改成 5'), '快照里能读到正文');
+  ok(row.argsTruncated === undefined, '未超长时不打截断标记');
+
+  // 超长正文必须被截断，且**显式**标记（不能让人以为原文就这么短）
+  const longBody = '很长的正文'.repeat(800);
+  store.recordCall('github_pr', { action: 'create', title: 'x', body: longBody }, { ok: true }, { callId: 'snap2' });
+  const rows2 = store.list().items;
+  const longRow = rows2.find((r) => r.callId === 'snap2');
+  ok(typeof longRow.args === 'string' && longRow.args.length <= 2000, '超长参数被截到 2000 字符以内', `实际 ${longRow.args.length}`);
+  ok(longRow.argsTruncated === true, '被截断时显式标记 argsTruncated');
+
+  // 参数与决策行共存：被拒绝的记录仍能看到"提交了什么"
+  store.recordDecision('snap1', 'rejected', '改成 squash 再试');
+  const rejRow = store.list().items.find((r) => r.callId === 'snap1');
+  ok(rejRow.decision === 'rejected' && typeof rejRow.args === 'string', '被拒绝的记录同时带决策与参数快照（详情页据此展示，不必访问 GitHub）');
+
+  // 旧格式记录（没有 args / argsTruncated 字段）必须照常可读，不许因为缺字段崩。
+  // 顺序要紧：先 dispose 让本实例刷完盘，再手写文件，否则会被它的末次 flush 覆盖。
+  await store.dispose();
+  writeFileSync(
+    path.join(dir, 'audit.jsonl'),
+    JSON.stringify({ v: 1, kind: 'intent', id: 'old1', at: Date.now(), tool: 'github_pr', action: 'merge', write: true, risk: 'destructive', summary: '合并 PR #1' }) + '\n',
+    'utf8'
+  );
+  const legacyStore = new AuditStore({ dir, flushDelayMs: 0 });
+  ok(legacyStore.list().items[0].args === undefined, '旧格式记录没有 args 也能正常读出（UI 显示"没有保存快照"）');
+  await legacyStore.dispose();
 }
 
 for (const d of tmpDirs) {

@@ -66,6 +66,17 @@ export interface OperationMeta {
    * 就必须有路径这一维（且路径是本地事实，不含任何仓库内容）。
    */
   cwd?: string;
+  /**
+   * 本次调用的参数快照（JSON 字符串，超长已截断）。
+   *
+   * 为什么必须落地存：详情页不能只靠"去 GitHub 拉"。**被拒绝的操作在远端根本不存在**
+   * （`pr create` 被拒时连 PR 都没有），而失败/待审的操作也不该去远端找内容；
+   * 何况远端会腐烂——PR 删除、仓库改名转移、账号换过权限。
+   * 记录必须自包含：哪怕断网、哪怕仓库没了，也要能回答"当时到底提交了什么"。
+   */
+  args?: string;
+  /** 参数快照超过上限被截断（UI 要明确提示，不能让人以为原文就这么短） */
+  argsTruncated?: boolean;
 }
 
 /** 折叠后交给 UI / 路由的一条记录 */
@@ -106,8 +117,30 @@ export type AuditRow = IntentRow | DecisionRow | ResultRow | DeleteRow;
  * `clamp(预算/120B, 1 000, 200 000)`，8 MB 下算出 7 万行，而 8 MB 实际只装得下
  * 3.2 万行 —— 正常永不触发，它只是安全网。
  */
-const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
-/** 极短行的下界（读操作一行 ≈150 B，取更保守的 120 B 作分母） */
+/**
+ * 参数快照的字符上限。
+ *
+ * 定 2000 字符：够放下一段完整的 PR / Issue 描述，又不至于让一行记录长到把
+ * s1b 的字节预算吃光（2000 字符中文 ≈ 6 KB，与"拒绝留言"的单行护栏同口径）。
+ * 超出就截断并打 `argsTruncated` —— 截断是显式的，不做静默省略。
+ */
+const MAX_SNAPSHOT_CHARS = 2000;
+
+/** 把工具参数压成可落盘的一行快照；不可序列化时返回空串（不抛） */
+function snapshotArgs(args: any): { text: string; truncated: boolean } {
+  if (args === undefined || args === null) return { text: '', truncated: false };
+  let text: string;
+  try {
+    text = JSON.stringify(args);
+  } catch {
+    return { text: '', truncated: false };
+  }
+  if (typeof text !== 'string' || text.length === 0) return { text: '', truncated: false };
+  if (text.length <= MAX_SNAPSHOT_CHARS) return { text, truncated: false };
+  return { text: text.slice(0, MAX_SNAPSHOT_CHARS), truncated: true };
+}
+
+const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;/** 极短行的下界（读操作一行 ≈150 B，取更保守的 120 B 作分母） */
 const MIN_ROW_BYTES_ESTIMATE = 120;
 const MIN_MAX_BYTES = 256 * 1024;
 const MAX_MAX_BYTES = 64 * 1024 * 1024;
@@ -776,6 +809,12 @@ export class AuditStore {
       if (scope.cwd) meta.cwd = scope.cwd;
       const target = pickTarget(args);
       if (target) meta.target = target;
+      // 参数快照：详情页的唯一本地依据（被拒绝的操作在 GitHub 上不存在）
+      const snapshot = snapshotArgs(args);
+      if (snapshot.text) {
+        meta.args = snapshot.text;
+        if (snapshot.truncated) meta.argsTruncated = true;
+      }
       const sessionId = s(exec?.agent?.id) || s(exec?.sessionId);
       if (sessionId) meta.sessionId = sessionId;
       meta.callId = callId;
@@ -854,6 +893,8 @@ export class AuditStore {
           target: row.target,
           sessionId: row.sessionId,
           callId: row.callId,
+          args: row.args,
+          argsTruncated: row.argsTruncated,
           decision: 'auto',
           result: 'unknown',
         });
@@ -890,6 +931,8 @@ export class AuditStore {
           target: r.target,
           sessionId: r.sessionId,
           callId: r.callId,
+          args: r.args,
+          argsTruncated: r.argsTruncated,
           decision: 'auto',
           result: row.ok ? 'ok' : 'fail',
           errorType: row.errorType,

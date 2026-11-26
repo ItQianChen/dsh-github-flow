@@ -3,6 +3,32 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * 把 `import { A as B }` 中的别名落成 `var B = A;`，供内联前调用。
+ *
+ * 为什么必须有它：内联后所有模块共享同一个闭包作用域，`import` 行会被删除，
+ * 非别名符号靠声明本身可见——但 `as B` 里的 `B` 是**新名字**，闭包里根本不存在，
+ * 删掉 import 就等于它永远是 undefined。
+ * 这类错误 tsc 抓不到、build 不报错、内联块也「没有残留 import」，
+ * 只在真的用到那个符号时抛 ReferenceError（2026-11-26 操作记录白屏事故：
+ * 列表为空时根本不调用 renderRow，一旦有记录就整棵 React 树卸载）。
+ */
+function rewriteAliasedImports(code) {
+  return code.replace(
+    /^[ \t]*import\s*\{([^}]*)\}\s*from\s*['"][^'"]+['"]\s*;?[ \t]*$/gm,
+    (_m, names) => {
+      const assigns = [];
+      for (const raw of String(names).split(',')) {
+        const parts = raw.trim().split(/\s+as\s+/);
+        if (parts.length === 2 && parts[0].trim() && parts[1].trim()) {
+          assigns.push(`var ${parts[1].trim()} = ${parts[0].trim()};`);
+        }
+      }
+      return assigns.join('\n');
+    },
+  );
+}
 const clientPath = path.resolve(__dirname, '../lib/client.js');
 
 /**
@@ -162,6 +188,7 @@ function bundleClient() {
         // 压缩后立即校验：非法 CSS 会被浏览器静默丢弃，必须在构建期拦住
         assertCssIntegrity(code);
       }
+      code = rewriteAliasedImports(code);
       code = code.replace(/^\s*import\s+[^;]+;\s*$/gm, '');
       code = code.replace(/\bexport\s+(async\s+)?(function|const|var|let|class)\b/g, '$1$2');
       code = code.replace(/\bexport\s*\{[^}]*\}\s*;?/g, '');
@@ -176,6 +203,7 @@ function bundleClient() {
     const modPath = path.join(uiDir, mod);
     if (fs.existsSync(modPath)) {
       let code = fs.readFileSync(modPath, 'utf8');
+      code = rewriteAliasedImports(code);
       code = code.replace(/^\s*import\s+[^;]+;\s*$/gm, '');
       code = code.replace(/\bexport\s+(async\s+)?(function|const|var|let|class)\b/g, '$1$2');
       code = code.replace(/\bexport\s*\{[^}]*\}\s*;?/g, '');
@@ -184,8 +212,19 @@ function bundleClient() {
   }
 
   let mainContent = fs.readFileSync(clientPath, 'utf8');
+  /*
+   * 输入与输出是同一个文件（lib/client.js）：tsc 重编译会把它重置为「未内联」的形态，
+   * 之后的聚合才安全。若这里已经能看到内联标记，说明有人跳过了 tsc 直接重跑本脚本，
+   * 再聚合一次就会把 22 个模块整份复制进 bundle（体积翻倍、声明重复）。
+   * 不静默容错——直接失败，让调用者按正确顺序重来。
+   */
+  if (mainContent.includes('// ---- [Bundled:')) {
+    console.error('[build] ❌ lib/client.js 已是聚合产物：请先运行 tsc 重新生成，再执行本脚本（pnpm run build 会按序执行）');
+    process.exit(1);
+  }
   // 剥掉 client.js 对「会被内联的模块」的 import：ui/ 与 shared/ 两族都要剥，
   // 否则 shared/state-badges.js 会同时以 import 与内联体存在两份。
+  mainContent = rewriteAliasedImports(mainContent);
   mainContent = mainContent.replace(/^\s*import\s+[^;]+from\s+['"][^'"]*(?:ui|shared)\/[^'"]*['"]\s*;?\s*$/gm, '');
   mainContent = mainContent.replace(/\bexport\s*\{[\s\S]*?\}\s*;?/g, '');
 
@@ -205,6 +244,32 @@ function bundleClient() {
   }
 
   mainContent = mainContent.trim() + '\n';
+
+  /*
+   * 别名 import 的硬校验：被内联模块里每个 `import { A as B }`，bundle 里都必须
+   * 存在 `var B = A;`。少一个就是运行期 ReferenceError，而且**只在真的用到 B 时爆**
+   * ——tsc 通过、build 成功、内联块也确实「没有残留 import」，全都拦不住它。
+   * 2026-11-26 的「点操作记录白屏」就是这个：列表为空时不调用 renderRow，
+   * 一旦有记录就整棵 React 树卸载。
+   */
+  const missingAliases = [];
+  for (const mod of [...leadingModules, ...trailingModules]) {
+    const p = path.join(uiDir, mod);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf8');
+    for (const m of src.matchAll(/^[ \t]*import\s*\{([^}]*)\}\s*from/gm)) {
+      for (const raw of String(m[1]).split(',')) {
+        const parts = raw.trim().split(/\s+as\s+/);
+        if (parts.length !== 2) continue;
+        const local = parts[1].trim();
+        if (!new RegExp('var\\s+' + local + '\\b').test(mainContent)) missingAliases.push(`${local}（来自 ${mod}）`);
+      }
+    }
+  }
+  if (missingAliases.length > 0) {
+    console.error('[build] ❌ 别名 import 未被绑定，运行期会 ReferenceError：', missingAliases.join(', '));
+    process.exit(1);
+  }
 
   // 刚性防线：客户端闭包内绝对不能含有裸 export 语句，防止浏览器触发 Uncaught SyntaxError: Unexpected token 'export' 崩溃
   const illegalExportMatch = mainContent.match(/\bexport\s+(async\s+)?(function|const|var|let|class)\b/);
