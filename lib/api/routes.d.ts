@@ -12,7 +12,6 @@
  */
 import type { GhExecutor } from '../executor.js';
 import type { AuditStore } from '../audit.js';
-import type { ApprovalQueue } from '../approval.js';
 import { UpdateChecker } from '../updater.js';
 import { UpgradeManager } from '../upgrade-manager.js';
 import { globalCacheTtlMs } from './route-helpers.js';
@@ -38,6 +37,4 @@ webServerOverride?: any,
  *
  * 缺省不注册审计路由（测试里大量调用本函数，不该因为没传 store 就落盘到用户主目录）。
  */
-auditStore?: AuditStore, 
-/** 人工审核队列（同样由 main.ts 创建并与 `tools/execute` 接线共用同一实例） */
-approvalQueue?: ApprovalQueue): void;
+auditStore?: AuditStore): void;

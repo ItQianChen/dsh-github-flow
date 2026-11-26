@@ -67,24 +67,6 @@ export interface PluginConfig {
      * 两个闸门先到者生效，用户只会看一个，调了没用的配置比不给更糟。
      */
     auditBudgetMB?: number;
-    /**
-     * 人工审核档位（默认 `'destructive'`：开，但只覆盖 17 条高危）。
-     *
-     * - `off`：不弹窗，只记录；
-     * - `destructive`：只对不可逆 / 影响远端状态的操作弹窗（与 `confirm` 闸门覆盖面一致）；
-     * - `all-writes`：55 条写 action 全弹。
-     *
-     * **审核依附于记录**：`auditEnabled=false` 或记录降级时审核自动停用（不会弹窗），
-     * 原因是决策无处留痕的审核等于一次点完即逝的问答。
-     */
-    approvalMode?: 'off' | 'destructive' | 'all-writes';
-    /**
-     * 审批超时（毫秒，默认 180000）。
-     *
-     * 超时即 fail-open：结算为 `expired`，调用方退回既有的 `confirm: true` 闸门。
-     * 它是"有人在看但没点"的兜底，不是安全边界。
-     */
-    approvalTimeoutMs?: number;
 }
 /** 数据同步与自动化感知偏好配置 */
 export interface SyncSettings {

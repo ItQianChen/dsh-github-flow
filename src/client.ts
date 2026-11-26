@@ -47,7 +47,6 @@ import { RunDetailModal } from './ui/run-modal.js';
 import { GlobalSyncSettingsModal } from './ui/sync-settings-modal.js';
 import { GithubHelpModal } from './ui/help-modal.js';
 import { AuditModal } from './ui/audit-modal.js';
-import { startApprovalWatcher } from './ui/approval-modal.js';
 import { GithubWorkspacePanel } from './ui/workspace-panel.js';
 
 export {
@@ -2292,19 +2291,6 @@ window.__ModuleLoader__.load({
             key: "github",
           }, GithubWorkspacePanel);
         });
-      }
-
-      /*
-       * 审核守护：命令式挂 document.body，**不经过任何 slot**。
-       *
-       * 为什么不能挂 slot：slot 只在对应面板被打开时才渲染，而"Agent 要合并 PR 了"
-       * 恰恰可能在用户没打开 GitHub 面板时发生——挂 slot 就等于让审核在那种时刻静默失效。
-       * 同时它在加载时先发一次心跳（声明"客户端在线"），否则关掉面板 = 关掉审核。
-       */
-      if (ctx.effect) {
-        ctx.effect(() => startApprovalWatcher(), "github: approval watcher");
-      } else {
-        startApprovalWatcher();
       }
     }
 

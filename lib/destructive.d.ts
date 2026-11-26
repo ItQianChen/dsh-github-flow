@@ -37,23 +37,12 @@ interface GateSpec {
 }
 export declare const DESTRUCTIVE_ACTIONS: Record<string, Record<string, GateSpec>>;
 /**
- * 只描述"这次调用危险在哪"，**不看 `confirm`**。
- *
- * 为什么要把描述与拦截分开：s2 的人工审核弹窗要展示同一套 warning / impact，
- * 但它拦的是"还没确认"的调用（`confirm` 一定没有）。若复用 `guardDestructive`，
- * 弹窗就得先把 confirm 临时抹掉再调一次——那种"为了取文案而伪造参数"的写法，
- * 迟早有人把它用成真正的判定。
- */
-export declare function describeDestructive(toolName: string, args: any): GatePayload | undefined;
-/**
  * 统一闸门：命中则返回拦截载荷，否则返回 undefined。
  *
  * `confirm === true` 的判定放在这里而不是每个 describe 里——15 份重复的
  * `if (args.confirm !== true)` 正是这次要消掉的东西。
  */
 export declare function guardDestructive(toolName: string, args: any): GatePayload | undefined;
-/** 安装/清除旁路钩子。传 undefined 即恢复默认（测试与热重载都要能清干净）。 */
-export declare function setGateBypass(fn?: (exec: any) => boolean): void;
 /**
  * 用闸门包一层 execute（注册期唯一入口）。
  *

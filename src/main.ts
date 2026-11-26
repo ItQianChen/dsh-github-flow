@@ -22,9 +22,6 @@ import { createHelpTool } from './tools/help.js';
 import { createTaskTool } from './tools/task.js';
 import { defaultTelemetryCollector } from './telemetry.js';
 import { AuditStore, resolveScopeFromExec } from './audit.js';
-import { ApprovalQueue } from './approval.js';
-import { createApprovalGate } from './approval-gate.js';
-import { setGateBypass } from './destructive.js';
 import { registerGhCommand } from './commands/gh.js';
 import { registerApiRoutes } from './api/routes.js';
 import { UpdateChecker } from './updater.js';
@@ -96,12 +93,6 @@ const ConfigSchema = Schema.object({
   // 操作记录：默认全开（被动、无打扰），可在设置里关掉；预算只暴露字节一个旋钮
   auditEnabled: Schema.boolean().default(true),
   auditBudgetMB: Schema.number().default(8),
-  // 人工审核：默认开，但只覆盖 17 条高危（不可逆 / 影响远端状态）。
-  // 档位取 destructive 而不是 all-writes：后者会把 pr comment 这类可逆动作也拦下来，
-  // 一天几十次弹窗足以让人把功能关掉。默认值要让功能活下来，不是让它显得严格。
-  approvalMode: Schema.union(['off', 'destructive', 'all-writes'] as const).default('destructive'),
-  // 标 volatile 就必须有消费点（否则是假热更新）：见 apply() 里的 loader/volatile-update
-  approvalTimeoutMs: Schema.number().default(180_000).volatile(),
 });
 
 /** 校验并补齐默认值后的运行期配置（volatile 字段为稳定引用，非普通值）。 */
@@ -137,8 +128,6 @@ function resolvePluginConfig(config: Config): PluginConfig {
     read_only: config.read_only,
     auditEnabled: config.auditEnabled,
     auditBudgetMB: config.auditBudgetMB,
-    approvalMode: config.approvalMode,
-    approvalTimeoutMs: config.approvalTimeoutMs.get(),
   };
 }
 
@@ -189,46 +178,18 @@ export function apply(ctx: Context, config: Config = Config({})) {
    * AuditStore 构造期自带 try/catch 降级（目录不可写、JSONL 损坏时变 no-op），
    * 因此这一行不会把 apply() 打崩——Cordis 里 apply 抛错 = Fiber FAILED = 19 个工具全丢。
    */
-  /*
-   * 人工审核队列。先于 auditStore 创建：store 的开关回调要引用它。
-   *
-   * 默认档位 destructive（开，但只覆盖 17 条高危）。**默认开的前提是 fail-open 可靠**：
-   * 没有客户端在线 / 超时 / 记录不可用 / 审核自身异常，任一条都必须退回旧的
-   * `confirm: true` 闸门而不是把 Agent 挂死。
-   */
-  const approvalQueue = new ApprovalQueue({ timeoutMs: plain.approvalTimeoutMs });
   const auditStore = new AuditStore({
     // 静态配置只是"文件不存在时的种子"：用户在 UI 里改过之后以 audit-settings.json 为准
     enabled: plain.auditEnabled,
     maxBytes: Math.round((plain.auditBudgetMB ?? 8) * 1024 * 1024),
-    approvalMode: plain.approvalMode,
     scopeResolver: (exec, args) => resolveScopeFromExec(executor, exec, args),
-    // 记录开关/降级状态变化时同步审核：决策无处留痕的审核等于一次点完即逝的问答
-    onEnabledChange: (usage) => {
-      if (usage.active) approvalQueue.onEnabled();
-      else approvalQueue.onDisabled(usage.degraded ? '操作记录不可用' : '操作记录已关闭');
-    },
   });
-  // 构造期不触发回调，初始状态要显式同步一次
-  if (!auditStore.usage().active) {
-    approvalQueue.onDisabled(auditStore.usage().degraded ? '操作记录不可用' : '操作记录已关闭');
-  }
-  // 闸门旁路：被人工批准过的 callId 不再要求 confirm（审批取代 confirm，不叠加）
-  setGateBypass((exec) => approvalQueue.isGrantedCall(exec?.callId));
-  /*
-   * 生命周期纳管：***一个*** Disposer，内部按序 await。
-   * 为什么不能拆成两个 ctx.effect：Cordis 的 Disposer 是 LIFO 触发且**异步并发**执行，
-   * 拆开就会变成"队列还在结算 decision 行、存储已经关了"——偶发丢最后一批记录。
-   */
+  // 生命周期纳管：内部有攒批刷盘定时器，不挂 effect 的话热重载会留下跑着的定时器
+  // （与 proxyManager 的 30s 轮询同一类问题）。
   if (typeof (ctx as any).effect === 'function') {
     (ctx as any).effect(() => () => {
-      void (async () => {
-        try { await approvalQueue.dispose(); } catch { /* 结算失败不阻断卸载 */ }
-        try { await auditStore.dispose(); } catch { /* 刷盘失败不阻断卸载 */ }
-      })();
-      // 钩子必须清干净：热重载时旧闭包会指向已卸载的队列，留下一个永远 return false 的旁路
-      setGateBypass(undefined);
-    }, 'github-flow: audit + approval lifecycle');
+      void auditStore.dispose();
+    }, 'github-flow: audit store lifecycle');
   }
   const updateChecker = new UpdateChecker({
     intervalMs: plain.updateCheckIntervalMs,
@@ -280,30 +241,6 @@ export function apply(ctx: Context, config: Config = Config({})) {
   ctx.inject(['commands'], (c) => {
     registerGhCommand(c.get('commands'), executor, updateChecker, defaultTelemetryCollector);
   });
-
-  /*
-   * 3.5 注册执行前人工审核（tools/execute 环绕层）。
-   *
-   * 为什么包在 `tools/execute` 而不是 `tools/pre-execute` 的 `ask`：宿主 `ask` 要经过
-   * `ctx.approval`，而本机默认预设（danger-full-access）把 approval policy 钉成 `never`，
-   * 那条路上每一次合并都会被确定性拒绝（总纲 §3.4 实测）。这里自建队列，语义自己握。
-   * 官方先例：`dsh-tool-call-timeout-policy` 就是包这一层并返回合成结果。
-   */
-  // 档位取自 store（设置页可改，热生效）；store 的种子值来自 cordis 配置
-  const approvalModeOf = (): string => auditStore.approvalMode();
-  if (approvalModeOf() !== 'off') {
-    // 升级迁移必须告知：s1 交付时没有审核，默认开 = 行为突变。不告知就改行为比默认关更糟。
-    console.warn(
-      '[dsh-github-flow] 操作审核已默认开启（仅高危操作：合并 / 关闭 / 删除 / 迁移等，会弹窗等待确认）。' +
-      '可在「🕘 操作记录」窗口的 ⚙️ 设置里关闭。'
-    );
-  }
-  onHostEvent(ctx, 'tools/execute', createApprovalGate({
-    queue: approvalQueue,
-    store: auditStore,
-    executor,
-    modeOf: approvalModeOf,
-  }));
 
   // 4. 注册 Agent 模型工具集（核心领域工具 + 元指南）
   // `tools` 在 inject 内，运行期必然存在；其权威类型声明在 @deepseek-ai/dsh-tools，
@@ -357,9 +294,7 @@ export function apply(ctx: Context, config: Config = Config({})) {
       proxyManager,
       c.get('webServer'),
       // 操作记录存储：与上方 tools/result 切面是**同一个实例**
-      auditStore,
-      // 审核队列：与 tools/execute 环绕层是**同一个实例**
-      approvalQueue
+      auditStore
     );
   });
 
@@ -378,8 +313,6 @@ export function apply(ctx: Context, config: Config = Config({})) {
       // ——实测 {maxOutputChars:1000, maxOutputBytes:500} 会变成 4000。
       maxOutputBytes: config.maxOutputBytes,
     });
-    // 审核超时也是 volatile：不推给队列就是"配置改了、行为没变"（假热更新）
-    approvalQueue.updateTimeout(config.approvalTimeoutMs.get());
   });
 
   // 7. 启动后低优先级后台闲时静默探测：若有新版本，仅输出一次友好的控制台提示
