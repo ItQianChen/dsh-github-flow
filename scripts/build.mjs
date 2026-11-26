@@ -150,6 +150,9 @@ function bundleClient() {
     // 因此必须排在 utils.js / styles.js 之后。漏登记不会报错，只会在浏览器里表现为
     // undefined（点 🕘 白屏），顺序与登记都必须显式维护。
     'audit-modal.js',
+    // approval-modal 是命令式 DOM 的审核守护（不挂 slot），同样必须登记；
+    // 它零依赖，排在这里只是跟同族的弹窗放在一起。
+    'approval-modal.js',
   ];
 
   let leadingCode = '';

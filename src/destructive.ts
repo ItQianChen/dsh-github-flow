@@ -278,12 +278,14 @@ export const DESTRUCTIVE_ACTIONS: Record<string, Record<string, GateSpec>> = {
 };
 
 /**
- * 统一闸门：命中则返回拦截载荷，否则返回 undefined。
+ * 只描述"这次调用危险在哪"，**不看 `confirm`**。
  *
- * `confirm === true` 的判定放在这里而不是每个 describe 里——15 份重复的
- * `if (args.confirm !== true)` 正是这次要消掉的东西。
+ * 为什么要把描述与拦截分开：s2 的人工审核弹窗要展示同一套 warning / impact，
+ * 但它拦的是"还没确认"的调用（`confirm` 一定没有）。若复用 `guardDestructive`，
+ * 弹窗就得先把 confirm 临时抹掉再调一次——那种"为了取文案而伪造参数"的写法，
+ * 迟早有人把它用成真正的判定。
  */
-export function guardDestructive(toolName: string, args: any): GatePayload | undefined {
+export function describeDestructive(toolName: string, args: any): GatePayload | undefined {
   const table = DESTRUCTIVE_ACTIONS[toolName];
   if (!table) return undefined;
   const action = typeof args?.action === 'string' ? args.action : '';
@@ -291,9 +293,35 @@ export function guardDestructive(toolName: string, args: any): GatePayload | und
   // spec.describe 不是函数直接 TypeError（复核报告 C-05，11 工具 × 16 组合全崩）。
   const spec = Object.prototype.hasOwnProperty.call(table, action) ? table[action] : undefined;
   if (!spec) return undefined;
-  if (args?.confirm === true) return undefined;
   if (spec.when && !spec.when(args)) return undefined;
   return spec.describe(args);
+}
+
+/**
+ * 统一闸门：命中则返回拦截载荷，否则返回 undefined。
+ *
+ * `confirm === true` 的判定放在这里而不是每个 describe 里——15 份重复的
+ * `if (args.confirm !== true)` 正是这次要消掉的东西。
+ */
+export function guardDestructive(toolName: string, args: any): GatePayload | undefined {
+  if (args?.confirm === true) return undefined;
+  return describeDestructive(toolName, args);
+}
+
+/**
+ * 审批旁路钩子（s2 安装）。
+ *
+ * 为什么需要它：人工审核的拦截在 `tools/execute` 层，比工具体内的 confirm 闸门**更早**。
+ * 没有这个钩子，用户点完"批准"之后工具仍会返回 `AWAITING_CONFIRMATION` —— 一次操作问两遍。
+ *
+ * 语义刻意收窄成"这次调用已被批准"，不是"跳过所有闸门"：它只可能来自
+ * `ApprovalQueue.isGrantedCall(callId)`，且缺省未安装时行为与今天 100% 相同。
+ */
+let gateBypass: ((exec: any) => boolean) | undefined;
+
+/** 安装/清除旁路钩子。传 undefined 即恢复默认（测试与热重载都要能清干净）。 */
+export function setGateBypass(fn?: (exec: any) => boolean): void {
+  gateBypass = fn;
 }
 
 /**
@@ -309,7 +337,10 @@ export function wrapWithGate<T extends { name: string; execute: (...a: any[]) =>
   return {
     ...tool,
     async execute(args: any, ctx: any) {
-      const gate = guardDestructive(tool.name, args);
+      // 已被人工批准的调用跳过 confirm 闸门（审批取代 confirm，不叠加）。
+      // ctx 即宿主 ToolRunContext，带 callId。
+      const bypass = gateBypass ? gateBypass(ctx) === true : false;
+      const gate = bypass ? undefined : guardDestructive(tool.name, args);
       if (gate) return gate;
       return tool.execute(args, ctx);
     },
