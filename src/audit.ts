@@ -28,6 +28,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { WRITE_ACTIONS } from './tool-tiers.js';
 import { DESTRUCTIVE_ACTIONS } from './destructive.js';
+import { takeTargetTitle } from './target-title.js';
 
 /** 风险分级：读 / 写 / 高危（= 命中 `DESTRUCTIVE_ACTIONS` 闸门表） */
 export type AuditRisk = 'read' | 'write' | 'destructive';
@@ -77,6 +78,17 @@ export interface OperationMeta {
   args?: string;
   /** 参数快照超过上限被截断（UI 要明确提示，不能让人以为原文就这么短） */
   argsTruncated?: boolean;
+  /** 具体哪些字段被裁过（如 `['body']`）；空/缺省表示没裁 */
+  fieldsTruncated?: string[];
+  /**
+   * 被**操作**的那个 PR / Issue 的标题（按编号操作既有实体时才有；`create` 没有它）。
+   *
+   * 为什么单独存一列而不是拼进 `summary`：记录的 `summary` 是"动作"的人话
+   * （`合并 PR #19`），标题是"对象"。分开存才能：① 列表保持简短、详情里展示完整对象；
+   * ② 目标将来被删/改名后，这条记录仍能说出"当时合的是哪一个"。
+   * 来源是审核阶段那一次 gh 读取（`target-title.ts` 的暂存表），不在记录阶段再打一次 gh。
+   */
+  targetTitle?: string;
 }
 
 /** 折叠后交给 UI / 路由的一条记录 */
@@ -118,26 +130,137 @@ export type AuditRow = IntentRow | DecisionRow | ResultRow | DeleteRow;
  * 3.2 万行 —— 正常永不触发，它只是安全网。
  */
 /**
- * 参数快照的字符上限。
+ * 参数快照的字符预算。
  *
- * 定 2000 字符：够放下一段完整的 PR / Issue 描述，又不至于让一行记录长到把
- * s1b 的字节预算吃光（2000 字符中文 ≈ 6 KB，与"拒绝留言"的单行护栏同口径）。
- * 超出就截断并打 `argsTruncated` —— 截断是显式的，不做静默省略。
+ * 定 4000 字符（≈12 KB 中文）：一段 PR / Issue 正文经常 1–3 KB，2000 就装不下；
+ * 而 8 MB 预算下 4000 字符仍能存约 670 条满额记录，够用。
+ * 超出就**按字段裁**并打 `argsTruncated` + `fieldsTruncated`——截断是显式的，不做静默省略。
  */
-const MAX_SNAPSHOT_CHARS = 2000;
+const MAX_SNAPSHOT_CHARS = 4000;
 
-/** 把工具参数压成可落盘的一行快照；不可序列化时返回空串（不抛） */
-function snapshotArgs(args: any): { text: string; truncated: boolean } {
-  if (args === undefined || args === null) return { text: '', truncated: false };
+/** 单个长文本字段（正文 / 提示词 / notes）的上限：其余短字段几乎不占预算 */
+const MAX_TEXT_FIELD_CHARS = 3000;
+
+export interface SnapshotResult {
+  text: string;
+  truncated: boolean;
+  /** 被裁过的字段名（UI 显式提示"哪个字段不全"，不含糊成一个"已截断"） */
+  fields: string[];
+}
+
+/**
+ * 把工具参数压成可落盘的一行快照。
+ *
+ * ⚠️ **必须产出合法 JSON**。第一版是 `JSON.stringify(args).slice(0, 2000)`：切在字符串
+ * 中间 → `JSON.parse` 必然失败 → 详情页只能退化成一段被切碎的原文，标题/正文都读不出来。
+ * 等于"存了但没用"。（2026-11-26 用户实证：「记录详情没把拒绝的内容保存下来」。）
+ * 所以现在按**字段**裁：短字段原样，长文本字段先裁到 MAX_TEXT_FIELD_CHARS，
+ * 整体仍超预算就从最长的字符串字段逐步回退，直到装下；输出始终走 `JSON.stringify`。
+ */
+function snapshotArgs(args: any): SnapshotResult {
+  const empty: SnapshotResult = { text: '', truncated: false, fields: [] };
+  if (args === undefined || args === null) return empty;
+  if (typeof args !== 'object') return empty;
+
+  const out: Record<string, unknown> = {};
+  const cut: string[] = [];
+  try {
+    for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
+      if (v === undefined || typeof v === 'function') continue; // JSON 本来也会丢
+      if (typeof v === 'string' && v.length > MAX_TEXT_FIELD_CHARS) {
+        out[k] = v.slice(0, MAX_TEXT_FIELD_CHARS);
+        cut.push(k);
+      } else {
+        out[k] = v;
+      }
+    }
+  } catch {
+    return empty;
+  }
+
   let text: string;
   try {
-    text = JSON.stringify(args);
+    text = JSON.stringify(out);
   } catch {
-    return { text: '', truncated: false };
+    return empty;
   }
-  if (typeof text !== 'string' || text.length === 0) return { text: '', truncated: false };
-  if (text.length <= MAX_SNAPSHOT_CHARS) return { text, truncated: false };
-  return { text: text.slice(0, MAX_SNAPSHOT_CHARS), truncated: true };
+  if (typeof text !== 'string' || text.length === 0) return empty;
+
+  // 整体仍超预算：从最长的字符串字段开始回退（最多 8 轮，避免病态输入空转）
+  for (let guard = 0; guard < 8 && text.length > MAX_SNAPSHOT_CHARS; guard++) {
+    const key = longestStringKey(out);
+    if (key === null) break;
+    const overflow = text.length - MAX_SNAPSHOT_CHARS;
+    const current = out[key] as string;
+    const keep = Math.max(0, current.length - overflow - 16);
+    out[key] = keep > 0 ? current.slice(0, keep) : '';
+    if (!cut.includes(key)) cut.push(key);
+    text = JSON.stringify(out);
+  }
+
+  // 极端兜底：仍然装不下（超多字段）时只保留短字段，输出依旧是合法 JSON
+  if (text.length > MAX_SNAPSHOT_CHARS) {
+    const minimal: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(out)) {
+      if (typeof v !== 'string' || v.length <= 64) minimal[k] = v;
+    }
+    try {
+      text = JSON.stringify(minimal);
+    } catch {
+      return empty;
+    }
+  }
+
+  return { text, truncated: cut.length > 0, fields: cut };
+}
+
+/** 值最长的字符串字段名（没有字符串字段时返回 null） */
+function longestStringKey(obj: Record<string, unknown>): string | null {
+  let best: string | null = null;
+  let bestLen = -1;
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v !== 'string') continue;
+    if (v.length > bestLen) {
+      best = k;
+      bestLen = v.length;
+    }
+  }
+  return bestLen > 0 ? best : null;
+}
+
+/** body_file 通道的读取上限：超过这个大小就不读，只留路径（不让记录线程被大文件拖住） */
+const MAX_FILE_BODY_BYTES = 1024 * 1024;
+
+/**
+ * 把 `body_file` 指向的正文读进快照。
+ *
+ * 为什么必须做：`body_file` 是"正文放在本地文件里"的通道，参数里只有路径。
+ * 而**被拒绝的操作远端根本不存在**，工具也没读过那个文件——不补读的话，
+ * 这条记录就永远说不出"用户当时到底要提交什么"，正是这个功能存在的理由。
+ *
+ * 约束（都是为了让记录绝不拖累主流程）：
+ * - 只读本地路径：UNC（`\\\\server\\share`）直接跳过，避免网络挂住 `tools/result`
+ * - 先 `statSync` 看大小，超过 1 MB 不读
+ * - 任何异常都退回原参数（只留路径），不抛
+ */
+function withFileBody(args: any, cwd?: string): any {
+  try {
+    if (!args || typeof args !== 'object') return args;
+    const raw = args.body_file;
+    if (typeof raw !== 'string' || raw.trim() === '') return args;
+    const shown = raw.trim();
+    if (shown.startsWith('\\\\') || shown.startsWith('//')) return args;
+    const abs = path.isAbsolute(shown) ? shown : path.resolve(cwd || process.cwd(), shown);
+    const stat = fs.statSync(abs);
+    if (!stat.isFile() || stat.size > MAX_FILE_BODY_BYTES) return args;
+    let body = fs.readFileSync(abs, 'utf8');
+    if (body.charCodeAt(0) === 0xfeff) body = body.slice(1); // UTF-8 BOM
+    if (body.length === 0) return args;
+    // 保留 body_file 原值：详情页同时显示"来自哪个文件"与正文，自解释
+    return { ...args, body, body_file: shown };
+  } catch {
+    return args;
+  }
 }
 
 const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;/** 极短行的下界（读操作一行 ≈150 B，取更保守的 120 B 作分母） */
@@ -354,7 +477,10 @@ export function extractOutcome(result: any): OutcomeShape {
       s((payload as any)?.error) ||
       s(errMsg) ||
       'UNKNOWN_ERROR';
-    errorType = errorType.slice(0, 60);
+    // 裁到 60 字符是为了不让一行记录被整段 gh 报错撑长；但**必须带省略号**，
+    // 否则 `GraphQL: Could not resolve to an issue or pull request with` 看起来像
+    // 一句完整的话（结尾那个 "with" 会误导）。
+    errorType = errorType.length > 60 ? errorType.slice(0, 59) + '…' : errorType;
   }
   return { ok: !failed, errorType, status, degraded };
 }
@@ -810,14 +936,27 @@ export class AuditStore {
       const target = pickTarget(args);
       if (target) meta.target = target;
       // 参数快照：详情页的唯一本地依据（被拒绝的操作在 GitHub 上不存在）
-      const snapshot = snapshotArgs(args);
+      // 先补 body_file 的正文（否则只留下一条路径，等于没存内容），再按字段裁剪
+      const snapshot = snapshotArgs(withFileBody(args, scope.cwd));
       if (snapshot.text) {
         meta.args = snapshot.text;
-        if (snapshot.truncated) meta.argsTruncated = true;
+        if (snapshot.truncated) {
+          meta.argsTruncated = true;
+          if (snapshot.fields.length > 0) meta.fieldsTruncated = snapshot.fields;
+        }
       }
       const sessionId = s(exec?.agent?.id) || s(exec?.sessionId);
       if (sessionId) meta.sessionId = sessionId;
       meta.callId = callId;
+      /*
+       * 目标标题：审核阶段（`tools/pre-execute`）已经为弹窗查过一次，暂存在
+       * `target-title.ts` 的一次性表里；这里取走即可，**不在记录阶段再打 gh**
+       * （`tools/result` 是同步切面，也打不了）。
+       * 没走审核的调用（档位 off / policy=never / 读操作）没有暂存，`targetTitle` 就缺省 ——
+       * 记录照常成立，只是列表里少一个标题。取不到绝不影响记录本身。
+       */
+      const targetTitle = takeTargetTitle(callId);
+      if (targetTitle) meta.targetTitle = targetTitle;
 
       // 作用域内只剩写操作，因此固定是 intent（发起了什么）+ result（实际结果）两行。
       // 为什么不留"读操作只落一行"的分支：作用域已经排除了读，留着就是死代码，
@@ -875,6 +1014,20 @@ export class AuditStore {
     for (const row of this.rows) {
       if (row.kind === 'delete') for (const id of row.ids) deleted.add(id);
     }
+    /*
+     * 决策行单独收集、最后统一应用。
+     *
+     * 为什么不能像 result 行那样边走边贴：s2 的审核在 `tools/pre-execute` 就写决策，
+     * 而 intent 行要等 `tools/result` 才写（`recordCall`）。于是同一条记录的落盘顺序是
+     * **decision → intent → result**，逆序。边走边贴时 `byId.get(id)` 还没有那条 intent，
+     * 决策被静默丢弃 —— 界面上就是"明明拒绝过，审核列却写着自动"。
+     * 顺序无关是这里唯一正确的写法（后到的决策覆盖先到的，与 v1 的覆盖语义一致）。
+     */
+    const decisions = new Map<string, { decision: AuditDecision; feedback?: string }>();
+    for (const row of this.rows) {
+      if (row.kind !== 'decision') continue;
+      decisions.set(row.id, { decision: row.decision, ...(row.feedback ? { feedback: row.feedback } : {}) });
+    }
     const byId = new Map<string, AuditEntry>();
     for (const row of this.rows) {
       if (row.kind === 'delete') continue;
@@ -895,19 +1048,14 @@ export class AuditStore {
           callId: row.callId,
           args: row.args,
           argsTruncated: row.argsTruncated,
+          fieldsTruncated: row.fieldsTruncated,
+          targetTitle: row.targetTitle,
           decision: 'auto',
           result: 'unknown',
         });
         continue;
       }
-      if (row.kind === 'decision') {
-        const hit = byId.get(row.id);
-        if (hit) {
-          hit.decision = row.decision;
-          if (row.feedback) hit.feedback = row.feedback;
-        }
-        continue;
-      }
+      if (row.kind === 'decision') continue;
       // result 行：可能自带身份（读操作）也可能只是结果（写操作）
       const hit = byId.get(row.id);
       const r = row as ResultRow & Partial<OperationMeta>;
@@ -933,12 +1081,23 @@ export class AuditStore {
           callId: r.callId,
           args: r.args,
           argsTruncated: r.argsTruncated,
+          fieldsTruncated: r.fieldsTruncated,
+          targetTitle: r.targetTitle,
           decision: 'auto',
           result: row.ok ? 'ok' : 'fail',
           errorType: row.errorType,
           degraded: row.degraded,
         });
       }
+    }
+
+    // 决策回贴：只贴到真实存在的 intent/result 上。没有 intent 的决策是孤儿
+    // （记录被预算淘汰、或写入方先于工具结果落盘），不为它造一条幽灵记录。
+    for (const [id, d] of decisions) {
+      const hit = byId.get(id);
+      if (!hit) continue;
+      hit.decision = d.decision;
+      if (d.feedback) hit.feedback = d.feedback;
     }
 
     let items = [...byId.values()];

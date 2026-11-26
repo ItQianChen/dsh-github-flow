@@ -240,6 +240,22 @@ export function AuditModal(props: {
       setDetailLoading(false);
       return;
     }
+    /*
+     * 失败的操作同样不去远端读。
+     *
+     * 为什么：`result !== 'ok'` 意味着这次写操作**没有在远端留下产物**（审批被拒、
+     * gh 404、权限不足……）。这时去拉"那条 PR/Issue"，要么 404、要么拉到一条与本次
+     * 操作无关的同名实体 —— 都是噪音，还会用一个大红框把真正有用的「本次调用参数」压下去。
+     * （2026-11-26 用户截图实证：一条 `issue comment 99999999` 的失败记录，顶部全是
+     * "读不到这条 Issue 的内容"，而正文其实好好地存在下面的参数里。）
+     * 只有 `result === 'ok'` 才说明远端确实有东西可看。
+     */
+    if (detailRecord.result !== 'ok') {
+      setDetailData(null);
+      setDetailError(null);
+      setDetailLoading(false);
+      return;
+    }
     var kind = detailRecord.tool === 'github_pr' ? 'pr' : detailRecord.tool === 'github_issue' ? 'issue' : '';
     var num = targetNumber(detailRecord.target) || targetNumber(detailRecord.summary);
     if (!kind || !num) {
@@ -445,8 +461,9 @@ export function AuditModal(props: {
           },
           it.summary || toolAction
         ),
+        // 第二行：仓库 · 工具.动作 · 被操作对象的标题（有才显示；标题是审核时查到并存下来的）
         h('div', { style: { fontSize: '10px', opacity: 0.7, marginTop: '2px', wordBreak: 'break-word' } },
-          [it.repo, toolAction].filter(Boolean).join(' · '))
+          [it.repo, toolAction, it.targetTitle ? '「' + it.targetTitle + '」' : ''].filter(Boolean).join(' · '))
       ),
       h(
         'td',
@@ -611,6 +628,14 @@ export function AuditModal(props: {
           )
         ),
         h('div', { style: { fontSize: '13px', fontWeight: 600, marginTop: '6px', wordBreak: 'break-word' } }, it.summary || ''),
+        // 被操作的那个 PR / Issue 的标题：审核时查到并存下来的。列表里只放编号，这里放全称
+        it.targetTitle
+          ? h(
+              'div',
+              { style: { fontSize: '12px', opacity: 0.85, marginTop: '4px', wordBreak: 'break-word' }, title: it.targetTitle },
+              '对象：', it.targetTitle
+            )
+          : null,
         h(
           'div',
           { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' } },
@@ -642,7 +667,24 @@ export function AuditModal(props: {
             ? h(
                 'div',
                 { style: { fontSize: '12px', color: '#9a6700', lineHeight: 1.7 } },
-                '这次操作被拒绝，GitHub 上没有对应内容（操作从未发生）。下面是记录时保存的调用参数。'
+                /*
+                 * 被拒绝的操作在远端**什么都没留下**，所以详情只能靠本地快照。
+                 * 但 merge / close / delete 这类本来就不提交正文——旧文案说"没有对应内容"
+                 * 会让人以为正文该有却没有，所以按 action 分开说。
+                 */
+                it.action === 'create' || it.action === 'edit' || it.action === 'comment'
+                  ? '这次操作被拒绝，远端没有产生任何内容。下面「本次调用参数」里存着当时要提交的标题 / 正文（超出上限的尾部已显式标注）。'
+                  : '这次操作被拒绝，远端没有任何变化。' + (it.action || '该操作') + ' 本身不提交正文，记录里只有目标与参数。'
+              )
+            : it.result !== 'ok'
+            ? h(
+                'div',
+                { style: { fontSize: '12px', opacity: 0.8, lineHeight: 1.7 } },
+                /*
+                 * 中性灰、一行、不占版面：这条操作失败/未发生，远端没有产物可读。
+                 * 真正要看的东西在下面的「本次调用参数」里，别再拿大色块抢它的位置。
+                 */
+                '这次操作没有成功，远端没有产生内容 —— 因此不读取 GitHub。下面是记录时保存的调用参数。'
               )
             : detailLoading
             ? h('div', { style: { fontSize: '12px', opacity: 0.75 } }, '正在读取 GitHub 内容…')
@@ -745,7 +787,10 @@ export function AuditModal(props: {
             'div',
             { style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 600, opacity: 0.7, marginBottom: '6px' } },
             '本次调用参数（记录时保存）',
-            it.argsTruncated ? chip('已截断', '#9a6700') : null
+            // 点名到字段：只写"已截断"会让人以为整条都快没了，其实常常只是正文尾部被裁
+            it.fieldsTruncated && it.fieldsTruncated.length > 0
+              ? chip('已截断: ' + it.fieldsTruncated.join(' / '), '#9a6700')
+              : it.argsTruncated ? chip('已截断', '#9a6700') : null
           ),
           !argsText
             ? h('div', { style: { fontSize: '12px', opacity: 0.7 } }, '这条记录没有保存参数快照（旧格式记录；升级后再产生的记录会带）。')
@@ -756,10 +801,11 @@ export function AuditModal(props: {
                   Object.keys(argsObj).map(function (k: string) {
                     var v = argsObj[k];
                     if (isLongValue(v)) {
+                      var cutThis = !!(it.fieldsTruncated && it.fieldsTruncated.indexOf(k) >= 0);
                       return h(
                         'div',
                         { key: k },
-                        h('div', { style: { opacity: 0.65 } }, k),
+                        h('div', { style: { opacity: 0.65 } }, k + (cutThis ? '（已截断，仅存前部）' : '')),
                         h('pre', { style: monoPre }, v)
                       );
                     }
@@ -778,8 +824,10 @@ export function AuditModal(props: {
           it.feedback ? detailRow('用户留言', it.feedback) : null,
           detailRow('工作区', it.cwd),
           detailRow('会话', it.sessionId),
-          detailRow('调用 ID', it.callId || it.id),
-          detailRow('记录 ID', it.id),
+          // 记录 id 就是宿主的 callId（同一次调用的 intent/result/decision 靠它折叠），
+          // 两个都渲染等于同一串字符占两行；只有不同时才并列显示。
+          detailRow(it.callId && it.callId !== it.id ? '调用 ID' : '记录 ID', it.callId || it.id),
+          it.callId && it.callId !== it.id ? detailRow('记录 ID', it.id) : null,
           detailRow('时间', typeof it.at === 'number' ? new Date(it.at).toLocaleString() : ''),
           it.errorType ? detailRow('错误码', it.errorType) : null
         )

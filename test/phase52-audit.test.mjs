@@ -680,13 +680,52 @@ console.log('\n--- 18. 参数快照：记录必须自包含（被拒绝的操作
   ok(row.args.includes('重试次数从 3 改成 5'), '快照里能读到正文');
   ok(row.argsTruncated === undefined, '未超长时不打截断标记');
 
-  // 超长正文必须被截断，且**显式**标记（不能让人以为原文就这么短）
+  // 超长正文必须被裁，且**显式**标记（不能让人以为原文就这么短）
   const longBody = '很长的正文'.repeat(800);
   store.recordCall('github_pr', { action: 'create', title: 'x', body: longBody }, { ok: true }, { callId: 'snap2' });
   const rows2 = store.list().items;
   const longRow = rows2.find((r) => r.callId === 'snap2');
-  ok(typeof longRow.args === 'string' && longRow.args.length <= 2000, '超长参数被截到 2000 字符以内', `实际 ${longRow.args.length}`);
-  ok(longRow.argsTruncated === true, '被截断时显式标记 argsTruncated');
+  ok(typeof longRow.args === 'string' && longRow.args.length <= 4000, '超长参数被裁到 4000 字符预算内', `实际 ${longRow.args.length}`);
+  ok(longRow.argsTruncated === true, '被裁时显式标记 argsTruncated');
+  ok(Array.isArray(longRow.fieldsTruncated) && longRow.fieldsTruncated.includes('body'),
+    '被裁的字段名要点名（fieldsTruncated 含 body）', JSON.stringify(longRow.fieldsTruncated));
+
+  /*
+   * 2026-11-26 用户实证：详情里读不出拒绝时的正文。
+   * 根因是旧实现 `JSON.stringify(args).slice(0, 2000)` —— 切在字符串中间，
+   * `JSON.parse` 必然失败，UI 只能退化成一段被切碎的原文。这一条钉住"永远合法 JSON"。
+   */
+  {
+    let parsed = null;
+    let threw = null;
+    try { parsed = JSON.parse(longRow.args); } catch (e) { threw = String(e && e.message); }
+    ok(threw === null, '被裁后的快照仍然是**合法 JSON**（旧实现切半个 JSON，UI 解析必败）', threw);
+    ok(parsed !== null && parsed.title === 'x', '即使被裁，标题这类短字段也完整保留');
+    ok(parsed !== null && typeof parsed.body === 'string' && parsed.body.length > 1000,
+      '正文保留可读的一大段（不是只剩几十字）', parsed && typeof parsed.body === 'string' ? String(parsed.body.length) : 'n/a');
+  }
+
+  // body_file 通道：正文在文件里，参数里只有路径 —— 必须补读，否则"拒绝时提交了什么"永远说不出来
+  {
+    const bodyPath = path.join(dir, 'body.md');
+    const fileBody = '## 背景\n' + '来自文件的正文。'.repeat(50);
+    writeFileSync(bodyPath, fileBody, 'utf8');
+    store.recordCall('github_pr', { action: 'create', title: '来自文件', body_file: bodyPath }, { ok: true }, { callId: 'snap3' });
+    const fileRow = store.list().items.find((r) => r.callId === 'snap3');
+    const parsed = JSON.parse(fileRow.args);
+    ok(typeof parsed.body === 'string' && parsed.body.includes('来自文件的正文'),
+      'body_file 指向的正文被补进快照（否则只剩一条路径，等于没存内容）');
+    ok(typeof parsed.body_file === 'string' && parsed.body_file.length > 0,
+      '同时保留 body_file 原值（详情页可显示正文来自哪个文件）');
+  }
+
+  // 读不到文件时必须安静退回"只留路径"，绝不能因为补读失败让记录丢失
+  {
+    store.recordCall('github_pr', { action: 'create', title: 'x', body_file: 'Z:/definitely/missing.md' }, { ok: true }, { callId: 'snap4' });
+    const missRow = store.list().items.find((r) => r.callId === 'snap4');
+    ok(typeof missRow.args === 'string' && missRow.args.includes('missing.md'), '补读失败仍保留路径（不吞掉这条记录）');
+    ok(JSON.parse(missRow.args).body === undefined, '补读失败时不会塞入空的 body 键');
+  }
 
   // 参数与决策行共存：被拒绝的记录仍能看到"提交了什么"
   store.recordDecision('snap1', 'rejected', '改成 squash 再试');
@@ -704,6 +743,73 @@ console.log('\n--- 18. 参数快照：记录必须自包含（被拒绝的操作
   const legacyStore = new AuditStore({ dir, flushDelayMs: 0 });
   ok(legacyStore.list().items[0].args === undefined, '旧格式记录没有 args 也能正常读出（UI 显示"没有保存快照"）');
   await legacyStore.dispose();
+}
+
+// ============================================================
+console.log('\n--- 19. 详情弹窗的两条 UX 契约（2026-11-26 用户截图实证）---');
+// ============================================================
+{
+  /*
+   * 截图实证的两个问题，都是"能用但难看"的那一类，只能靠静态契约钉住：
+   * ① 失败的操作（result=fail）仍然去 GitHub 拉内容 → 404 大红框把真正有用的
+   *    「本次调用参数」压下去；那条记录里正文其实好好存着。
+   * ② 「调用 ID」与「记录 ID」是同一个值（记录 id 就是宿主 callId），却占两行。
+   */
+  const modalSrc = readFileSync(path.join(ROOT, 'src/ui/audit-modal.ts'), 'utf8');
+  ok(/detailRecord\.result !== 'ok'/.test(modalSrc),
+    '失败的操作不去远端读内容（远端根本没有它的产物，只会得到 404 噪音）');
+  ok(/detailRecord\.decision === 'rejected'/.test(modalSrc),
+    '被拒绝的操作同样不去远端读（原有契约不回退）');
+  ok(/'这次操作没有成功，远端没有产生内容/.test(modalSrc),
+    '失败记录给一行中性说明，而不是抢占版面的大色块');
+  ok(/it\.callId !== it\.id \? '调用 ID' : '记录 ID'/.test(modalSrc),
+    '调用 ID 与记录 ID 相同时只渲染一行');
+}
+
+// ============================================================
+console.log('\n--- 20. 被操作对象的标题（targetTitle）---');
+// ============================================================
+{
+  /*
+   * `合并 PR #19` 说不出"合的是哪一个"。标题由审核阶段查一次、暂存在 target-title.ts，
+   * `recordCall` 按 callId 取走写进 intent 行。这一组钉住：取得到、能折叠、取不到不坏。
+   */
+  const { stashTargetTitle, takeTargetTitle, resetTargetTitles } = await import(lib('lib/target-title.js'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'dsh-audit-title-'));
+  tmpDirs.push(dir);
+  const store = new AuditStore({ dir, flushDelayMs: 0 });
+
+  // ① 正常路径：审核暂存 → 记录取走 → 折叠后可读
+  resetTargetTitles();
+  stashTargetTitle('t1', 'fix: 权限校验失效');
+  store.recordCall('github_pr', { action: 'merge', pr_number: 19 }, { ok: true }, { callId: 't1', agent: { id: 's' } });
+  const t1 = store.list().items.find((r) => r.callId === 't1');
+  ok(t1.targetTitle === 'fix: 权限校验失效', '记录里存下了被操作对象的标题');
+  ok(t1.summary === '合并 PR #19（squash）', 'summary 仍是"动作"（标题单独存，不拼进去）');
+  ok(takeTargetTitle('t1') === undefined, '记录取走后暂存即清（一次性消费）');
+
+  // ② 没走审核的调用（档位 off / never / 读操作）：没有暂存，记录照常成立
+  store.recordCall('github_pr', { action: 'merge', pr_number: 20 }, { ok: true }, { callId: 't2' });
+  const t2 = store.list().items.find((r) => r.callId === 't2');
+  ok(t2.targetTitle === undefined && t2.result === 'ok', '没有暂存时 targetTitle 缺省，记录不受影响');
+  ok(!/targetTitle/.test(JSON.stringify(t2)), '缺省时不落一个空的 targetTitle 键（不浪费字节）');
+
+  // ③ 落盘再读回：标题在 intent 行上，重启后仍在
+  await store.dispose();
+  const reloaded = new AuditStore({ dir, flushDelayMs: 0 });
+  const r1 = reloaded.list().items.find((r) => r.callId === 't1');
+  ok(r1.targetTitle === 'fix: 权限校验失效', '重载后标题仍在（落在 intent 行，不是只在内存）');
+  await reloaded.dispose();
+
+  // ④ 暂存表的防御：空 callId / 空标题不收；超过上限丢最早的
+  resetTargetTitles();
+  stashTargetTitle('', 'x');
+  stashTargetTitle('k', '   ');
+  ok(takeTargetTitle('') === undefined && takeTargetTitle('k') === undefined, '空 callId / 空白标题不入表');
+  for (let i = 0; i < 70; i++) stashTargetTitle('p' + i, 't' + i);
+  ok(takeTargetTitle('p0') === undefined, '超过上限时最早的一条已被丢弃');
+  ok(takeTargetTitle('p69') === 't69', '最新的一条仍在');
+  resetTargetTitles();
 }
 
 for (const d of tmpDirs) {

@@ -37,6 +37,17 @@ export interface OperationMeta {
     args?: string;
     /** 参数快照超过上限被截断（UI 要明确提示，不能让人以为原文就这么短） */
     argsTruncated?: boolean;
+    /** 具体哪些字段被裁过（如 `['body']`）；空/缺省表示没裁 */
+    fieldsTruncated?: string[];
+    /**
+     * 被**操作**的那个 PR / Issue 的标题（按编号操作既有实体时才有；`create` 没有它）。
+     *
+     * 为什么单独存一列而不是拼进 `summary`：记录的 `summary` 是"动作"的人话
+     * （`合并 PR #19`），标题是"对象"。分开存才能：① 列表保持简短、详情里展示完整对象；
+     * ② 目标将来被删/改名后，这条记录仍能说出"当时合的是哪一个"。
+     * 来源是审核阶段那一次 gh 读取（`target-title.ts` 的暂存表），不在记录阶段再打一次 gh。
+     */
+    targetTitle?: string;
 }
 /** 折叠后交给 UI / 路由的一条记录 */
 export interface AuditEntry extends OperationMeta {
@@ -79,6 +90,12 @@ type DeleteRow = {
     ids: string[];
 };
 export type AuditRow = IntentRow | DecisionRow | ResultRow | DeleteRow;
+export interface SnapshotResult {
+    text: string;
+    truncated: boolean;
+    /** 被裁过的字段名（UI 显式提示"哪个字段不全"，不含糊成一个"已截断"） */
+    fields: string[];
+}
 /** 由字节预算派生行数上限：只兜"极短行"病态，正常永不触发 */
 export declare function deriveMaxRows(maxBytes: number): number;
 /** 预算 clamp：下限 256 KB、上限 64 MB。越界钳住而不是报错——配置值不值得让功能失效。 */
