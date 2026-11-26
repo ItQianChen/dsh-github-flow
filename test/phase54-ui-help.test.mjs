@@ -193,7 +193,8 @@ try {
 }
 
 ok(ixErr === null, '交互过程未抛错', ixErr && (ixErr.stack || String(ixErr)));
-ok(dots.length === 6, '6 个位置各有一个问号（开关 / 预算 / 分区标题 / 三档）', String(dots.length));
+// s3 起多了第 7 个：按仓库 / 操作覆盖档位的规则框
+ok(dots.length === 7, '7 个位置各有一个问号（开关 / 预算 / 分区标题 / 三档 / 规则框）', String(dots.length));
 ok(dots.every((d) => d.tabIndex === 0 && d.getAttribute('role') === 'button'), '问号可键盘聚焦（role=button + tabIndex=0）');
 ok(openAtStart === false, '初始不显示说明弹窗');
 ok(allWritesOpen === true, '点问号 → 二级弹窗出现');

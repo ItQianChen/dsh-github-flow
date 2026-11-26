@@ -869,6 +869,19 @@ body[data-ds-dark-theme] .dsh-github-modal-dialog {
   border-color: var(--dsw-alias-border-l1, #30363d);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
 }
+/*
+ * 设置弹窗的加宽变体。
+ *
+ * 为什么单独一个类而不是直接改 .dsh-github-modal-dialog：那个 640px 对"确认/说明"
+ * 这类单列表单是对的（一行字读到底最舒服），但设置页是**左导航 + 右表单**的两栏布局，
+ * 640px 下左栏只剩 148px，「操作记录与审核」这种六字标题会被折成两行，右侧的多行规则框
+ * 也被挤成窄条。两栏布局需要的是"够两个分区各自呼吸"的宽度，所以给设置页单独放宽。
+ * 其余弹窗继续用 640px——不要为了一个页面把所有弹窗都撑大。
+ */
+.dsh-github-settings-dialog {
+  width: 94%;
+  max-width: 900px;
+}
 .dsh-github-modal-header {
   display: flex;
   justify-content: space-between;
@@ -887,7 +900,12 @@ body[data-ds-dark-theme] .dsh-github-modal-header {
 }
 .dsh-github-settings-nav {
   flex-shrink: 0;
-  width: 148px;
+  /*
+   * 148px → 196px。148 装不下「🕘 操作记录与审核」这类六字标题：emoji + 6 字 + 内边距
+   * 刚好越过临界点，标题被折成两行后左栏其他项的对齐也跟着歪。宁可让左栏宽一点，
+   * 也不要在标题里插换行——导航项折行是"排版没做完"的观感。
+   */
+  width: 196px;
   padding: 14px 10px;
   border-right: 1px solid var(--dsw-alias-border-l2, #d0d7de);
   display: flex;
@@ -909,6 +927,8 @@ body[data-ds-dark-theme] .dsh-github-settings-nav {
   cursor: pointer;
   font-size: 13px;
   text-align: left;
+  /* 导航项一律不折行：折行只发生在字太长时，而字长是我们自己控制不了的翻译/改名 */
+  white-space: nowrap;
   color: var(--dsw-alias-label-secondary, #656d76);
   transition: background 0.12s ease, color 0.12s ease;
 }
