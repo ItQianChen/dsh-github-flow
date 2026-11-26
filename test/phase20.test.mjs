@@ -82,6 +82,72 @@ async function runTests() {
   assert(summary.recommendations.some(r => r.includes('github_repo') && r.includes('2.95.0+')), '生成 repo 文件读取降级升级建议');
   assert(summary.recommendations.some(r => r.includes('OAuth Scope') && r.includes('gh auth refresh')), '生成权限补全自愈建议');
 
+  /*
+   * 「健康分被扣了，建议却说极佳」这对矛盾。
+   *
+   * 上一段样本里 failureCount=1（真失败），所以建议里**必须**出现失败提示——
+   * 早先 recommendations 只看降级率，于是同一屏会出现「健康分 87 + 运行状态极佳」。
+   */
+  assert(summary.recommendations.some(r => r.includes('真实失败')),
+    '有真失败时建议如实指出（不再出现"健康分被扣 + 建议说极佳"的自相矛盾）');
+
+  // ============================================================
+  console.log('\n--- 2b. 用户拒绝审核 ≠ 工具链故障（s3 审查发现的自相矛盾） ---');
+  // ============================================================
+  {
+    /*
+     * 事故现场：github_status(action:'health') 一屏里同时出现
+     *   「综合健康分: 🔴 需关注 (67/100)」与「工具链运行状态极佳」
+     * 原因：两次调用是用户在审核弹窗里点了拒绝，却被算成"执行失败"，
+     * 于是失败率 33%、健康分被扣；而建议只看降级率，什么都不提。
+     *
+     * 判据：用户拒绝是**人的意志**，不是工具链有病 —— 既不算成功也不算失败，
+     * 且必须从健康分与成功率的**分母**里排除（只从失败数里摘掉不够：
+     * 它仍留在 totalCalls 里，成功率照样被拉低）。
+     */
+    const rej = new TelemetryCollector(50);
+    const rejectionResult = {
+      isError: true,
+      error: { message: '用户拒绝了「合并 PR #19」', info: { name: 'ApprovalError', code: 'APPROVAL_REJECTED' } },
+      content: [],
+    };
+    rej.recordCall('github_pr', { action: 'merge' }, rejectionResult);
+    rej.recordCall('github_issue', { action: 'create' }, rejectionResult);
+    rej.recordCall('github_api', {}, { isError: false, value: { ok: true }, content: [] });
+
+    const s = rej.getSummary();
+    assert(s.totalCalls === 3, `样本量如实计数（实际 ${s.totalCalls}）`);
+    assert(s.rejectedCount === 2, `识别出 2 次用户拒绝（实际 ${s.rejectedCount}）`);
+    assert(s.failureCount === 0, `拒绝不计入失败（实际 failureCount=${s.failureCount}）`);
+    assert(s.healthScore === 100, `拒绝不扣健康分（实际 ${s.healthScore}）`);
+    assert(s.statusLevel === 'EXCELLENT', `状态等级不受拒绝影响（实际 ${s.statusLevel}）`);
+    // 成功率分母排除拒绝：1 次有效调用全成功 → 100%
+    assert(s.toolStats['github_pr'].success === 0 && s.toolStats['github_pr'].failed === 0,
+      '被拒绝的工具既不算成功也不算失败');
+    assert(s.toolStats['github_pr'].rejected === 1 && s.toolStats['github_issue'].rejected === 1,
+      '每个工具的拒绝次数单独记录');
+
+    // 渲染：必须如实说明"这几次是你拒绝的"，且不能说成极佳
+    const md = renderHealthAuditMarkdown(s);
+    assert(md.includes('2 次因你拒绝审核未执行'), '看板明说这几条是用户拒绝，而不是含糊带过');
+    assert(md.includes('审核拒绝'), '工具分布表里有「审核拒绝」列');
+    assert(md.includes('⚪ 已拒绝'), '整只工具都被拒绝时标「已拒绝」而不是「异常」');
+    assert(!md.includes('🔴 异常'), '被拒绝的工具不得标成红色异常');
+    assert(!md.includes('工具链运行状态极佳'),
+      '有拒绝时不再说"运行状态极佳"（那句只在真的零异常时才该出现）');
+    assert(md.includes('想减少打断可在设置里调整审核档位'), '给出减少打断的可执行建议');
+
+    // 真失败仍然要红：不能因为修这个把真故障也洗白
+    const mix = new TelemetryCollector(50);
+    mix.recordCall('github_pr', { action: 'merge' }, rejectionResult);
+    mix.recordCall('github_pr', { action: 'list' }, { isError: true, error: { message: 'boom' }, content: [] });
+    const m2 = mix.getSummary();
+    assert(m2.rejectedCount === 1 && m2.failureCount === 1,
+      '拒绝与真失败并存时分别计数');
+    assert(m2.healthScore < 100, `真失败仍然扣分（实际 ${m2.healthScore}）`);
+    assert(m2.toolStats['github_pr'].failed === 1, '真失败仍进 failed');
+  }
+
   // 2.6 异常隔离保护 (Fail-Open)
   let collectorDidNotCrash = true;
   try {

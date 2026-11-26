@@ -24,5 +24,11 @@ export declare function parseStatusOutput(output: string): ParsedStatusReport;
 export declare function renderStatusMarkdown(args: any, value: any): string;
 /**
  * 渲染 DSH GitHub 工具链健康度与降级率审计报表
+ *
+ * `approvalLine`（可选，s3）：人工审核的 7 天汇总。
+ *
+ * 为什么它由调用方算好传进来、而不是在这里从遥测推导：遥测是"工具链健康"，
+ * 审核是"人机协作"——混在一起会让健康分被"用户今天点了很多次拒绝"拉低。
+ * **那是用户认真，不是系统有病。** 所以两者数据源分开，只是恰好印在同一页上。
  */
-export declare function renderHealthAuditMarkdown(summary: TelemetrySummary): string;
+export declare function renderHealthAuditMarkdown(summary: TelemetrySummary, approvalLine?: string): string;

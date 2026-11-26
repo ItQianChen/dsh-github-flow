@@ -15,6 +15,15 @@ export interface TelemetryRecord {
     degraded: boolean;
     scopeBlocked: boolean;
     confirmBlocked: boolean;
+    /**
+     * 是否**用户在审核弹窗里主动拒绝**。
+     *
+     * 为什么要单独一列而不是并进失败：拒绝是人的意志，不是工具链故障。
+     * 早先它被算成失败，于是 `github_status(action:'health')` 会出现
+     * 「健康分 67 / 需关注」+ 建议「运行状态极佳」这种自相矛盾的一屏——
+     * 而那两次"失败"其实只是用户在点拒绝。
+     */
+    userRejected: boolean;
     errorType?: string;
 }
 export interface ToolUsageStat {
@@ -23,11 +32,20 @@ export interface ToolUsageStat {
     degraded: number;
     failed: number;
     blocked: number;
+    /** 用户主动拒绝审核的次数（与 failed 互斥，见 TelemetryRecord.userRejected） */
+    rejected?: number;
 }
 export interface TelemetrySummary {
     totalCalls: number;
     successCount: number;
     failureCount: number;
+    /**
+     * 用户主动拒绝审核的次数。
+     *
+     * 它**不计入** `failureCount`，也不进入健康分的分母（见 getSummary 的 effectiveTotal）：
+     * 用户点拒绝不说明工具链有病，把它算进去只会让"很认真在审核"的用户看到一片红。
+     */
+    rejectedCount?: number;
     degradedCount: number;
     degradationRate: number;
     scopeBlockedCount: number;
