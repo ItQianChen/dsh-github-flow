@@ -171,7 +171,8 @@ function inlineModule(src, provided = {}) {
 const inlined = inlineModule(readFileSync(MODAL_LIB, 'utf8'));
 const rawSrc = inlined.code.replace(/^export function /m, 'function ');
 // 别名指向的真实实现由 scope 提供（与 build.mjs 内联后它们在同一个闭包作用域里等价）
-const auditScopeTarget = { formatRelativeTime: utilsMod.formatRelativeTime };
+// formatBytes 与 formatRelativeTime 同源：都来自 utils，弹窗与设置页共用这一份
+const auditScopeTarget = { formatRelativeTime: utilsMod.formatRelativeTime, formatBytes: utilsMod.formatBytes };
 const factory = new Function('__scope__', `with (__scope__) { ${rawSrc}\n return AuditModal; }`);
 const AuditModal = factory(new Proxy(auditScopeTarget, {
   has: () => true,

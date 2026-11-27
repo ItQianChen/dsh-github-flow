@@ -4,6 +4,16 @@ declare function getCacheStorageMeta(): any;
 declare function saveLocalSyncSettings(settings: any): void;
 declare function clearStoredGlobalOverview(): void;
 
+/*
+ * 字节格式化只有一份实现（`utils.formatBytes`，KB / MB 分档）。
+ *
+ * 为什么设置页必须和操作记录弹窗共用：这里原来自己写了一份 MB-only 的 `auditMb`，
+ * 10 KB 的用量显示成「0.0 MB」——用户看到的就是"占用一直是 0"（2026-11-27 截图实证）。
+ * 弹窗那份早已改成 KB 分档，两份实现的结果是只修一处、另一处继续错。
+ * 内联进 `lib/client.js` 后 `utils.js` 与本文件在同一闭包作用域，import 行由构建器剥掉。
+ */
+import { formatBytes } from './utils.js';
+
 /**
  * 问号触发器：点击（或键盘 Enter / Space）打开二级说明弹窗。
  *
@@ -121,6 +131,9 @@ const HELP_RECORD_ENABLED = [
   "• 当时提交的参数（标题 / 正文，超长会按字段截断并标注）",
   "• 人工审核结论",
   "• 被操作对象的标题",
+  "",
+  "条数怎么算：面板里的「N 条记录」是**折叠后的记录数**——一次写操作算一条。磁盘上一条占 2–3 行 JSONL（intent 与 result 各一行，走过人工审核再加一行结论），所以健康看板里的「N 行」一定比条数大，两个数字不是一回事。",
+  "统计范围：设置页这里是**全部**记录；从右侧栏工作区入口打开「🕘 操作记录」时只看当前工作区，两边数字可以不同，那不是出错。",
   "",
   "存在哪：~/.dsh/data/dsh-github-flow/audit/ 目录，每个进程一个段文件（audit.<pid>-<时间>-<序号>.jsonl），读取时按时间合并；纯本地文件，不上传。旧版的单个 audit.jsonl 会在升级后首次启动时自动迁进段文件。",
   "关闭后：不再写入新记录、启动也不再加载历史；已有文件保留在本地，可在「🕘 操作记录」里清空。",
@@ -294,6 +307,16 @@ export function GlobalSyncSettingsModal(props: {
    * 开关属于配置。同一件事有两个入口时，用户永远不知道哪个是真的。
    */
   var [auditUsage, setAuditUsage] = React.useState(null as any);
+  /**
+   * 「条数」用服务端给的 `records`（`list()` 折叠后的记录数），**不是** `usage.rows`。
+   *
+   * `rows` 是落盘 JSONL 行数：一次写操作固定 2 行（intent + result），走过审核再多 1 行
+   * decision。拿它当条数，用户看到的就是「做一次操作 +3」「删光了还剩 2 条删不掉」
+   * （2026-11-27 截图实证：设置页 26 条 vs 记录窗口 共 8 条）。
+   *
+   * null = 还没拿到（旧服务端没有该字段）：此时**不显示条数**，宁缺勿错。
+   */
+  var [auditRecords, setAuditRecords] = React.useState(null as number | null);
   var [auditApprovalMode, setAuditApprovalMode] = React.useState("destructive");
   /**
    * 审核规则（s3）：文本框里的**原始多行文本**，不是数组。
@@ -341,11 +364,7 @@ export function GlobalSyncSettingsModal(props: {
     return function (trigger: any) { openHelp({ label: label, lines: lines }, trigger); };
   };
 
-  /** 字节 → MB（只用于展示；记账与判断一律在服务端按字节做） */
-  var auditMb = function (bytes: any) {
-    var mb = (Number(bytes) || 0) / 1048576;
-    return (mb >= 10 ? mb.toFixed(0) : mb.toFixed(1)) + " MB";
-  };
+  /** 字节 → 人类可读：直接复用 `utils.formatBytes`（KB / MB 分档，唯一实现） */
 
   var loadAuditSettings = function () {
     fetch("/api/github/audit/settings")
@@ -353,6 +372,8 @@ export function GlobalSyncSettingsModal(props: {
       .then(function (j: any) {
         if (!j || !j.ok || !j.data) return;
         setAuditUsage(j.data.usage || null);
+        // 条数只认服务端的 records（见上方 state 注释）；拿不到就置空，不退回 rows
+        setAuditRecords(typeof j.data.records === "number" ? j.data.records : null);
         // 档位与本文件其余两项同源（audit-settings.json），打开分区时一并回读
         if (j.data.approvalMode) setAuditApprovalMode(j.data.approvalMode);
         // 规则：数组 → 多行文本（一行一条，正好是可编辑形态）
@@ -397,6 +418,7 @@ export function GlobalSyncSettingsModal(props: {
         setAuditBusy(false);
         if (!j || !j.ok) { setAuditMsg({ kind: "err", text: (j && j.message) || "保存失败" }); return; }
         setAuditUsage(j.data && j.data.usage ? j.data.usage : auditUsage);
+        if (j.data) setAuditRecords(typeof j.data.records === "number" ? j.data.records : null);
         if (j.data && j.data.approvalMode) setAuditApprovalMode(j.data.approvalMode);
         /*
          * **不回写**规则文本框。
@@ -807,7 +829,10 @@ export function GlobalSyncSettingsModal(props: {
               "记录 Agent 对 Issue / PR 的每一次写操作。改动立即生效，无需重启。"
             ),
             auditUsage ? h("div", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "10px" } },
-              "当前已用 " + auditMb(auditUsage.bytes) + " / " + auditMb(auditUsage.maxBytes) + " · " + auditUsage.rows + " 条"
+              "当前已用 " + formatBytes(auditUsage.bytes) + " / " + formatBytes(auditUsage.maxBytes)
+                // 「全部」是如实口径：这里统计的是全局记录，本分区的入口没有工作区筛选
+                // （从右栏工作区打开记录窗口时只看本工作区，两处数字本来可以不同）
+                + (auditRecords === null ? "" : " · 全部 " + auditRecords + " 条记录")
                 + (auditUsage.degraded ? " · ⚠️ 存储不可用：" + auditUsage.degraded : "")
             ) : null,
             h("div", { style: { marginBottom: "18px" } },

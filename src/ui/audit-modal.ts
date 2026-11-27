@@ -18,7 +18,7 @@ declare const React: any;
  * 行为不一致；这里用**两段式按钮**（点一次进确认态，再点一次执行），零依赖且可测。
  */
 
-import { formatRelativeTime as fmtRelative } from './utils.js';
+import { formatRelativeTime as fmtRelative, formatBytes } from './utils.js';
 
 /** 每页条数候选。上限 100：服务端 `limit` 会钳到 200，这里留一倍余量 */
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
@@ -200,19 +200,11 @@ export function AuditModal(props: {
       });
   };
 
-  /**
-   * 字节 → 人类可读。**只有展示用**：记账与预算判断一律在服务端按字节做
-   * （中文 3 字节/字，前端按字符数算会少算 3 倍）。
-   * 小于 1 MB 时改用 KB：以前一律保留一位小数的 MB，几百字节会显示成
-   * 「已用 0.0 MB」，看着像坏了。
+  /*
+   * 字节格式化统一走 `utils.formatBytes`（KB / MB 分档）。
+   * 这里原来有一份 own 实现，与设置页那份各自演化，结果同一屏出现
+   * 「0.0 MB」与「10.1 KB」两种口径 —— 两个实现必然只修一处。
    */
-  var mbText = function (bytes: any) {
-    var b = Number(bytes) || 0;
-    if (b < 1024) return b + ' B';
-    if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
-    var mb = b / 1048576;
-    return (mb >= 10 ? mb.toFixed(0) : mb.toFixed(1)) + ' MB';
-  };
 
   /** 从 `target`（形如 "#12"）或摘要里抠出 PR / Issue 编号；挖不到返回 0 */
   var targetNumber = function (v: any): number {
@@ -1261,7 +1253,7 @@ export function AuditModal(props: {
               : selected.length > 0
                 ? '已选 ' + selected.length + ' 条（含其他页勾选）'
                 : usage
-                  ? '已用 ' + mbText(usage.bytes) + ' / ' + mbText(usage.maxBytes) + ' · 共 ' + total + ' 条'
+                  ? '已用 ' + formatBytes(usage.bytes) + ' / ' + formatBytes(usage.maxBytes) + ' · 共 ' + total + ' 条'
                   : ''
         ),
         h('div', { style: { flex: 1 } }),

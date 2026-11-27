@@ -96,7 +96,15 @@ dom.window.fetch = globalThis.fetch;
  * with(Proxy) 接管模块的**自由变量**：未定义的全局立刻以变量名抛错。
  * 这是"漏绑定"类白屏的最小复现手段（typeof 形式会被静默吞掉，所以这里不返回 undefined）。
  */
-const scope = new Proxy({ getCacheStorageMeta: () => ({ exists: false, sizeKb: 0, savedAt: 0 }) }, {
+/** 与 `scripts/build.mjs` 同款内联：先剥 import，再注进 with 作用域 */
+const utilsMod = await import(pathToFileURL(path.join(ROOT, 'lib/ui/utils.js')).href);
+
+const scope = new Proxy({
+  getCacheStorageMeta: () => ({ exists: false, sizeKb: 0, savedAt: 0 }),
+  // 内联进 client.js 后由 utils.js 提供。测试给**真实实现**，别在这里抄一份——
+  // 抄一份就等于把"两份实现会漂移"这个 bug 搬进测试里。
+  formatBytes: utilsMod.formatBytes,
+}, {
   has: () => true,
   get(target, key) {
     if (key === Symbol.unscopables) return undefined;
@@ -108,7 +116,10 @@ const scope = new Proxy({ getCacheStorageMeta: () => ({ exists: false, sizeKb: 0
 
 console.log('\n--- 1. 真实渲染设置弹窗（带未绑定变量检测）---');
 const MODAL_LIB = path.join(ROOT, 'lib/ui/sync-settings-modal.js');
-const rawSrc = readFileSync(MODAL_LIB, 'utf8').replace(/^export function /m, 'function ');
+const rawSrc = readFileSync(MODAL_LIB, 'utf8')
+  .replace(/^[ \t]*import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"]\s*;?[ \t]*$/gm, '')
+  .replace(/^[ \t]*import\s+[^;]+;\s*$/gm, '')
+  .replace(/^export function /m, 'function ');
 const factory = new Function('__scope__', `with (__scope__) { ${rawSrc}\n return GlobalSyncSettingsModal; }`);
 const GlobalSyncSettingsModal = factory(scope);
 

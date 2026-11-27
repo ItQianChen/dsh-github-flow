@@ -1,6 +1,16 @@
 /**
  * 面板公共工具函数（纯函数，可被单元测试直接覆盖）
  */
+/**
+ * 字节 → 人类可读。**只用于展示**：记账与预算判断一律在服务端按字节做
+ * （中文 3 字节/字，前端按字符数算会少算 3 倍）。
+ *
+ * 必须有 KB / B 档：早先「操作记录弹窗」与「设置页」各写了一份 MB-only 的实现，
+ * 10 KB 的用量显示成 `0.0 MB`——用户看到的是「占用一直是 0，记了也不涨」
+ * （2026-11-27 截图实证：26 行 / 10309 B 显示 `0.0 MB`）。
+ * 只修了弹窗那一份，设置页继续错；所以这里收敛成**唯一实现**，两处都调它。
+ */
+export declare function formatBytes(bytes: any): string;
 export declare function formatRelativeTime(iso: any): string;
 export declare function rollupCiStatus(checks: any): "pass" | "fail" | "pending" | null;
 export declare function reviewDecisionBadge(decision: any): {
