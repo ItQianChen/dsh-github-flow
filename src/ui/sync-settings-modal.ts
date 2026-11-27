@@ -1068,7 +1068,12 @@ export function GlobalSyncSettingsModal(props: {
               )
             ),
             h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary, #656d76)", marginBottom: "14px", lineHeight: "1.6" } },
-              "让 DeepSeek Harness Agent 拥有操作 GitHub 的原生手脚。原生复用宿主机 gh CLI 安全凭据，深度打通本地 Git 工作区与云端协作，提供 19 大领域 Agent 工具、人类 Slash 指令、Web 全景驾驶舱与一键跨平台升级。"
+              /*
+               * 这段与 package.json 的 description、插件市场的 About 字段**逐字相同**。
+               * 三处各自演化过一次（市场写 18 工具 / 104 action，这里写 19 工具但漏了审核与记录），
+               * 所以统一成同一句；改一处就同步改三处，别再让它们分叉。
+               */
+              "让 DeepSeek Harness 拥有操作 GitHub 的原生手脚：零 Token 泄露复用宿主机 gh 凭据，19 个工具 / 100+ action 覆盖 PR、Issue、CI、Release、Secret、Projects、Codespaces 与 Copilot 智能体；执行前人工审核 + 本地操作记录双重卡点，配 /gh 指令与秒开全景驾驶舱。"
             ),
             h("div", { style: { display: "flex", flexDirection: "column", gap: "8px", marginBottom: "14px" } },
               h("div", { style: { display: "flex", alignItems: "center", gap: "8px", fontSize: "12px" } },
